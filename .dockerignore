@@ -1,0 +1,11 @@
+.git
+.gitignore
+*.md
+bin/
+.env
+*.exe
+*.dll
+.vscode/
+.idea/
+*.log
+node_modules/

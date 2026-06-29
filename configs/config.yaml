@@ -1,0 +1,53 @@
+server:
+  name: nmsappsrv
+  port: 8080
+  mode: release  # debug / release / test
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: root
+  dbname: base_station
+  charset: utf8mb4
+  max_idle_conns: 10
+  max_open_conns: 100
+  log_level: warn  # silent / error / warn / info
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 20
+
+logger:
+  filename: logs/nmsappsrv.log
+  level: info       # debug / info / warn / error / dpanic / panic / fatal
+  max_size_mb: 100
+  max_backups: 10
+  retention_days: 30
+  compress: true
+  stdout: true
+
+tr069:
+  acs_url: "http://0.0.0.0:8080/acs"
+  inform_interval: 300
+  connection_timeout: 30
+  udp_connection_request_port: 50000
+
+snmp:
+  trap_listen_port: 162
+  enterprise_oid: 31664
+  default_version: v2c
+  default_community: public
+
+mq:
+  # Redis-based message queue configuration
+  operation_queue: "nms:operation_queue"
+  inform_queue: "nms:inform_queue"
+  event_result_queue: "nms:event_result_queue"
+  alarm_queue: "nms:alarm_queue"
+  snmp_queue: "nms:snmp_queue"
+  web_callback_queue: "nms:web_callback_queue"
+  pm_queue: "nms:pm_queue"
