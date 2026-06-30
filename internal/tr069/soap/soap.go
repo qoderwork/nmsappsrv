@@ -148,6 +148,7 @@ const (
 	MsgAddObjectResponse
 	MsgDeleteObjectResponse
 	MsgFault
+	MsgGetRPCMethods
 	MsgGetRPCMethodsResponse
 	MsgCaptureResponse
 	MsgFragmentTransferComplete
@@ -304,6 +305,8 @@ func methodNameToType(name string) MessageType {
 		return MsgDeleteObjectResponse
 	case "Fault":
 		return MsgFault
+	case "GetRPCMethods":
+		return MsgGetRPCMethods
 	case "GetRPCMethodsResponse":
 		return MsgGetRPCMethodsResponse
 	case "CaptureResponse":
@@ -634,6 +637,47 @@ func BuildDeleteObject(headerId string, objectName string, paramKey string) stri
 		b.WriteString(`</ParameterKey>`)
 	}
 	writeSoapClose(&b, "DeleteObject")
+	return b.String()
+}
+
+// BuildGetRPCMethods builds GetRPCMethods request SOAP XML
+func BuildGetRPCMethods(headerId string) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`GetRPCMethods/>`)
+	// GetRPCMethods is self-closing, so write footer directly
+	b.WriteString(soapFooter)
+	return b.String()
+}
+
+// supportedRPCMethods lists the CWMP methods this ACS supports.
+var supportedRPCMethods = []string{
+	"cwmp:GetParameterValues",
+	"cwmp:SetParameterValues",
+	"cwmp:GetParameterNames",
+	"cwmp:AddObject",
+	"cwmp:DeleteObject",
+	"cwmp:Download",
+	"cwmp:Upload",
+	"cwmp:Reboot",
+	"cwmp:FactoryReset",
+	"cwmp:GetRPCMethods",
+}
+
+// BuildGetRPCMethodsResponse builds a GetRPCMethodsResponse SOAP XML listing supported methods.
+func BuildGetRPCMethodsResponse(headerId string) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`GetRPCMethodsResponse><MethodList soap-enc:arrayType="xsd:string[`)
+	b.WriteString(strconv.Itoa(len(supportedRPCMethods)))
+	b.WriteString(`]">`)
+	for _, method := range supportedRPCMethods {
+		b.WriteString(`<string>`)
+		b.WriteString(EscapeXML(method))
+		b.WriteString(`</string>`)
+	}
+	b.WriteString(`</MethodList>`)
+	writeSoapClose(&b, "GetRPCMethodsResponse")
 	return b.String()
 }
 

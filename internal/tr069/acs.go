@@ -1,11 +1,14 @@
 package tr069
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"io"
 	"net/http"
 	"strings"
 
+	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
@@ -20,15 +23,46 @@ type ACSHandler struct {
 	db             *gorm.DB
 	msgManager     *MessageManager
 	eventProcessor *EventProcessor
+	xmlSigEnabled  bool
+	privKey        *rsa.PrivateKey
+	cert           *x509.Certificate
 }
 
 // NewACSHandler creates a new ACSHandler with the given dependencies.
-func NewACSHandler(db *gorm.DB, msgManager *MessageManager, eventProcessor *EventProcessor) *ACSHandler {
-	return &ACSHandler{
+// When tr069Cfg.EnableXMLSignature is true, the RSA private key and X.509 certificate
+// are loaded from the configured PEM file paths for SOAP message signing/verification.
+func NewACSHandler(db *gorm.DB, msgManager *MessageManager, eventProcessor *EventProcessor, tr069Cfg config.TR069Config) *ACSHandler {
+	h := &ACSHandler{
 		db:             db,
 		msgManager:     msgManager,
 		eventProcessor: eventProcessor,
+		xmlSigEnabled:  tr069Cfg.EnableXMLSignature,
 	}
+	if tr069Cfg.EnableXMLSignature {
+		if tr069Cfg.PrivateKeyPath != "" {
+			key, err := soap.LoadPrivateKey(tr069Cfg.PrivateKeyPath)
+			if err != nil {
+				logger.Errorf("XML signature: failed to load private key from %s: %v", tr069Cfg.PrivateKeyPath, err)
+			} else {
+				h.privKey = key
+			}
+		}
+		if tr069Cfg.CertificatePath != "" {
+			cert, err := soap.LoadCertificate(tr069Cfg.CertificatePath)
+			if err != nil {
+				logger.Errorf("XML signature: failed to load certificate from %s: %v", tr069Cfg.CertificatePath, err)
+			} else {
+				h.cert = cert
+			}
+		}
+		if h.privKey != nil && h.cert != nil {
+			logger.Info("XML Digital Signature enabled for TR-069 SOAP messages")
+		} else {
+			logger.Warn("XML signature enabled in config but key/cert not loaded, signing/verification disabled")
+			h.xmlSigEnabled = false
+		}
+	}
+	return h
 }
 
 // HandleACS is the main Gin handler for POST /tr069/acs (generic device type).
@@ -146,10 +180,25 @@ func (h *ACSHandler) handleACSWithType(c *gin.Context, deviceType string, genera
 
 	soapXml := strings.TrimSpace(string(body))
 
-	// Get device SN from cookie (if exists)
+	// Get device SN from cookie (if exists) - needed for logging in signature verification
 	sn := ""
 	if cookie, err := c.Request.Cookie("SN"); err == nil {
 		sn = cookie.Value
+	}
+
+	// Verify XML Digital Signature if enabled
+	if h.xmlSigEnabled && h.cert != nil {
+		ok, err := soap.VerifySOAPSignature(soapXml, h.cert)
+		if err != nil {
+			logger.Warnf("SOAP signature verification failed for SN=%s: %v", sn, err)
+			c.Status(http.StatusUnauthorized)
+			return
+		}
+		if !ok {
+			logger.Warnf("SOAP signature invalid for SN=%s", sn)
+			c.Status(http.StatusUnauthorized)
+			return
+		}
 	}
 
 	// Delegate to the core processing logic
@@ -182,6 +231,9 @@ func (h *ACSHandler) processSoap(c *gin.Context, soapXml string, sn string, devi
 		soap.MsgAutonomousTransferComplete,
 		soap.MsgFragmentTransferComplete:
 		h.handleTransferComplete(c, soapXml, sn, deviceType, generation)
+
+	case soap.MsgGetRPCMethods:
+		h.handleGetRPCMethods(c, soapXml, sn)
 
 	default:
 		// Any other response (GetParameterValuesResponse, SetParameterValuesResponse, etc.)
@@ -239,6 +291,20 @@ func (h *ACSHandler) handleTransferComplete(c *gin.Context, soapXml string, sn s
 	h.sendEmptyResponse(c)
 }
 
+// handleGetRPCMethods processes a GetRPCMethods request from CPE.
+func (h *ACSHandler) handleGetRPCMethods(c *gin.Context, soapXml string, sn string) {
+	headerId := extractHeaderIDFromXML(soapXml)
+	if headerId == "" {
+		headerId = soap.GenerateHeaderID()
+	}
+
+	logger.Infof("received GetRPCMethods request from SN=%s, headerId=%s", sn, headerId)
+
+	// Build and send GetRPCMethodsResponse
+	responseXml := soap.BuildGetRPCMethodsResponse(headerId)
+	h.sendSoapToResponse(c, responseXml)
+}
+
 // handleGenericResponse processes any other CWMP response from CPE
 // (GetParameterValuesResponse, SetParameterValuesResponse, DownloadResponse, etc.)
 func (h *ACSHandler) handleGenericResponse(c *gin.Context, soapXml string, sn string, deviceType string, generation string) {
@@ -272,7 +338,17 @@ func (h *ACSHandler) pollForCommand(c *gin.Context, sn string) {
 }
 
 // sendSoapToResponse writes a SOAP XML message to the HTTP response with the correct Content-Type.
+// If XML Digital Signature is enabled, the message is signed before sending.
 func (h *ACSHandler) sendSoapToResponse(c *gin.Context, soapXml string) {
+	if h.xmlSigEnabled && h.privKey != nil && h.cert != nil {
+		signed, err := soap.SignSOAPMessage(soapXml, h.privKey, h.cert)
+		if err != nil {
+			logger.Errorf("failed to sign SOAP response: %v", err)
+			// Fall through - send unsigned rather than fail silently
+		} else {
+			soapXml = signed
+		}
+	}
 	c.Header("Content-Type", "text/xml; charset=utf-8")
 	c.String(http.StatusOK, soapXml)
 }

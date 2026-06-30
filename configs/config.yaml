@@ -55,6 +55,11 @@ mq:
 mail:
   aes_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"  # 64 hex chars = 32-byte AES-256 key
 
+ha:
+  enabled: false
+  vip_monitor_interval: 10  # seconds between VIP checks
+  current_vip: ""           # current virtual IP address (set by HA subsystem)
+
 platform_files:
   rsa_public_key_path: "./cert/password/publicKey.pem"
   nms_manual_doc_path: "./docs/nms_manual.pdf"

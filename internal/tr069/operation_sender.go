@@ -208,6 +208,18 @@ func (o *OperationSender) SendDeleteObject(sn string, objectName string, operati
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
+// SendGetRPCMethods sends a GetRPCMethods request to the device.
+func (o *OperationSender) SendGetRPCMethods(sn string, operationId string) error {
+	headerId := soap.GenerateHeaderID()
+	soapXml := soap.BuildGetRPCMethods(headerId)
+
+	// Save tracking data
+	o.saveTrackData(operationId, headerId, sn, "GET_RPC_METHODS", "")
+
+	// Push to device queue
+	return o.msgManager.PutMessage(sn, soapXml)
+}
+
 // SendConnectionRequest sends an HTTP connection request to wake up CPE.
 // TR-069 connection requests are HTTP over TCP (not UDP).
 // If the device has connection_request_username configured, HTTP Basic auth is included.

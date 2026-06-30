@@ -8,12 +8,14 @@ import (
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/devicelog"
 	"nmsappsrv/internal/eventlog"
+	"nmsappsrv/internal/heartbeat"
 	"nmsappsrv/internal/license"
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/mml"
 	"nmsappsrv/internal/monitor"
 	"nmsappsrv/internal/nmsbackup"
 	"nmsappsrv/internal/parameter"
+	"nmsappsrv/internal/paramcompare"
 	"nmsappsrv/internal/parammonitor"
 	"nmsappsrv/internal/pm"
 	"nmsappsrv/internal/restapi"
@@ -170,6 +172,10 @@ func AutoMigrateAll() error {
 		// parammonitor (2)
 		&parammonitor.ParameterMonitorConfig{},
 		&parammonitor.MonitorConfigHasParameter{},
+		&parammonitor.ThresholdRule{},
+
+		// paramcompare (1)
+		&paramcompare.TemplateValue{},
 
 		// devicelog (1)
 		&devicelog.NeLog{},
@@ -193,6 +199,9 @@ func AutoMigrateAll() error {
 		// snmp (2)
 		&snmp.SnmpTrapLog{},
 		&snmp.SnmpOperationLog{},
+
+		// heartbeat (1)
+		&heartbeat.HeartbeatRecord{},
 	}
 
 	logger.Infof("auto migrating %d model tables...", len(models))

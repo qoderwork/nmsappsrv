@@ -18,7 +18,16 @@ type Config struct {
 	MQ            MQConfig            `mapstructure:"mq"`
 	Mail          MailConfig          `mapstructure:"mail"`
 	STUN          STUNConfig          `mapstructure:"stun"`
+	HA            HAConfig            `mapstructure:"ha"`
 	PlatformFiles PlatformFilesConfig `mapstructure:"platform_files"`
+	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat"`
+}
+
+// HAConfig holds High Availability configuration for VIP monitoring.
+type HAConfig struct {
+	Enabled            bool   `mapstructure:"enabled"`
+	VIPMonitorInterval int    `mapstructure:"vip_monitor_interval"` // seconds
+	CurrentVIP         string `mapstructure:"current_vip"`
 }
 
 type ServerConfig struct {
@@ -63,6 +72,10 @@ type TR069Config struct {
 	ConnectionTimeout         int    `mapstructure:"connection_timeout"`
 	UDPConnectionRequestPort  int    `mapstructure:"udp_connection_request_port"`
 	FileServerIp              string `mapstructure:"file_server_ip"`
+	EnableAskReboot           bool   `mapstructure:"enable_ask_reboot" yaml:"enable_ask_reboot"`
+	EnableXMLSignature        bool   `mapstructure:"enable_xml_signature" yaml:"enable_xml_signature"`
+	PrivateKeyPath            string `mapstructure:"private_key_path" yaml:"private_key_path"`
+	CertificatePath           string `mapstructure:"certificate_path" yaml:"certificate_path"`
 }
 
 type SNMPConfig struct {
@@ -89,6 +102,13 @@ type MailConfig struct {
 type STUNConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 	Port    int  `mapstructure:"port"`
+}
+
+// HeartbeatConfig holds SAS/CBSD heartbeat protocol settings.
+type HeartbeatConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	IntervalSeconds int    `mapstructure:"interval_seconds"`
+	SASEndpoint     string `mapstructure:"sas_endpoint"`
 }
 
 // PlatformFilesConfig holds configurable paths for platform file downloads

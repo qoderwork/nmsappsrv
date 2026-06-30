@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/eventlog"
 	"nmsappsrv/internal/misc"
@@ -15,6 +16,7 @@ import (
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
+	"nmsappsrv/pkg/utils"
 
 	"gorm.io/gorm"
 )
@@ -152,6 +154,11 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 	if err := ep.db.Create(&eventLog).Error; err != nil {
 		logger.Errorf("failed to create event log for %s: %v", sn, err)
 	}
+
+	// AskReboot post-processor: check if device needs a reboot after Inform
+	utils.SafeGo("AskReboot-"+sn, func() {
+		ep.checkAndTriggerAskReboot(ctx, sn, &cpe, inform)
+	})
 }
 
 // processEventCode handles individual TR069 event codes.
@@ -988,6 +995,130 @@ func (ep *EventProcessor) checkAndPresetParameters(ctx context.Context, cpe *dev
 		}
 		logger.Infof("preset parameters: SPV sent to device %s with %d params", sn, len(presets))
 	}()
+}
+
+// askRebootConfig represents the runtime configuration stored in system_config.
+type askRebootConfig struct {
+	Enabled    bool     `json:"enabled"`
+	Conditions []string `json:"conditions"`
+}
+
+// checkAndTriggerAskReboot evaluates whether a device should be rebooted after an Inform.
+// It checks three conditions: version_mismatch, failed_state, and ztp_pending.
+// Configuration is read from system_config table (key: ask_reboot_config) first,
+// falling back to the static config.yaml enable_ask_reboot flag.
+func (ep *EventProcessor) checkAndTriggerAskReboot(ctx context.Context, sn string, cpe *device.CpeElement, inform *soap.Inform) {
+	// --- Determine if AskReboot is enabled and which conditions to check ---
+	enabled := false
+	conditions := map[string]bool{
+		"version_mismatch": true,
+		"failed_state":     true,
+		"ztp_pending":      true,
+	}
+
+	// Try reading runtime config from system_config table first
+	var sysCfg misc.SystemConfig
+	if err := ep.db.Where("config_key = ?", "ask_reboot_config").First(&sysCfg).Error; err == nil && sysCfg.Value != nil && *sysCfg.Value != "" {
+		var arc askRebootConfig
+		if err := json.Unmarshal([]byte(*sysCfg.Value), &arc); err == nil {
+			enabled = arc.Enabled
+			// Override default conditions if specified
+			if len(arc.Conditions) > 0 {
+				conditions = make(map[string]bool, len(arc.Conditions))
+				for _, c := range arc.Conditions {
+					conditions[c] = true
+				}
+			}
+		} else {
+			logger.Warnf("AskReboot: failed to parse ask_reboot_config for SN=%s: %v", sn, err)
+		}
+	} else {
+		// Fall back to static config.yaml
+		if config.Cfg != nil {
+			enabled = config.Cfg.TR069.EnableAskReboot
+		}
+	}
+
+	if !enabled {
+		return
+	}
+
+	// --- Evaluate conditions ---
+	var reasons []string
+
+	// Condition 1: version_mismatch — target_version is set and differs from current software_version
+	if conditions["version_mismatch"] {
+		if cpe.TargetVersion != nil && *cpe.TargetVersion != "" {
+			currentVersion := ""
+			if cpe.SoftwareVersion != nil {
+				currentVersion = *cpe.SoftwareVersion
+			}
+			if currentVersion != *cpe.TargetVersion {
+				reasons = append(reasons, fmt.Sprintf(
+					"version_mismatch: current=%s, target=%s", currentVersion, *cpe.TargetVersion))
+			}
+		}
+	}
+
+	// Condition 2: failed_state — device status contains "error" or "failed"
+	if conditions["failed_state"] {
+		if cpe.Status != nil {
+			statusLower := strings.ToLower(*cpe.Status)
+			if strings.Contains(statusLower, "error") || strings.Contains(statusLower, "failed") {
+				reasons = append(reasons, fmt.Sprintf("failed_state: status=%s", *cpe.Status))
+			}
+		}
+	}
+
+	// Condition 3: ztp_pending — ReadyToZTP flag is set but device is not yet initialized
+	if conditions["ztp_pending"] {
+		if cpe.ReadyToZTP != nil && *cpe.ReadyToZTP && !cpe.IsInitialized {
+			reasons = append(reasons, "ztp_pending: ReadyToZTP=true but IsInitialized=false")
+		}
+	}
+
+	if len(reasons) == 0 {
+		return
+	}
+
+	// --- Trigger reboot ---
+	reasonStr := strings.Join(reasons, "; ")
+	logger.Infof("AskReboot: triggering reboot for device %s (neId=%d), reasons: %s", sn, cpe.NeNeid, reasonStr)
+
+	// Create an OperationSender to dispatch the reboot
+	msgMgr := NewMessageManager()
+	opSender := NewOperationSender(ep.db, msgMgr)
+	operationId := fmt.Sprintf("ask_reboot_%s_%d", sn, time.Now().Unix())
+
+	if err := opSender.SendReboot(sn, operationId); err != nil {
+		logger.Errorf("AskReboot: failed to send reboot to device %s: %v", sn, err)
+		return
+	}
+
+	// Create event_log entry for the automatic reboot
+	now := time.Now()
+	eventType := "ASK_REBOOT"
+	trackData, _ := json.Marshal(map[string]interface{}{
+		"serial_number": sn,
+		"operation_id":  operationId,
+		"reasons":       reasons,
+		"trigger":       "inform_postprocessor",
+		"issue_time":    now.Format(time.RFC3339),
+	})
+	evLog := eventlog.EventLog{
+		EventType:        &eventType,
+		OperationTime:    &now,
+		CommandIssueTime: &now,
+		ElementId:        &cpe.NeNeid,
+		Status:           intPtr(1), // pending
+		FaultInfo:        stringPtr(reasonStr),
+		CommandTrackData: stringPtr(string(trackData)),
+	}
+	if err := ep.db.Create(&evLog).Error; err != nil {
+		logger.Errorf("AskReboot: failed to create event_log for device %s: %v", sn, err)
+	}
+
+	logger.Infof("AskReboot: reboot command sent to device %s, event_log id=%d", sn, evLog.Id)
 }
 
 // sendWebCallback sends a web callback via Redis pub/sub.

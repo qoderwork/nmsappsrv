@@ -22,6 +22,8 @@ import (
 	"nmsappsrv/internal/diagnostics"
 	"nmsappsrv/internal/eventlog"
 	"nmsappsrv/internal/health"
+	"nmsappsrv/internal/heartbeat"
+	"nmsappsrv/internal/ha"
 	"nmsappsrv/internal/license"
 	"nmsappsrv/internal/mail"
 	"nmsappsrv/internal/middleware"
@@ -31,6 +33,7 @@ import (
 	"nmsappsrv/internal/nmsbackup"
 	"nmsappsrv/internal/ntp"
 	"nmsappsrv/internal/parameter"
+	"nmsappsrv/internal/paramcompare"
 	"nmsappsrv/internal/parammonitor"
 	"nmsappsrv/internal/platform"
 	"nmsappsrv/internal/pm"
@@ -156,6 +159,8 @@ func main() {
 	shutdownH := upgrade.NewShutdownHandler(db)
 	systemsettingsH := systemsettings.NewSystemSettingsHandler(db, cfg.Mail.AESKey)
 	parammonitorH := parammonitor.NewHandler(db)
+	parammonitorH.StartThresholdChecker()
+	paramcompareH := paramcompare.NewHandler(db)
 	devicelogH := devicelog.NewHandler(db)
 	nmsbackupRepo := nmsbackup.NewRepository(db)
 	nmsbackupSvc := nmsbackup.NewService(nmsbackupRepo)
@@ -173,6 +178,7 @@ func main() {
 
 	// Second batch modules
 	healthH := health.NewHandler(db)
+	heartbeatH := heartbeat.NewHandler(db, cfg)
 	resourcesH := resources.NewHandler(db)
 	platformH := platform.NewHandler(db, cfg.Mail.AESKey, cfg.PlatformFiles)
 	tenancyH := tenancy.NewHandler(db)
@@ -195,7 +201,7 @@ func main() {
 	// TR069 ACS
 	tr069MsgMgr := tr069.NewMessageManager()
 	tr069EventProc := tr069.NewEventProcessor(db)
-	tr069ACS := tr069.NewACSHandler(db, tr069MsgMgr, tr069EventProc)
+	tr069ACS := tr069.NewACSHandler(db, tr069MsgMgr, tr069EventProc, cfg.TR069)
 
 	// ========== API路由组 ==========
 	api := router.Group("/api/v1")
@@ -515,6 +521,18 @@ func main() {
 			auth.POST("/param-monitor/reload", parammonitorH.ReloadMonitorParameters)
 			auth.POST("/param-monitor/batch-query", parammonitorH.BatchQueryDeviceParameters)
 			auth.POST("/param-monitor/batch-query-live", parammonitorH.BatchQueryDeviceParametersLive)
+				// Parameter Compare
+				auth.POST("/param-compare/compare", paramcompareH.Compare)
+				auth.POST("/param-compare/batch", paramcompareH.BatchCompare)
+				auth.GET("/param-compare/templates", paramcompareH.ListTemplates)
+
+				// 参数监控阈值告警 (Parameter Monitor Threshold Alerts)
+				auth.POST("/param-monitor/threshold", parammonitorH.CreateThresholdRule)
+				auth.PUT("/param-monitor/threshold/:id", parammonitorH.UpdateThresholdRule)
+				auth.DELETE("/param-monitor/threshold/:id", parammonitorH.DeleteThresholdRule)
+				auth.GET("/param-monitor/threshold", parammonitorH.ListThresholdRules)
+				auth.GET("/param-monitor/threshold/:id", parammonitorH.GetThresholdRule)
+				auth.POST("/param-monitor/threshold/test", parammonitorH.TestThresholdRule)
 
 			// 设备日志采集 (Device Log Collection)
 			auth.POST("/device-log/collection", devicelogH.AddLogCollectionTask)
@@ -609,6 +627,11 @@ func main() {
 			auth.POST("/listPDCPTrafficStatistic", dashboardH.ListPDCPTrafficStatistic)
 			auth.POST("/listDeviceOnlineInfo", dashboardH.ListDeviceOnlineInfo)
 			auth.POST("/statisticKPIForDevicelop", dashboardH.StatisticKPIForDevicelop)
+
+			// ========== Heartbeat (SAS/CBSD) ==========
+			auth.POST("/heartbeat/process", heartbeatH.ProcessHeartbeat)
+			auth.GET("/heartbeat/status", heartbeatH.ListHeartbeatStatus)
+			auth.POST("/heartbeat/send/:sn", heartbeatH.SendHeartbeat)
 		}
 	}
 
@@ -681,6 +704,21 @@ func main() {
 	snmpWorker := snmp.NewWorker(database.DB)
 	snmpWorker.Start()
 
+	// SNMP periodic poller (polls SNMP devices at configured intervals)
+	snmpPoller := snmp.NewSNMPPoller(database.DB)
+	snmpPoller.Start()
+
+	// HA VIP monitor (detects VIP changes and notifies SNMP subsystem)
+	var vipMonitor *ha.VIPMonitor
+	var vipSubscriber *snmp.VIPSubscriber
+	if cfg.HA.Enabled {
+		vipMonitor = ha.NewVIPMonitor(database.DB, redis.RDB, cfg)
+		vipMonitor.Start()
+
+		vipSubscriber = snmp.NewVIPSubscriber(database.DB)
+		vipSubscriber.Start()
+	}
+
 	// Offline detection worker (periodically checks device online status)
 	offlineWorker := tr069.NewOfflineWorker(db)
 	offlineWorker.Start()
@@ -740,6 +778,13 @@ func main() {
 	// Stop background workers
 	wsBridge.Stop()
 	snmpWorker.Stop()
+	snmpPoller.Stop()
+	if vipSubscriber != nil {
+		vipSubscriber.Stop()
+	}
+	if vipMonitor != nil {
+		vipMonitor.Stop()
+	}
 	offlineWorker.Stop()
 	ztpWorker.Stop()
 	mmlWorker.Stop()
@@ -747,6 +792,7 @@ func main() {
 	paramScheduler.Stop()
 	resourceCollector.Stop()
 	alarmNotifier.Stop()
+	parammonitorH.StopThresholdChecker()
 	mainScheduler.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

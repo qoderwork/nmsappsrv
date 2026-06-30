@@ -34,6 +34,7 @@ const (
 	ChannelDeviceOffline = "channel:device:offline"
 	ChannelAlarmNotify   = "channel:alarm:notify"
 	ChannelTaskProgress  = "channel:task:progress"
+	ChannelVIPChange     = "channel:ha:vip:change"
 )
 
 // Enqueue JSON marshals data and pushes to queue
