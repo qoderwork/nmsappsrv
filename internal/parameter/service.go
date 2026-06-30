@@ -192,6 +192,368 @@ func (s *Service) UpdateParameterTemplate(t *ParameterTemplate) error {
 }
 
 // ---------------------------------------------------------------------------
+// DeployTemplate
+// ---------------------------------------------------------------------------
+
+// DeployTemplateStatus holds the per-device result of a template deployment.
+type DeployTemplateStatus struct {
+	ElementId    int64  `json:"elementId"`
+	SerialNumber string `json:"serialNumber"`
+	DeviceName   string `json:"deviceName"`
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	ParamCount   int    `json:"paramCount"`
+}
+
+// DeployTemplate deploys a parameter template to the specified target devices.
+// It loads the template's parameter paths, reads the desired values from
+// element_basic_info_parameter for each device, and sends SPV commands via TR-069.
+func (s *Service) DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error) {
+	if len(elementIds) == 0 {
+		return nil, fmt.Errorf("no target devices specified")
+	}
+
+	// 1. Load template's parameter paths via parameter_template_has_parameter JOIN parameter
+	var paramPaths []string
+	err := s.repo.db.Raw(`
+		SELECT p.path FROM parameter_template_has_parameter pth
+		JOIN parameter p ON p.id = pth.parameter_id
+		WHERE pth.template_id = ? AND p.path IS NOT NULL AND p.path != ''
+	`, templateId).Scan(&paramPaths).Error
+	if err != nil {
+		return nil, fmt.Errorf("load template parameters: %w", err)
+	}
+	if len(paramPaths) == 0 {
+		return nil, fmt.Errorf("template %d has no parameters", templateId)
+	}
+
+	ctx := context.Background()
+	now := time.Now()
+	var results []DeployTemplateStatus
+
+	for _, elementId := range elementIds {
+		status := DeployTemplateStatus{ElementId: elementId}
+
+		// 2. Resolve device SN and name
+		var deviceInfo struct {
+			SerialNumber string `gorm:"column:serial_number"`
+			DeviceName   string `gorm:"column:device_name"`
+		}
+		if err := s.repo.db.Table("cpe_element").
+			Select("serial_number, device_name").
+			Where("ne_neid = ? AND deleted = ?", elementId, false).
+			Scan(&deviceInfo).Error; err != nil {
+			status.Message = fmt.Sprintf("device not found: %v", err)
+			results = append(results, status)
+			continue
+		}
+		if deviceInfo.SerialNumber == "" {
+			status.Message = "device has no serial number"
+			results = append(results, status)
+			continue
+		}
+		status.SerialNumber = deviceInfo.SerialNumber
+		status.DeviceName = deviceInfo.DeviceName
+
+		// 3. Read desired parameter values from element_basic_info_parameter
+		var paramValues []struct {
+			ParamName  string `gorm:"column:param_name"`
+			ParamValue string `gorm:"column:param_value"`
+		}
+		s.repo.db.Table("element_basic_info_parameter").
+			Select("param_name, param_value").
+			Where("element_id = ? AND param_name IN ?", elementId, paramPaths).
+			Scan(&paramValues)
+
+		if len(paramValues) == 0 {
+			status.Message = "no parameter values found for device"
+			results = append(results, status)
+			continue
+		}
+
+		// 4. Build SPV entries
+		entries := make([]setParamEntry, len(paramValues))
+		spvParams := make([]soap.ParameterValueStruct, len(paramValues))
+		for i, pv := range paramValues {
+			entries[i] = setParamEntry{ParamName: pv.ParamName, ParamValue: pv.ParamValue}
+			spvParams[i] = soap.ParameterValueStruct{Name: pv.ParamName, Value: pv.ParamValue, Type: "xsd:string"}
+		}
+		opParamJSON, _ := json.Marshal(entries)
+
+		// 5. Create event_log (status=1 pending)
+		eventLogId, err := s.repo.InsertEventLog("SetParameterValues", elementId, username, 1, "")
+		if err != nil {
+			status.Message = fmt.Sprintf("create event_log failed: %v", err)
+			results = append(results, status)
+			continue
+		}
+
+		// 6. Build SOAP XML
+		headerId := soap.GenerateHeaderID()
+		soapXml := soap.BuildSetParameterValues(headerId, spvParams, "")
+
+		// 7. Update event_log with tracking data
+		trackData, _ := json.Marshal(map[string]interface{}{
+			"header_id":      headerId,
+			"serial_number":  deviceInfo.SerialNumber,
+			"operation_type": "SET_PARAMETER_VALUES",
+			"operationParam": string(opParamJSON),
+			"event_log_id":   eventLogId,
+			"template_id":    templateId,
+			"issue_time":     now.Format(time.RFC3339),
+		})
+		s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+			Updates(map[string]interface{}{
+				"command_track_data": string(trackData),
+				"command_issue_time": now,
+			})
+
+		// 8. Cache track data in Redis
+		trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+		trackJson, _ := json.Marshal(map[string]interface{}{
+			"header_id":      headerId,
+			"sn":             deviceInfo.SerialNumber,
+			"operation_type": "SET_PARAMETER_VALUES",
+			"event_log_id":   eventLogId,
+			"template_id":    templateId,
+		})
+		redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+		// 9. Push SOAP XML to device queue
+		queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
+		if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
+			status.Message = fmt.Sprintf("push to device queue failed: %v", err)
+			s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+			results = append(results, status)
+			continue
+		}
+		redis.Expire(ctx, queueKey, 24*time.Hour)
+
+		status.Success = true
+		status.ParamCount = len(paramValues)
+		status.Message = "SPV dispatched successfully"
+		results = append(results, status)
+
+		logger.Infof("DeployTemplate: dispatched %d params to device %s (elementId=%d) from template %d",
+			len(paramValues), deviceInfo.SerialNumber, elementId, templateId)
+	}
+
+	return results, nil
+}
+
+// ---------------------------------------------------------------------------
+// TriggerBackup (Task 5.8)
+// ---------------------------------------------------------------------------
+
+// TriggerBackup triggers a parameter backup for the given device by sending
+// GPV for all basic parameter paths. When the GPV response comes back, the
+// normal processGetParameterValuesResponse saves the values.
+func (s *Service) TriggerBackup(elementId int64, username string) error {
+	// 1. Resolve device SN and type
+	var deviceInfo struct {
+		SerialNumber string `gorm:"column:serial_number"`
+		DeviceType   string `gorm:"column:device_type"`
+	}
+	if err := s.repo.db.Table("cpe_element").
+		Select("serial_number, device_type").
+		Where("ne_neid = ? AND deleted = ?", elementId, false).
+		Scan(&deviceInfo).Error; err != nil {
+		return fmt.Errorf("device not found: %w", err)
+	}
+	if deviceInfo.SerialNumber == "" {
+		return fmt.Errorf("device %d has no serial number", elementId)
+	}
+
+	// 2. Get basic param paths for the device type
+	paramPaths := getBasicParamPathsHelper(deviceInfo.DeviceType)
+	if len(paramPaths) == 0 {
+		return fmt.Errorf("no basic param paths for device type %s", deviceInfo.DeviceType)
+	}
+
+	// 3. Create ParameterBackupLog
+	now := time.Now()
+	taskId := fmt.Sprintf("backup_%d_%d", elementId, now.UnixMilli())
+	backupLog := &ParameterBackupLog{
+		TaskId:       &taskId,
+		ElementId:    &elementId,
+		GenerateTime: func() *int64 { t := now.UnixMilli(); return &t }(),
+	}
+	if err := s.repo.CreateParameterBackupLog(backupLog); err != nil {
+		return fmt.Errorf("create backup log: %w", err)
+	}
+
+	// 4. Create event_log for GPV tracking
+	eventLogId, err := s.repo.InsertEventLog("GetParameterValues", elementId, username, 1, "")
+	if err != nil {
+		return fmt.Errorf("create event_log: %w", err)
+	}
+
+	// 5. Build SOAP GPV XML
+	headerId := soap.GenerateHeaderID()
+	soapXml := soap.BuildGetParameterValues(headerId, paramPaths)
+
+	// 6. Update event_log with tracking data
+	trackData, _ := json.Marshal(map[string]interface{}{
+		"header_id":      headerId,
+		"serial_number":  deviceInfo.SerialNumber,
+		"operation_type": "GET_PARAMETER_VALUES",
+		"event_log_id":   eventLogId,
+		"backup_task_id": taskId,
+		"is_backup":      true,
+		"issue_time":     now.Format(time.RFC3339),
+	})
+	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+		Updates(map[string]interface{}{
+			"command_track_data": string(trackData),
+			"command_issue_time": now,
+		})
+
+	// 7. Cache track data in Redis
+	ctx := context.Background()
+	trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+	trackJson, _ := json.Marshal(map[string]interface{}{
+		"header_id":      headerId,
+		"sn":             deviceInfo.SerialNumber,
+		"operation_type": "GET_PARAMETER_VALUES",
+		"event_log_id":   eventLogId,
+		"backup_task_id": taskId,
+		"is_backup":      true,
+	})
+	redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+	// 8. Push SOAP XML to device queue
+	queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
+	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
+		s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+		return fmt.Errorf("push to device queue: %w", err)
+	}
+	redis.Expire(ctx, queueKey, 24*time.Hour)
+
+	logger.Infof("TriggerBackup: GPV dispatched to device %s (elementId=%d) for %d params, taskId=%s",
+		deviceInfo.SerialNumber, elementId, len(paramPaths), taskId)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// PresetParameters (Task 5.4)
+// ---------------------------------------------------------------------------
+
+// PresetParameters sends SPV for a set of preset parameters to a device.
+// This is triggered automatically after device registration/onboarding.
+func (s *Service) PresetParameters(elementId int64, presets map[string]string) error {
+	if len(presets) == 0 {
+		return nil
+	}
+
+	// 1. Resolve device SN
+	var deviceInfo struct {
+		SerialNumber string `gorm:"column:serial_number"`
+	}
+	if err := s.repo.db.Table("cpe_element").
+		Select("serial_number").
+		Where("ne_neid = ? AND deleted = ?", elementId, false).
+		Scan(&deviceInfo).Error; err != nil {
+		return fmt.Errorf("device not found: %w", err)
+	}
+	if deviceInfo.SerialNumber == "" {
+		return fmt.Errorf("device %d has no serial number", elementId)
+	}
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// 2. Build SPV entries
+	entries := make([]setParamEntry, 0, len(presets))
+	spvParams := make([]soap.ParameterValueStruct, 0, len(presets))
+	for paramName, paramValue := range presets {
+		entries = append(entries, setParamEntry{ParamName: paramName, ParamValue: paramValue})
+		spvParams = append(spvParams, soap.ParameterValueStruct{Name: paramName, Value: paramValue, Type: "xsd:string"})
+	}
+	opParamJSON, _ := json.Marshal(entries)
+
+	// 3. Create event_log
+	eventLogId, err := s.repo.InsertEventLog("SetParameterValues", elementId, "system", 1, "")
+	if err != nil {
+		return fmt.Errorf("create event_log: %w", err)
+	}
+
+	// 4. Build SOAP XML
+	headerId := soap.GenerateHeaderID()
+	soapXml := soap.BuildSetParameterValues(headerId, spvParams, "")
+
+	// 5. Update event_log with tracking data
+	trackData, _ := json.Marshal(map[string]interface{}{
+		"header_id":      headerId,
+		"serial_number":  deviceInfo.SerialNumber,
+		"operation_type": "SET_PARAMETER_VALUES",
+		"operationParam": string(opParamJSON),
+		"event_log_id":   eventLogId,
+		"is_preset":      true,
+		"issue_time":     now.Format(time.RFC3339),
+	})
+	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+		Updates(map[string]interface{}{
+			"command_track_data": string(trackData),
+			"command_issue_time": now,
+		})
+
+	// 6. Cache track data in Redis
+	trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+	trackJson, _ := json.Marshal(map[string]interface{}{
+		"header_id":      headerId,
+		"sn":             deviceInfo.SerialNumber,
+		"operation_type": "SET_PARAMETER_VALUES",
+		"event_log_id":   eventLogId,
+		"is_preset":      true,
+	})
+	redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+	// 7. Push SOAP XML to device queue
+	queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
+	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
+		s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+		return fmt.Errorf("push to device queue: %w", err)
+	}
+	redis.Expire(ctx, queueKey, 24*time.Hour)
+
+	logger.Infof("PresetParameters: dispatched %d preset params to device %s (elementId=%d)",
+		len(presets), deviceInfo.SerialNumber, elementId)
+	return nil
+}
+
+// getBasicParamPathsHelper returns basic param paths for a device type.
+// This is a local helper to avoid importing the tr069 package directly.
+func getBasicParamPathsHelper(deviceType string) []string {
+	// Common basic param paths for all device types
+	igd := "InternetGatewayDevice"
+	common := []string{
+		igd + ".DeviceInfo.Manufacturer",
+		igd + ".DeviceInfo.ModelName",
+		igd + ".DeviceInfo.ProductClass",
+		igd + ".DeviceInfo.SerialNumber",
+		igd + ".DeviceInfo.HardwareVersion",
+		igd + ".DeviceInfo.SoftwareVersion",
+		igd + ".DeviceInfo.ProvisioningCode",
+		igd + ".DeviceInfo.SpecVersion",
+		igd + ".DeviceInfo.UpTime",
+		igd + ".ManagementServer.ConnectionRequestURL",
+		igd + ".ManagementServer.ConnectionRequestUsername",
+		igd + ".ManagementServer.PeriodicInformInterval",
+		igd + ".ManagementServer.ParameterKey",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.MACAddress",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.DefaultGateway",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.IPAddress",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.SubnetMask",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.Gateway",
+		igd + ".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.DNSServers",
+		igd + ".LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress",
+		igd + ".LANDevice.1.LANEthernetInterfaceConfig.1.Status",
+	}
+	return common
+}
+
+// ---------------------------------------------------------------------------
 // ParameterBackupLog
 // ---------------------------------------------------------------------------
 

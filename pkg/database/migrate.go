@@ -19,6 +19,7 @@ import (
 	"nmsappsrv/internal/restapi"
 	"nmsappsrv/internal/site"
 	sshmod "nmsappsrv/internal/ssh"
+	"nmsappsrv/internal/snmp"
 	"nmsappsrv/internal/systemsettings"
 	"nmsappsrv/internal/upgrade"
 	"nmsappsrv/internal/user"
@@ -188,6 +189,10 @@ func AutoMigrateAll() error {
 
 		// systemsettings (1)
 		&systemsettings.SysParameter{},
+
+		// snmp (2)
+		&snmp.SnmpTrapLog{},
+		&snmp.SnmpOperationLog{},
 	}
 
 	logger.Infof("auto migrating %d model tables...", len(models))

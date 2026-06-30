@@ -125,3 +125,19 @@ type BatchQueryResultVo struct {
 	SerialNumber string             `json:"serialNumber"`
 	Parameters   []ParameterValueVo `json:"parameters"`
 }
+
+// BatchQueryLiveRequest is the request body for live GPV batch query.
+type BatchQueryLiveRequest struct {
+	ElementIds   []int64  `json:"elementIds" binding:"required"`
+	ParameterIds []string `json:"parameterIds" binding:"required"`
+}
+
+// BatchQueryLiveResult holds the dispatch status for a single device.
+type BatchQueryLiveResult struct {
+	ElementId    int64  `json:"elementId"`
+	SerialNumber string `json:"serialNumber"`
+	DeviceName   string `json:"deviceName"`
+	Dispatched   bool   `json:"dispatched"`
+	Error        string `json:"error,omitempty"`
+	EventLogId   int64  `json:"eventLogId,omitempty"`
+}

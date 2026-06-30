@@ -157,3 +157,20 @@ func (h *Handler) BatchQueryDeviceParameters(c *gin.Context) {
 
 	utils.Success(c, result)
 }
+
+func (h *Handler) BatchQueryDeviceParametersLive(c *gin.Context) {
+	var req BatchQueryLiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "Invalid request: "+err.Error())
+		return
+	}
+
+	username := c.GetString("username")
+	result, err := h.svc.BatchQueryDeviceParametersLive(&req, username)
+	if err != nil {
+		utils.Error(c, 500, "Failed to batch query live: "+err.Error())
+		return
+	}
+
+	utils.Success(c, result)
+}

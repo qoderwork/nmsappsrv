@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -99,5 +100,49 @@ func (r *Repository) GetDeviceByIds(ctx context.Context, ids []int64) ([]map[str
 		Select("ne_neid, serial_number").
 		Where("ne_neid IN ?", ids).
 		Scan(&results).Error
+	return results, err
+}
+
+// QueryOnlineStatistics queries device_statistic joined with cpe_element to get online/offline
+// records for devices of a given type within a time range.
+func (r *Repository) QueryOnlineStatistics(ctx context.Context, elementIds []int64, startTime, endTime time.Time, deviceType string) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+
+	// Determine the device_type and generation filter for cpe_element
+	var typeFilter string
+	var genFilter string
+	switch deviceType {
+	case "cpe":
+		typeFilter = "cpe"
+	case "gnb":
+		typeFilter = "enb"
+		genFilter = "NR"
+	default:
+		typeFilter = deviceType
+	}
+
+	sql := `SELECT ds.statistic_time, ds.online
+		FROM device_statistic ds
+		INNER JOIN cpe_element ce ON ds.element_id = ce.ne_neid
+		WHERE ce.deleted = ?
+		AND ce.device_type = ?
+		AND ds.statistic_time >= ?
+		AND ds.statistic_time <= ?`
+
+	args := []interface{}{false, typeFilter, startTime, endTime}
+
+	if genFilter != "" {
+		sql += " AND ce.generation = ?"
+		args = append(args, genFilter)
+	}
+
+	if len(elementIds) > 0 {
+		sql += " AND ds.element_id IN ?"
+		args = append(args, elementIds)
+	}
+
+	sql += " ORDER BY ds.statistic_time ASC"
+
+	err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error
 	return results, err
 }

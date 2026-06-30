@@ -2,9 +2,11 @@
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"nmsappsrv/internal/eventlog"
@@ -35,10 +37,71 @@ func (o *OperationSender) SendGetParameterValues(sn string, paramNames []string,
 	soapXml := soap.BuildGetParameterValues(headerId, paramNames)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_VALUES")
+	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_VALUES", "")
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
+}
+
+// BatchGPVTarget defines a single device target for batch GPV operations.
+type BatchGPVTarget struct {
+	SN         string
+	ParamNames []string
+}
+
+// BatchGetParameterValuesResult holds the result of a batch GPV operation for a single device.
+type BatchGetParameterValuesResult struct {
+	SN      string
+	Success bool
+	Error   string
+}
+
+// BatchGetParameterValues sends GetParameterValues to multiple devices concurrently.
+// maxConcurrency limits the number of simultaneous requests (0 = no limit).
+func (o *OperationSender) BatchGetParameterValues(targets []BatchGPVTarget, maxConcurrency int, operationIdPrefix string) []BatchGetParameterValuesResult {
+	if len(targets) == 0 {
+		return nil
+	}
+
+	results := make([]BatchGetParameterValuesResult, len(targets))
+
+	// Semaphore: buffered channel to limit concurrency
+	var sem chan struct{}
+	if maxConcurrency > 0 {
+		sem = make(chan struct{}, maxConcurrency)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(targets))
+
+	for i, target := range targets {
+		// Acquire semaphore slot if concurrency is limited
+		if sem != nil {
+			sem <- struct{}{}
+		}
+
+		go func(idx int, t BatchGPVTarget) {
+			defer wg.Done()
+			if sem != nil {
+				defer func() { <-sem }()
+			}
+
+			operationId := fmt.Sprintf("%s_%s", operationIdPrefix, t.SN)
+			err := o.SendGetParameterValues(t.SN, t.ParamNames, operationId)
+
+			results[idx] = BatchGetParameterValuesResult{
+				SN:      t.SN,
+				Success: err == nil,
+			}
+			if err != nil {
+				results[idx].Error = err.Error()
+				logger.Errorf("batch GPV failed for device %s: %v", t.SN, err)
+			}
+		}(i, target)
+	}
+
+	wg.Wait()
+	return results
 }
 
 // SendSetParameterValues sends a SetParameterValues request to the device.
@@ -47,7 +110,7 @@ func (o *OperationSender) SendSetParameterValues(sn string, params []soap.Parame
 	soapXml := soap.BuildSetParameterValues(headerId, params, paramKey)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "SET_PARAMETER_VALUES")
+	o.saveTrackData(operationId, headerId, sn, "SET_PARAMETER_VALUES", "")
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -58,8 +121,8 @@ func (o *OperationSender) SendDownload(sn string, dl *soap.Download, operationId
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildDownload(headerId, dl)
 
-	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "DOWNLOAD")
+	// Save tracking data with CommandKey for TransferComplete correlation
+	o.saveTrackData(operationId, headerId, sn, "DOWNLOAD", dl.CommandKey)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -78,8 +141,8 @@ func (o *OperationSender) SendReboot(sn string, operationId string) error {
 		logger.Warnf("failed to set rebooting flag for %s: %v", sn, err)
 	}
 
-	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "REBOOT")
+	// Save tracking data with CommandKey for TransferComplete correlation
+	o.saveTrackData(operationId, headerId, sn, "REBOOT", commandKey)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -90,8 +153,8 @@ func (o *OperationSender) SendUpload(sn string, upload *soap.Upload, operationId
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildUpload(headerId, upload)
 
-	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "UPLOAD")
+	// Save tracking data with CommandKey for TransferComplete correlation
+	o.saveTrackData(operationId, headerId, sn, "UPLOAD", upload.CommandKey)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -103,7 +166,7 @@ func (o *OperationSender) SendFactoryReset(sn string, operationId string) error 
 	soapXml := soap.BuildFactoryReset(headerId)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "FACTORY_RESET")
+	o.saveTrackData(operationId, headerId, sn, "FACTORY_RESET", "")
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -115,7 +178,7 @@ func (o *OperationSender) SendGetParameterNames(sn string, paramPath string, nex
 	soapXml := soap.BuildGetParameterNames(headerId, paramPath, nextLevel)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_NAMES")
+	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_NAMES", "")
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -127,7 +190,7 @@ func (o *OperationSender) SendAddObject(sn string, objectName string, operationI
 	soapXml := soap.BuildAddObject(headerId, objectName, "")
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "ADD_OBJECT")
+	o.saveTrackData(operationId, headerId, sn, "ADD_OBJECT", "")
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -139,7 +202,7 @@ func (o *OperationSender) SendDeleteObject(sn string, objectName string, operati
 	soapXml := soap.BuildDeleteObject(headerId, objectName, "")
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "DELETE_OBJECT")
+	o.saveTrackData(operationId, headerId, sn, "DELETE_OBJECT", "")
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -147,6 +210,7 @@ func (o *OperationSender) SendDeleteObject(sn string, objectName string, operati
 
 // SendConnectionRequest sends an HTTP connection request to wake up CPE.
 // TR-069 connection requests are HTTP over TCP (not UDP).
+// If the device has connection_request_username configured, HTTP Basic auth is included.
 func (o *OperationSender) SendConnectionRequest(sn string) error {
 	ctx := context.Background()
 
@@ -159,7 +223,6 @@ func (o *OperationSender) SendConnectionRequest(sn string) error {
 	}
 
 	// Build TCP connection request URL
-	// Expected STUN data format: {"ip": "...", "port": "..."}
 	ip := stunData["ip"]
 	port := stunData["port"]
 
@@ -172,6 +235,27 @@ func (o *OperationSender) SendConnectionRequest(sn string) error {
 
 	logger.Infof("sending connection request to device %s at %s", sn, connReqURL)
 
+	// Look up device credentials for HTTP Basic auth
+	authHeader := ""
+	type deviceCreds struct {
+		ConnectionRequestUsername *string `gorm:"column:connection_request_username"`
+		ConnectionRequestPassword *string `gorm:"column:connection_request_password"`
+	}
+	var creds deviceCreds
+	if err := o.db.Table("cpe_element").
+		Select("connection_request_username, connection_request_password").
+		Where("serial_number = ? AND deleted = ?", sn, false).First(&creds).Error; err == nil {
+		if creds.ConnectionRequestUsername != nil && *creds.ConnectionRequestUsername != "" {
+			username := *creds.ConnectionRequestUsername
+			password := ""
+			if creds.ConnectionRequestPassword != nil {
+				password = *creds.ConnectionRequestPassword
+			}
+			encoded := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+			authHeader = "Basic " + encoded
+		}
+	}
+
 	// Send HTTP GET via TCP with timeout
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
@@ -183,8 +267,12 @@ func (o *OperationSender) SendConnectionRequest(sn string) error {
 	// Set read/write deadline
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	// Build HTTP GET request
-	httpReq := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", addr)
+	// Build HTTP GET request with optional auth header
+	httpReq := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n", addr)
+	if authHeader != "" {
+		httpReq += fmt.Sprintf("Authorization: %s\r\n", authHeader)
+	}
+	httpReq += "\r\n"
 
 	_, err = conn.Write([]byte(httpReq))
 	if err != nil {
@@ -197,7 +285,8 @@ func (o *OperationSender) SendConnectionRequest(sn string) error {
 }
 
 // saveTrackData saves command tracking data to the event_log table.
-func (o *OperationSender) saveTrackData(operationId string, headerId string, sn string, operationType string) {
+// commandKey is the TR-069 CommandKey used to correlate TransferComplete back to the originating operation.
+func (o *OperationSender) saveTrackData(operationId string, headerId string, sn string, operationType string, commandKey string) {
 	ctx := context.Background()
 	now := time.Now()
 
@@ -223,13 +312,16 @@ func (o *OperationSender) saveTrackData(operationId string, headerId string, sn 
 		Status:           intPtr(1), // pending
 	}
 
-	// Marshal tracking data to JSON
+	// Marshal tracking data to JSON (includes command_key for TransferComplete correlation)
 	trackData := map[string]interface{}{
 		"operation_id":   operationId,
 		"header_id":      headerId,
 		"serial_number":  sn,
 		"operation_type": operationType,
 		"issue_time":     now.Format(time.RFC3339),
+	}
+	if commandKey != "" {
+		trackData["command_key"] = commandKey
 	}
 
 	if jsonData, err := json.Marshal(trackData); err == nil {
@@ -242,13 +334,17 @@ func (o *OperationSender) saveTrackData(operationId string, headerId string, sn 
 
 	// Also store in Redis for quick lookup during response processing
 	trackKey := fmt.Sprintf("tr069:track:%s", headerId)
-	if trackJson, err := json.Marshal(map[string]interface{}{
+	redisTrackData := map[string]interface{}{
 		"operation_id":   operationId,
 		"header_id":      headerId,
 		"sn":             sn,
 		"operation_type": operationType,
 		"event_log_id":   eventLog.Id,
-	}); err == nil {
+	}
+	if commandKey != "" {
+		redisTrackData["command_key"] = commandKey
+	}
+	if trackJson, err := json.Marshal(redisTrackData); err == nil {
 		if err := redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour); err != nil {
 			logger.Warnf("failed to cache track data in Redis: %v", err)
 		}

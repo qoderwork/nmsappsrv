@@ -341,3 +341,90 @@ func (r *Repository) UpdateTBG(tbg *TBGDevice) error {
 func (r *Repository) DeleteTBGsBySNs(sns []string) error {
 	return r.db.Where("serial_number IN ?", sns).Delete(&TBGDevice{}).Error
 }
+
+// ============================
+// Device Online Status (Task 6.2)
+// ============================
+
+// ListAllNonDeletedDevices returns all non-deleted devices with basic info for online status check
+func (r *Repository) ListAllNonDeletedDevices(licenseId int) ([]device.CpeElement, error) {
+	var devices []device.CpeElement
+	err := r.db.Where("license_id = ? AND deleted = ?", licenseId, false).
+		Select("ne_neid, serial_number, device_name").
+		Find(&devices).Error
+	return devices, err
+}
+
+// GetDeviceByElementId returns a single non-deleted device by element ID
+func (r *Repository) GetDeviceByElementId(elementId int64) (*device.CpeElement, error) {
+	var d device.CpeElement
+	err := r.db.Where("ne_neid = ? AND deleted = ?", elementId, false).
+		Select("ne_neid, serial_number, device_name").
+		First(&d).Error
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// ============================
+// ACS Settings (Task 6.3)
+// ============================
+
+// GetACSConfig reads ACS config from system_config table
+func (r *Repository) GetACSConfig() (string, error) {
+	var cfg struct {
+		Value *string `gorm:"column:config_value"`
+	}
+	err := r.db.Table("system_config").
+		Select("config_value").
+		Where("config_key = ?", "nms_config").
+		Scan(&cfg).Error
+	if err != nil {
+		return "", err
+	}
+	if cfg.Value == nil {
+		return "", nil
+	}
+	return *cfg.Value, nil
+}
+
+// UpdateACSConfig upserts ACS config in system_config table
+func (r *Repository) UpdateACSConfig(value string) error {
+	var existing struct {
+		Id int `gorm:"column:id"`
+	}
+	err := r.db.Table("system_config").
+		Select("id").
+		Where("config_key = ?", "nms_config").
+		Scan(&existing).Error
+
+	if err != nil || existing.Id == 0 {
+		// Insert new
+		return r.db.Table("system_config").
+			Create(map[string]interface{}{
+				"config_key":   "nms_config",
+				"config_value": value,
+			}).Error
+	}
+	// Update existing
+	return r.db.Table("system_config").
+		Where("config_key = ?", "nms_config").
+		Update("config_value", value).Error
+}
+
+// ============================
+// SNMP Operations (Task 6.4)
+// ============================
+
+// ListSnmpOperationLogs returns SNMP operation logs with pagination
+func (r *Repository) ListSnmpOperationLogs(offset, limit int) ([]map[string]interface{}, int64, error) {
+	var logs []map[string]interface{}
+	var total int64
+
+	query := r.db.Table("snmp_operation_log")
+	query.Count(&total)
+
+	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&logs).Error
+	return logs, total, err
+}

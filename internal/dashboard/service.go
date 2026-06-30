@@ -19,16 +19,78 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// ListCpeOnlineStatistics returns CPE online statistics (currently empty as in Java)
-func (s *Service) ListCpeOnlineStatistics(ctx context.Context) []TimeAndDataVO {
-	// Java implementation returns empty list
-	return []TimeAndDataVO{}
+// ListCpeOnlineStatistics returns CPE online statistics aggregated by time buckets from device_statistic table
+func (s *Service) ListCpeOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error) {
+	return s.listOnlineStatistics(ctx, query, "cpe")
 }
 
-// ListGNBOnlineStatistics returns GNB online statistics (currently empty as in Java)
-func (s *Service) ListGNBOnlineStatistics(ctx context.Context) []TimeAndDataVO {
-	// Java implementation returns empty list
-	return []TimeAndDataVO{}
+// ListGNBOnlineStatistics returns GNB online statistics aggregated by time buckets from device_statistic table
+func (s *Service) ListGNBOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error) {
+	return s.listOnlineStatistics(ctx, query, "gnb")
+}
+
+// listOnlineStatistics queries device_statistic for devices of a given type, aggregates by time bucket
+func (s *Service) listOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery, deviceType string) ([]TimeAndDataVO, error) {
+	// Default time range: last 24 hours
+	endTime := time.Now()
+	startTime := endTime.Add(-24 * time.Hour)
+
+	if query.StartTime != nil {
+		startTime = *query.StartTime
+	}
+	if query.EndTime != nil {
+		endTime = *query.EndTime
+	}
+
+	rows, err := s.repo.QueryOnlineStatistics(ctx, query.ElementIds, startTime, endTime, deviceType)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group by time bucket, count online/offline
+	type bucketData struct {
+		OnlineCount  int `json:"onlineCount"`
+		OfflineCount int `json:"offlineCount"`
+	}
+	buckets := make(map[time.Time]*bucketData)
+
+	for _, row := range rows {
+		statTime, _ := row["statistic_time"].(time.Time)
+		// Truncate to hour bucket
+		bucket := time.Date(statTime.Year(), statTime.Month(), statTime.Day(), statTime.Hour(), 0, 0, 0, statTime.Location())
+
+		if _, exists := buckets[bucket]; !exists {
+			buckets[bucket] = &bucketData{}
+		}
+
+		online, _ := row["online"].(bool)
+		if online {
+			buckets[bucket].OnlineCount++
+		} else {
+			buckets[bucket].OfflineCount++
+		}
+	}
+
+	// Convert to sorted time-series
+	var result []TimeAndDataVO
+	for t, data := range buckets {
+		bucketTime := t
+		result = append(result, TimeAndDataVO{
+			Time: &bucketTime,
+			Data: data,
+		})
+	}
+
+	// Sort by time ascending
+	for i := 0; i < len(result); i++ {
+		for j := i + 1; j < len(result); j++ {
+			if result[i].Time.After(*result[j].Time) {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // ListProductTypeAndDeviceCount returns device count grouped by product type with online/offline status

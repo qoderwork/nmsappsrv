@@ -1,6 +1,7 @@
 package snmp
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gosnmp/gosnmp"
 	"gorm.io/gorm"
+	"nmsappsrv/internal/device"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
 )
@@ -84,6 +86,9 @@ func (r *TrapReceiver) handleTrap(packet *gosnmp.SnmpPacket, addr *net.UDPAddr) 
 	if r.isHATrap(packet) {
 		r.processHATrap(packet, params, addr)
 	}
+
+	// Process generic trap logging for all traps
+	r.processGenericTrap(packet, params, addr)
 }
 
 // isHATrap checks whether the trap belongs to the HA enterprise OID
@@ -151,6 +156,68 @@ func (r *TrapReceiver) processHATrap(packet *gosnmp.SnmpPacket, params []SnmpPar
 			logger.Infof("HA alarm record created for NMS: %s", nmsName)
 		}
 	}
+}
+
+// processGenericTrap logs every received trap into the snmp_trap_log table.
+func (r *TrapReceiver) processGenericTrap(packet *gosnmp.SnmpPacket, params []SnmpParameter, addr *net.UDPAddr) {
+	sourceIP := addr.IP.String()
+	trapOID := extractTrapOID(packet)
+
+	logger.Infof("Processing generic trap from %s, trapOID=%s", sourceIP, trapOID)
+
+	// Marshal variable bindings to JSON
+	varBindsJSON, err := json.Marshal(params)
+	if err != nil {
+		logger.Errorf("Failed to marshal trap varbinds: %v", err)
+		varBindsJSON = []byte("[]")
+	}
+
+	// Look up the device by source IP in cpe_element table
+	var elementId *int64
+	if r.db != nil {
+		var elem device.CpeElement
+		if err := r.db.Table("cpe_element").
+			Where("device_ip = ? AND deleted = ?", sourceIP, false).
+			First(&elem).Error; err == nil {
+			elementId = &elem.NeNeid
+		} else {
+			logger.Debugf("No device found for IP %s in cpe_element: %v", sourceIP, err)
+		}
+	}
+
+	// Create the trap log entry
+	trapLog := SnmpTrapLog{
+		ElementId:   elementId,
+		SourceIP:    sourceIP,
+		TrapOID:     trapOID,
+		VarBinds:    string(varBindsJSON),
+		ReceiveTime: time.Now(),
+	}
+
+	if r.db != nil {
+		if err := r.db.Create(&trapLog).Error; err != nil {
+			logger.Errorf("Failed to create snmp_trap_log record: %v", err)
+		} else {
+			logger.Infof("snmp_trap_log created: id=%d, source=%s, trapOID=%s", trapLog.Id, sourceIP, trapOID)
+		}
+	}
+}
+
+// extractTrapOID returns the snmpTrapOID from the packet variables, or the enterprise OID for v1 traps.
+func extractTrapOID(packet *gosnmp.SnmpPacket) string {
+	// For v2c/v3, look for the snmpTrapOID variable binding
+	for _, pdu := range packet.Variables {
+		if pdu.Name == ".1.3.6.1.6.3.1.1.4.1.0" || pdu.Name == "1.3.6.1.6.3.1.1.4.1.0" {
+			if val, ok := pdu.Value.(string); ok {
+				return val
+			}
+		}
+	}
+	// For v1 traps, use the Enterprise field
+	if packet.Version == gosnmp.Version1 {
+		return packet.Enterprise
+	}
+	return "unknown"
 }
 
 // pduToParameter converts a gosnmp SnmpPDU to an SnmpParameter

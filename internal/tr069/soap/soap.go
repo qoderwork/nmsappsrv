@@ -157,6 +157,19 @@ const (
 	MsgGetParameterAttributesResponse
 )
 
+// Standard TR-069 CWMP fault codes
+const (
+	FaultMethodNotSupported    = 9000
+	FaultRequestDenied         = 9001
+	FaultInternalError         = 9002
+	FaultInvalidArguments      = 9003
+	FaultResourcesExceeded     = 9004
+	FaultRetryRequest          = 9005
+	FaultTransferCompleteRetry = 9006
+	FaultAuthenticationFailure = 9007
+	FaultUnsupportedProtocol   = 9008
+)
+
 // Internal XML parsing structures
 
 type soapEnvelope struct {

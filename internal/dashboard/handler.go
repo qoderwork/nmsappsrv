@@ -29,7 +29,11 @@ func (h *Handler) ListCpeOnlineStatistics(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	data := h.svc.ListCpeOnlineStatistics(ctx)
+	data, err := h.svc.ListCpeOnlineStatistics(ctx, &req)
+	if err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
 	utils.Success(c, data)
 }
 
@@ -42,7 +46,11 @@ func (h *Handler) ListGNBOnlineStatistics(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	data := h.svc.ListGNBOnlineStatistics(ctx)
+	data, err := h.svc.ListGNBOnlineStatistics(ctx, &req)
+	if err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
 	utils.Success(c, data)
 }
 

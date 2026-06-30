@@ -1,10 +1,12 @@
 package tr069
 
 import (
+	"encoding/base64"
 	"io"
 	"net/http"
 	"strings"
 
+	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
 
@@ -32,6 +34,88 @@ func NewACSHandler(db *gorm.DB, msgManager *MessageManager, eventProcessor *Even
 // HandleACS is the main Gin handler for POST /tr069/acs (generic device type).
 func (h *ACSHandler) HandleACS(c *gin.Context) {
 	h.handleACSWithType(c, "", "")
+}
+
+// ACSAuthMiddleware returns a Gin middleware that performs optional HTTP Basic authentication
+// for TR-069 CPE connections. If the device has connection_request_username configured in DB,
+// the middleware validates the incoming Basic auth credentials.
+// If no credentials are configured for the device, the request is allowed through (backward compatible).
+func (h *ACSHandler) ACSAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Extract SN from cookie first (for established sessions)
+		sn := ""
+		if cookie, err := c.Request.Cookie("SN"); err == nil {
+			sn = cookie.Value
+		}
+
+		// If no SN cookie, try to peek at the SOAP body to extract SN from Inform
+		if sn == "" {
+			// Allow Inform to pass through without auth (device not yet identified)
+			c.Next()
+			return
+		}
+
+		// Look up device credentials
+		var cpe device.CpeElement
+		err := h.db.Select("connection_request_username, connection_request_password").
+			Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error
+		if err != nil {
+			// Device not found or no credentials — allow through
+			c.Next()
+			return
+		}
+
+		// If device has no username configured, skip auth
+		if cpe.ConnectionRequestUsername == nil || *cpe.ConnectionRequestUsername == "" {
+			c.Next()
+			return
+		}
+
+		// Validate HTTP Basic auth
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Header("WWW-Authenticate", `Basic realm="TR-069 ACS"`)
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		if !strings.HasPrefix(authHeader, "Basic ") {
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(authHeader[6:])
+		if err != nil {
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		parts := strings.SplitN(string(decoded), ":", 2)
+		if len(parts) != 2 {
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		expectedUser := *cpe.ConnectionRequestUsername
+		expectedPass := ""
+		if cpe.ConnectionRequestPassword != nil {
+			expectedPass = *cpe.ConnectionRequestPassword
+		}
+
+		if parts[0] != expectedUser || parts[1] != expectedPass {
+			logger.Warnf("ACS auth failed for device %s: invalid credentials", sn)
+			c.Header("WWW-Authenticate", `Basic realm="TR-069 ACS"`)
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
 }
 
 // HandleEnbACS handles TR069 requests from eNodeB devices.

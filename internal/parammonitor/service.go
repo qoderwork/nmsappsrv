@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -365,4 +367,138 @@ func (s *Service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) 
 	}
 
 	return result, nil
+}
+
+// BatchQueryDeviceParametersLive sends live GetParameterValues commands to multiple
+// devices concurrently via TR-069. It resolves parameter IDs to paths, builds SOAP
+// GPV XML for each device, creates event_log tracking entries, and pushes to device
+// queues. Returns dispatch status per device (actual values arrive asynchronously).
+func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, username string) ([]BatchQueryLiveResult, error) {
+	// 1. Resolve parameter IDs to paths
+	paramMap, err := s.repo.GetParameterByIds(req.ParameterIds)
+	if err != nil {
+		return nil, fmt.Errorf("resolve parameters: %w", err)
+	}
+	paramPaths := make([]string, 0, len(paramMap))
+	for _, path := range paramMap {
+		paramPaths = append(paramPaths, path)
+	}
+	if len(paramPaths) == 0 {
+		return nil, fmt.Errorf("no valid parameter paths found")
+	}
+
+	// 2. Resolve device info for all element IDs
+	type deviceInfo struct {
+		ElementId    int64
+		SerialNumber string
+		DeviceName   string
+	}
+	devices := make([]deviceInfo, 0, len(req.ElementIds))
+	for _, elementId := range req.ElementIds {
+		var d struct {
+			NeNeid       int64   `gorm:"column:ne_neid"`
+			SerialNumber *string `gorm:"column:serial_number"`
+			DeviceName   *string `gorm:"column:device_name"`
+		}
+		if err := s.repo.db.Table("cpe_element").
+			Where("ne_neid = ? AND deleted = ?", elementId, false).
+			Scan(&d).Error; err != nil {
+			logger.Warnf("BatchQueryLive: device %d not found: %v", elementId)
+			continue
+		}
+		if d.SerialNumber == nil || *d.SerialNumber == "" {
+			logger.Warnf("BatchQueryLive: device %d has no serial number", elementId)
+			continue
+		}
+		name := ""
+		if d.DeviceName != nil {
+			name = *d.DeviceName
+		}
+		devices = append(devices, deviceInfo{
+			ElementId:    elementId,
+			SerialNumber: *d.SerialNumber,
+			DeviceName:   name,
+		})
+	}
+
+	// 3. Concurrently dispatch GPV to each device
+	results := make([]BatchQueryLiveResult, len(devices))
+	var wg sync.WaitGroup
+	wg.Add(len(devices))
+
+	for i, dev := range devices {
+		go func(idx int, d deviceInfo) {
+			defer wg.Done()
+			res := BatchQueryLiveResult{
+				ElementId:    d.ElementId,
+				SerialNumber: d.SerialNumber,
+				DeviceName:   d.DeviceName,
+			}
+
+			// Create event_log entry (status=1 pending)
+			now := time.Now()
+			eventLog := map[string]interface{}{
+				"event_type":         "GetParameterValues",
+				"element_id":         d.ElementId,
+				"username":           username,
+				"status":             1,
+				"command_issue_time": now,
+				"create_time":        now,
+			}
+			if err := s.repo.db.Table("event_log").Create(eventLog).Error; err != nil {
+				res.Error = fmt.Sprintf("create event_log: %v", err)
+				results[idx] = res
+				return
+			}
+			// Retrieve the auto-generated ID
+			var eventLogId int64
+			s.repo.db.Raw("SELECT LAST_INSERT_ID()").Scan(&eventLogId)
+
+			// Build SOAP GPV XML
+			headerId := soap.GenerateHeaderID()
+			soapXml := soap.BuildGetParameterValues(headerId, paramPaths)
+
+			// Update event_log with tracking data
+			trackData, _ := json.Marshal(map[string]interface{}{
+				"header_id":      headerId,
+				"serial_number":  d.SerialNumber,
+				"operation_type": "GET_PARAMETER_VALUES",
+				"event_log_id":   eventLogId,
+				"param_names":    paramPaths,
+				"issue_time":     now.Format(time.RFC3339),
+			})
+			s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+				Updates(map[string]interface{}{
+					"command_track_data": string(trackData),
+				})
+
+			// Cache track data in Redis for response correlation
+			ctx := context.Background()
+			trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+			trackJson, _ := json.Marshal(map[string]interface{}{
+				"header_id":      headerId,
+				"sn":             d.SerialNumber,
+				"operation_type": "GET_PARAMETER_VALUES",
+				"event_log_id":   eventLogId,
+				"is_live_query":  true,
+			})
+			redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+			// Push SOAP XML to device queue
+			queueKey := fmt.Sprintf("tr069:queue:%s", d.SerialNumber)
+			if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
+				s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+				res.Error = fmt.Sprintf("push to queue: %v", err)
+				results[idx] = res
+				return
+			}
+
+			res.Dispatched = true
+			res.EventLogId = eventLogId
+			results[idx] = res
+		}(i, dev)
+	}
+
+	wg.Wait()
+	return results, nil
 }

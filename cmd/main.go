@@ -231,7 +231,9 @@ func main() {
 			auth.GET("/parameter-templates", parameterH.ListParameterTemplates)
 			auth.POST("/parameter-templates", parameterH.CreateParameterTemplate)
 			auth.PUT("/parameter-templates/:id", parameterH.UpdateParameterTemplate)
+			auth.POST("/parameter-templates/:templateId/deploy", parameterH.DeployTemplate)
 			auth.GET("/parameter-backup-logs", parameterH.ListBackupLogs)
+			auth.POST("/parameter-backup/:elementId", parameterH.TriggerBackup)
 			auth.POST("/parameter-tasks", parameterH.BatchParameterConfigurationDirect)
 			auth.GET("/batch-configurations", parameterH.ListBatchConfigurations)
 			auth.GET("/batch-configurations/:taskId/detail", parameterH.ListBatchConfigurationDetail)
@@ -333,7 +335,43 @@ func main() {
 			auth.GET("/batch-add-object/tasks/:taskId/detail", miscH.ListBatchAddObjectTaskDetail)
 
 			// ZTP
-			auth.POST("/ztp/provision", placeholder("ztpProvision")) // 后台引擎，待实现
+			// ZTP provision: enqueue devices to the ZTP worker queue
+			auth.POST("/ztp/provision", func(c *gin.Context) {
+				var req struct {
+					ElementIds    []int64 `json:"elementIds" binding:"required"`
+					OperationUser string  `json:"operationUser"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					utils.OK(c, map[string]string{"error": "invalid request: " + err.Error()})
+					return
+				}
+
+				ctx := context.Background()
+				enqueued := 0
+				for _, elementId := range req.ElementIds {
+					// Look up device serial number
+					var dev device.CpeElement
+					if err := db.Select("ne_neid, serial_number").Where("ne_neid = ? AND deleted = ?", elementId, false).First(&dev).Error; err != nil {
+						logger.Warnf("ztp provision: device %d not found: %v", elementId, err)
+						continue
+					}
+					if dev.SerialNumber == nil || *dev.SerialNumber == "" {
+						logger.Warnf("ztp provision: device %d has no serial number", elementId)
+						continue
+					}
+
+					if err := tr069.EnqueueZTPProvision(ctx, elementId, *dev.SerialNumber, "provision", req.OperationUser); err != nil {
+						logger.Errorf("ztp provision: failed to enqueue device %d: %v", elementId, err)
+						continue
+					}
+					enqueued++
+				}
+
+				utils.OK(c, map[string]interface{}{
+					"enqueued": enqueued,
+					"total":    len(req.ElementIds),
+				})
+			})
 			auth.GET("/ztp/logs", miscH.ListZTPLogs)
 			auth.GET("/ztp/setting", miscH.GetZTPSetting)
 			auth.POST("/ztp/setting", miscH.SaveZTPSetting)
@@ -489,6 +527,7 @@ func main() {
 			auth.POST("/param-monitor/realtime", parammonitorH.GetRealtimeMonitorData)
 			auth.POST("/param-monitor/reload", parammonitorH.ReloadMonitorParameters)
 			auth.POST("/param-monitor/batch-query", parammonitorH.BatchQueryDeviceParameters)
+			auth.POST("/param-monitor/batch-query-live", parammonitorH.BatchQueryDeviceParametersLive)
 
 			// 设备日志采集 (Device Log Collection)
 			auth.POST("/device-log/collection", devicelogH.AddLogCollectionTask)
@@ -623,13 +662,27 @@ func main() {
 		rest.GET("/tbg", restapiH.ListTBGs)
 		rest.GET("/tbg/sn/:sn", restapiH.GetTBGBySN)
 		rest.GET("/tbg/wan-mac/:wanMac", restapiH.GetTBGByWanMac)
+
+		// Device Online Status (Task 6.2)
+		rest.GET("/device/online-status", restapiH.ListDeviceOnlineStatus)
+		rest.GET("/device/:elementId/online-status", restapiH.GetDeviceOnlineStatus)
+
+		// ACS Settings (Task 6.3)
+		rest.GET("/settings/acs", restapiH.GetACSSettings)
+		rest.PUT("/settings/acs", restapiH.UpdateACSSettings)
+
+		// SNMP Operations (Task 6.4)
+		rest.POST("/snmp/get", restapiH.SnmpGet)
+		rest.POST("/snmp/set", restapiH.SnmpSet)
+		rest.GET("/snmp/operation-logs", restapiH.ListSnmpOperationLogs)
 	}
 
-	// TR069 ACS endpoints (CWMP) — 不需要认证，CPE直接访问
-	router.POST("/tr069/acs", tr069ACS.HandleACS)
-	router.POST("/tr069/cpeAcs", tr069ACS.HandleCpeACS)
-	router.POST("/tr069/enbAcs", tr069ACS.HandleEnbACS)
-	router.POST("/tr069/gnbAcs", tr069ACS.HandleGnbACS)
+	// TR069 ACS endpoints (CWMP) — optional HTTP Basic auth via middleware
+	acsAuth := tr069ACS.ACSAuthMiddleware()
+	router.POST("/tr069/acs", acsAuth, tr069ACS.HandleACS)
+	router.POST("/tr069/cpeAcs", acsAuth, tr069ACS.HandleCpeACS)
+	router.POST("/tr069/enbAcs", acsAuth, tr069ACS.HandleEnbACS)
+	router.POST("/tr069/gnbAcs", acsAuth, tr069ACS.HandleGnbACS)
 
 	// SNMP trap receiver (UDP listener)
 	trapReceiver := snmp.NewTrapReceiver(database.DB, cfg.SNMP.TrapListenPort)
@@ -638,12 +691,26 @@ func main() {
 	}
 
 	// SNMP queue worker (polls Redis for outbound traps)
-	snmpWorker := snmp.NewWorker()
+	snmpWorker := snmp.NewWorker(database.DB)
 	snmpWorker.Start()
 
 	// Offline detection worker (periodically checks device online status)
 	offlineWorker := tr069.NewOfflineWorker(db)
 	offlineWorker.Start()
+
+	// ZTP provisioning worker (consumes queue:ztp and sends SPV to devices)
+	ztpWorker := tr069.NewZTPWorker(db, tr069MsgMgr)
+	ztpWorker.Start()
+
+	// Parameter collection scheduler (periodically sends GPV to configured devices)
+	paramScheduler := parameter.NewScheduler(db)
+	paramScheduler.Start()
+
+	// STUN server (stores device NAT addresses in Redis for connection requests)
+	if cfg.STUN.Enabled {
+		stunServer := tr069.NewSTUNServer(cfg.STUN.Port)
+		stunServer.Start()
+	}
 
 	// 6. 启动HTTP服务
 	srv := &http.Server{
@@ -663,6 +730,12 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
+
+	// Stop background workers
+	snmpWorker.Stop()
+	offlineWorker.Stop()
+	ztpWorker.Stop()
+	paramScheduler.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

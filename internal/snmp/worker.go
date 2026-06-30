@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"gorm.io/gorm"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -13,13 +14,14 @@ import (
 
 // Worker polls the Redis SNMP queue and sends traps
 type Worker struct {
+	db      *gorm.DB
 	mu      sync.Mutex
 	running bool
 }
 
 // NewWorker creates a new SNMP worker
-func NewWorker() *Worker {
-	return &Worker{}
+func NewWorker(db *gorm.DB) *Worker {
+	return &Worker{db: db}
 }
 
 // Start begins polling the Redis SNMP queue in a background goroutine
@@ -99,14 +101,14 @@ func (w *Worker) pollLoop() {
 			for _, p := range msg.Payload {
 				oids = append(oids, p.OID)
 			}
-			results, err := SendGet(msg.ConnectionInfo, oids)
+			results, err := SendGet(w.db, msg.ConnectionInfo, oids)
 			if err != nil {
 				logger.Errorf("SNMP worker failed to send GET: %v", err)
 			} else {
 				logger.Infof("SNMP worker GET completed, %d results", len(results))
 			}
 		case OperationSet:
-			if err := SendSet(msg.ConnectionInfo, msg.Payload); err != nil {
+			if err := SendSet(w.db, msg.ConnectionInfo, msg.Payload); err != nil {
 				logger.Errorf("SNMP worker failed to send SET: %v", err)
 			} else {
 				logger.Info("SNMP worker SET completed")

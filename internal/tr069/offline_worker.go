@@ -2,6 +2,7 @@ package tr069
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -96,10 +97,18 @@ func (w *OfflineWorker) checkAllDevices() {
 			redis.Set(ctx, dashboardKey, "1", 5*time.Minute)
 
 			// Clear any active offline alarm for this device
-			w.clearOfflineAlarm(dev.NeNeid, &now)
+			cleared := w.clearOfflineAlarm(dev.NeNeid, &now)
+			if cleared {
+				// Device just came online: publish status change notification
+				w.publishStatusChange(ctx, "online", sn, dev.NeNeid)
+			}
 		} else {
 			// Device is offline: create or ensure an offline alarm exists
-			w.createOfflineAlarm(dev, &now)
+			created := w.createOfflineAlarm(dev, &now)
+			if created {
+				// Device just went offline: publish status change notification
+				w.publishStatusChange(ctx, "offline", sn, dev.NeNeid)
+			}
 
 			// Also clear the dashboard key
 			dashboardKey := fmt.Sprintf("online_%d", dev.NeNeid)
@@ -109,14 +118,15 @@ func (w *OfflineWorker) checkAllDevices() {
 }
 
 // createOfflineAlarm creates an omc_device_offline alarm if one doesn't already exist.
-func (w *OfflineWorker) createOfflineAlarm(dev *device.CpeElement, now *time.Time) {
+// Returns true if a new alarm was created, false if one already existed.
+func (w *OfflineWorker) createOfflineAlarm(dev *device.CpeElement, now *time.Time) bool {
 	// Check if there's already an active (uncleared) offline alarm for this device
 	var existing alarm.Alarm
 	err := w.db.Where("element_id = ? AND alarm_identifier = ? AND alarm_status != 0",
 		dev.NeNeid, "omc_device_offline").First(&existing).Error
 	if err == nil {
 		// Already has an active offline alarm, no need to create another
-		return
+		return false
 	}
 
 	severity := "Major"
@@ -160,17 +170,20 @@ func (w *OfflineWorker) createOfflineAlarm(dev *device.CpeElement, now *time.Tim
 
 	if err := w.db.Create(&newAlarm).Error; err != nil {
 		logger.Errorf("offline worker: failed to create offline alarm for device %d: %v", dev.NeNeid, err)
-	} else {
-		sn := ""
-		if dev.SerialNumber != nil {
-			sn = *dev.SerialNumber
-		}
-		logger.Infof("offline worker: created offline alarm for device %d (SN=%s)", dev.NeNeid, sn)
+		return false
 	}
+
+	sn := ""
+	if dev.SerialNumber != nil {
+		sn = *dev.SerialNumber
+	}
+	logger.Infof("offline worker: created offline alarm for device %d (SN=%s)", dev.NeNeid, sn)
+	return true
 }
 
 // clearOfflineAlarm clears any active offline alarm for the given device.
-func (w *OfflineWorker) clearOfflineAlarm(neId int64, now *time.Time) {
+// Returns true if an alarm was cleared, false if no active alarm existed.
+func (w *OfflineWorker) clearOfflineAlarm(neId int64, now *time.Time) bool {
 	result := w.db.Model(&alarm.Alarm{}).
 		Where("element_id = ? AND alarm_identifier = ? AND alarm_status != 0",
 			neId, "omc_device_offline").
@@ -181,5 +194,31 @@ func (w *OfflineWorker) clearOfflineAlarm(neId int64, now *time.Time) {
 		})
 	if result.RowsAffected > 0 {
 		logger.Infof("offline worker: cleared offline alarm for device %d", neId)
+		return true
+	}
+	return false
+}
+
+// publishStatusChange publishes a device status change notification to Redis pub/sub.
+// The notification is sent to the "device:status:change" channel with event type,
+// serial number, network element ID, and timestamp.
+func (w *OfflineWorker) publishStatusChange(ctx context.Context, event string, sn string, neId int64) {
+	notification := map[string]interface{}{
+		"event": event,
+		"sn":    sn,
+		"neId":  neId,
+		"time":  time.Now().Format(time.RFC3339),
+	}
+
+	jsonData, err := json.Marshal(notification)
+	if err != nil {
+		logger.Errorf("offline worker: failed to marshal status change notification: %v", err)
+		return
+	}
+
+	if err := redis.Publish(ctx, "device:status:change", string(jsonData)); err != nil {
+		logger.Errorf("offline worker: failed to publish status change notification for SN=%s: %v", sn, err)
+	} else {
+		logger.Infof("offline worker: published %s notification for SN=%s (neId=%d)", event, sn, neId)
 	}
 }

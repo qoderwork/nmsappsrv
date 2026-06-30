@@ -9,7 +9,9 @@ import (
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/internal/snmp"
 	"nmsappsrv/pkg/logger"
+	"nmsappsrv/pkg/redis"
 
 	"github.com/gin-gonic/gin"
 )
@@ -665,6 +667,340 @@ func (s *Service) DeleteTBGs(c *gin.Context, req *DeleteTBGRequest) error {
 
 	logger.Infof("Deleted %d TBG devices by user %s", len(req.SerialNumbers), username)
 	return nil
+}
+
+// ============================
+// Device Online Status (Task 6.2)
+// ============================
+
+// ListDeviceOnlineStatus returns real-time online status for all devices
+func (s *Service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo, error) {
+	licenseId := middleware.GetLicenseId(c)
+
+	devices, err := s.repo.ListAllNonDeletedDevices(licenseId)
+	if err != nil {
+		logger.Errorf("Failed to list devices for online status: %v", err)
+		return nil, fmt.Errorf("failed to list devices")
+	}
+
+	if len(devices) == 0 {
+		return []DeviceOnlineStatusVo{}, nil
+	}
+
+	// Build Redis keys for online status check
+	keys := make([]string, len(devices))
+	for i, d := range devices {
+		keys[i] = fmt.Sprintf("online_%d", d.NeNeid)
+	}
+
+	// Batch check online status from Redis
+	ctx := c.Request.Context()
+	values, _ := redis.MGet(ctx, keys...)
+
+	var result []DeviceOnlineStatusVo
+	for i, d := range devices {
+		online := false
+		if i < len(values) && values[i] != nil {
+			if val, ok := values[i].(string); ok && strings.ToLower(val) == "yes" {
+				online = true
+			}
+		}
+
+		vo := DeviceOnlineStatusVo{
+			ElementId:    d.NeNeid,
+			SerialNumber: derefStr(d.SerialNumber),
+			DeviceName:   derefStr(d.DeviceName),
+			Online:       online,
+		}
+		result = append(result, vo)
+	}
+
+	return result, nil
+}
+
+// GetDeviceOnlineStatus returns real-time online status for a single device
+func (s *Service) GetDeviceOnlineStatus(c *gin.Context, elementId int64) (*DeviceOnlineStatusVo, error) {
+	d, err := s.repo.GetDeviceByElementId(elementId)
+	if err != nil {
+		return nil, fmt.Errorf("device not found")
+	}
+
+	// Check Redis for online status
+	ctx := c.Request.Context()
+	key := fmt.Sprintf("online_%d", elementId)
+	val, _ := redis.Get(ctx, key)
+
+	online := strings.ToLower(val) == "yes"
+
+	return &DeviceOnlineStatusVo{
+		ElementId:    d.NeNeid,
+		SerialNumber: derefStr(d.SerialNumber),
+		DeviceName:   derefStr(d.DeviceName),
+		Online:       online,
+	}, nil
+}
+
+// ============================
+// ACS Settings (Task 6.3)
+// ============================
+
+// GetACSSettings returns the ACS configuration via REST API
+func (s *Service) GetACSSettings(c *gin.Context) (*RestACSConfigVo, error) {
+	configJSON, err := s.repo.GetACSConfig()
+	if err != nil {
+		logger.Errorf("Failed to get ACS config: %v", err)
+		return nil, fmt.Errorf("failed to get ACS config")
+	}
+
+	if configJSON == "" {
+		return &RestACSConfigVo{}, nil
+	}
+
+	// Parse the full ACS config from DB
+	var fullCfg struct {
+		AcsUrl            *string `json:"acsUrl"`
+		AcsUsername       *string `json:"acsUsername"`
+		AcsPassword       *string `json:"acsPassword"`
+		ConnectionTimeout *int    `json:"connectionTimeout"`
+		InformInterval    *int    `json:"informInterval"`
+		UdpPort           *int    `json:"udpPort"`
+		TR069Enabled      *bool   `json:"tr069Enabled"`
+	}
+	if err := json.Unmarshal([]byte(configJSON), &fullCfg); err != nil {
+		logger.Errorf("Failed to unmarshal ACS config: %v", err)
+		return nil, fmt.Errorf("failed to parse ACS config")
+	}
+
+	// Return without password for security
+	return &RestACSConfigVo{
+		AcsUrl:            fullCfg.AcsUrl,
+		AcsUsername:       fullCfg.AcsUsername,
+		ConnectionTimeout: fullCfg.ConnectionTimeout,
+		InformInterval:    fullCfg.InformInterval,
+		UdpPort:           fullCfg.UdpPort,
+		TR069Enabled:      fullCfg.TR069Enabled,
+	}, nil
+}
+
+// UpdateACSSettings updates the ACS configuration via REST API
+func (s *Service) UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequest) error {
+	// Get existing config
+	configJSON, err := s.repo.GetACSConfig()
+	if err != nil {
+		logger.Errorf("Failed to get existing ACS config: %v", err)
+		return fmt.Errorf("failed to get ACS config")
+	}
+
+	// Parse existing config
+	var existing struct {
+		AcsUrl            *string `json:"acsUrl"`
+		AcsUsername       *string `json:"acsUsername"`
+		AcsPassword       *string `json:"acsPassword"`
+		ConnectionTimeout *int    `json:"connectionTimeout"`
+		InformInterval    *int    `json:"informInterval"`
+		UdpPort           *int    `json:"udpPort"`
+		TR069Enabled      *bool   `json:"tr069Enabled"`
+	}
+	if configJSON != "" {
+		if err := json.Unmarshal([]byte(configJSON), &existing); err != nil {
+			logger.Errorf("Failed to unmarshal existing ACS config: %v", err)
+			return fmt.Errorf("failed to parse existing ACS config")
+		}
+	}
+
+	// Merge with request
+	if req.AcsUrl != nil {
+		existing.AcsUrl = req.AcsUrl
+	}
+	if req.AcsUsername != nil {
+		existing.AcsUsername = req.AcsUsername
+	}
+	if req.AcsPassword != nil {
+		existing.AcsPassword = req.AcsPassword
+	}
+	if req.ConnectionTimeout != nil {
+		existing.ConnectionTimeout = req.ConnectionTimeout
+	}
+	if req.InformInterval != nil {
+		existing.InformInterval = req.InformInterval
+	}
+	if req.UdpPort != nil {
+		existing.UdpPort = req.UdpPort
+	}
+	if req.TR069Enabled != nil {
+		existing.TR069Enabled = req.TR069Enabled
+	}
+
+	// Marshal updated config
+	data, err := json.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ACS config")
+	}
+
+	// Save to DB
+	if err := s.repo.UpdateACSConfig(string(data)); err != nil {
+		logger.Errorf("Failed to update ACS config: %v", err)
+		return fmt.Errorf("failed to update ACS config")
+	}
+
+	// Also update Redis cache
+	ctx := c.Request.Context()
+	redis.Set(ctx, "nms_config", string(data), 0)
+
+	return nil
+}
+
+// ============================
+// SNMP Operations (Task 6.4)
+// ============================
+
+// SnmpGet queues an SNMP GET operation to the Redis SNMP queue
+func (s *Service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
+	licenseId := middleware.GetLicenseId(c)
+	username := middleware.GetUsername(c)
+
+	// Verify device exists and get connection info
+	dev, err := s.repo.GetDeviceById(req.ElementId, licenseId)
+	if err != nil {
+		return fmt.Errorf("device not found")
+	}
+
+	if dev.DeviceIp == nil || *dev.DeviceIp == "" {
+		return fmt.Errorf("device has no IP address configured")
+	}
+
+	// Build SNMP parameters from OIDs
+	var payload []snmp.SnmpParameter
+	for _, oid := range req.OIDs {
+		payload = append(payload, snmp.SnmpParameter{
+			OID:  oid,
+			Type: "string",
+		})
+	}
+
+	// Build SNMP message
+	msg := snmp.SnmpMessage{
+		OperationType: snmp.OperationGet,
+		ConnectionInfo: snmp.SnmpConnectionInfo{
+			IP:        *dev.DeviceIp,
+			Port:      161,
+			Version:   2,
+			Community: "public",
+		},
+		Payload: payload,
+	}
+
+	// Marshal and push to Redis SNMP queue
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal SNMP message")
+	}
+
+	ctx := c.Request.Context()
+	if err := redis.LPush(ctx, snmp.SnmpQueueName, string(msgJSON)); err != nil {
+		logger.Errorf("Failed to push SNMP GET to queue: %v", err)
+		return fmt.Errorf("failed to queue SNMP GET operation")
+	}
+
+	logger.Infof("SNMP GET queued for device %d (%d OIDs) by user %s", req.ElementId, len(req.OIDs), username)
+	return nil
+}
+
+// SnmpSet queues an SNMP SET operation to the Redis SNMP queue
+func (s *Service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
+	licenseId := middleware.GetLicenseId(c)
+	username := middleware.GetUsername(c)
+
+	// Verify device exists and get connection info
+	dev, err := s.repo.GetDeviceById(req.ElementId, licenseId)
+	if err != nil {
+		return fmt.Errorf("device not found")
+	}
+
+	if dev.DeviceIp == nil || *dev.DeviceIp == "" {
+		return fmt.Errorf("device has no IP address configured")
+	}
+
+	// Build SNMP parameters
+	var payload []snmp.SnmpParameter
+	for _, p := range req.Parameters {
+		payload = append(payload, snmp.SnmpParameter{
+			OID:   p.OID,
+			Type:  p.Type,
+			Value: p.Value,
+		})
+	}
+
+	// Build SNMP message
+	msg := snmp.SnmpMessage{
+		OperationType: snmp.OperationSet,
+		ConnectionInfo: snmp.SnmpConnectionInfo{
+			IP:        *dev.DeviceIp,
+			Port:      161,
+			Version:   2,
+			Community: "public",
+		},
+		Payload: payload,
+	}
+
+	// Marshal and push to Redis SNMP queue
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal SNMP message")
+	}
+
+	ctx := c.Request.Context()
+	if err := redis.LPush(ctx, snmp.SnmpQueueName, string(msgJSON)); err != nil {
+		logger.Errorf("Failed to push SNMP SET to queue: %v", err)
+		return fmt.Errorf("failed to queue SNMP SET operation")
+	}
+
+	logger.Infof("SNMP SET queued for device %d (%d params) by user %s", req.ElementId, len(req.Parameters), username)
+	return nil
+}
+
+// ListSnmpOperationLogs returns SNMP operation logs with pagination
+func (s *Service) ListSnmpOperationLogs(c *gin.Context, offset, limit int) ([]SnmpOperationLogVo, int64, error) {
+	logs, total, err := s.repo.ListSnmpOperationLogs(offset, limit)
+	if err != nil {
+		logger.Errorf("Failed to list SNMP operation logs: %v", err)
+		return nil, 0, fmt.Errorf("failed to list SNMP operation logs")
+	}
+
+	var result []SnmpOperationLogVo
+	for _, l := range logs {
+		vo := SnmpOperationLogVo{}
+		if v, ok := l["id"].(int64); ok {
+			vo.Id = v
+		}
+		if v, ok := l["element_id"].(int64); ok {
+			vo.ElementId = &v
+		}
+		if v, ok := l["operation"].(string); ok {
+			vo.Operation = v
+		}
+		if v, ok := l["oid"].(string); ok {
+			vo.OID = v
+		}
+		if v, ok := l["value"].(string); ok {
+			vo.Value = v
+		}
+		if v, ok := l["status"].(string); ok {
+			vo.Status = v
+		}
+		if v, ok := l["error_msg"].(string); ok {
+			vo.ErrorMsg = v
+		}
+		if v, ok := l["operator"].(string); ok {
+			vo.Operator = v
+		}
+		if v, ok := l["operate_time"].(time.Time); ok {
+			vo.OperateTime = v.Format("2006-01-02T15:04:05Z07:00")
+		}
+		result = append(result, vo)
+	}
+
+	return result, total, nil
 }
 
 // ============================

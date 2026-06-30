@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"nmsappsrv/internal/config"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -20,6 +21,16 @@ const DefaultEnterpriseOID = 31664
 // OID prefix for alarm trap parameters
 const alarmTrapOIDPrefix = ".1.3.6.1.4.1.%d.16"
 
+// GetEnterpriseOID returns the enterprise OID from runtime config, falling back to the default.
+func GetEnterpriseOID() uint32 {
+	if configuredOID := config.GetSNMPEnterpriseOID(); configuredOID != "" {
+		if oid, err := strconv.ParseUint(configuredOID, 10, 32); err == nil {
+			return uint32(oid)
+		}
+	}
+	return DefaultEnterpriseOID
+}
+
 // SendAlarmTrap builds and enqueues an SNMP trap for the given alarm
 func SendAlarmTrap(db *gorm.DB, alarmId int64, alarmType int, severity string,
 	probableCause string, eventType string, specificProblem string,
@@ -29,7 +40,7 @@ func SendAlarmTrap(db *gorm.DB, alarmId int64, alarmType int, severity string,
 	nmsIp string, nmsHostname string, enterpriseOID int) error {
 
 	if enterpriseOID <= 0 {
-		enterpriseOID = DefaultEnterpriseOID
+		enterpriseOID = int(GetEnterpriseOID())
 	}
 
 	oidPrefix := fmt.Sprintf(alarmTrapOIDPrefix, enterpriseOID)

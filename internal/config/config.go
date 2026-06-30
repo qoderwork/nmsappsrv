@@ -17,6 +17,7 @@ type Config struct {
 	SNMP    SNMPConfig    `mapstructure:"snmp"`
 	MQ      MQConfig      `mapstructure:"mq"`
 	Mail    MailConfig    `mapstructure:"mail"`
+	STUN    STUNConfig    `mapstructure:"stun"`
 }
 
 type ServerConfig struct {
@@ -84,6 +85,11 @@ type MailConfig struct {
 	AESKey string `mapstructure:"aes_key"` // hex-encoded 32-byte AES-256 key
 }
 
+type STUNConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	Port    int  `mapstructure:"port"`
+}
+
 var Cfg *Config
 
 func Load(configPath ...string) (*Config, error) {
@@ -124,4 +130,13 @@ func Load(configPath ...string) (*Config, error) {
 
 	logger.Infof("config loaded: server=%s, port=%d", Cfg.Server.Name, Cfg.Server.Port)
 	return Cfg, nil
+}
+
+// GetSNMPEnterpriseOID returns the configured SNMP enterprise OID string.
+// Returns empty string if config is not loaded or the field is not set.
+func GetSNMPEnterpriseOID() string {
+	if Cfg == nil {
+		return ""
+	}
+	return Cfg.SNMP.EnterpriseOID
 }

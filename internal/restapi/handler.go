@@ -519,3 +519,115 @@ func (h *Handler) GetTBGByWanMac(c *gin.Context) {
 
 	utils.Success(c, tbg)
 }
+
+// ============================
+// Device Online Status (Task 6.2)
+// ============================
+
+// GET /v1/device/online-status — list all devices with real-time online status
+func (h *Handler) ListDeviceOnlineStatus(c *gin.Context) {
+	data, err := h.svc.ListDeviceOnlineStatus(c)
+	if err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
+
+	utils.Success(c, data)
+}
+
+// GET /v1/device/:elementId/online-status — single device online status
+func (h *Handler) GetDeviceOnlineStatus(c *gin.Context) {
+	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)
+	if err != nil {
+		utils.Error(c, 400, "Invalid element ID")
+		return
+	}
+
+	data, err := h.svc.GetDeviceOnlineStatus(c, elementId)
+	if err != nil {
+		utils.Error(c, 404, err.Error())
+		return
+	}
+
+	utils.Success(c, data)
+}
+
+// ============================
+// ACS Settings (Task 6.3)
+// ============================
+
+// GET /v1/settings/acs — get ACS configuration
+func (h *Handler) GetACSSettings(c *gin.Context) {
+	data, err := h.svc.GetACSSettings(c)
+	if err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
+
+	utils.Success(c, data)
+}
+
+// PUT /v1/settings/acs — update ACS configuration
+func (h *Handler) UpdateACSSettings(c *gin.Context) {
+	var req RestUpdateACSConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.svc.UpdateACSSettings(c, &req); err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
+
+	utils.Success(c, nil)
+}
+
+// ============================
+// SNMP Operations (Task 6.4)
+// ============================
+
+// POST /v1/snmp/get — trigger SNMP GET
+func (h *Handler) SnmpGet(c *gin.Context) {
+	var req SnmpGetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.svc.SnmpGet(c, &req); err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
+
+	utils.Success(c, nil)
+}
+
+// POST /v1/snmp/set — trigger SNMP SET
+func (h *Handler) SnmpSet(c *gin.Context) {
+	var req SnmpSetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.svc.SnmpSet(c, &req); err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
+
+	utils.Success(c, nil)
+}
+
+// GET /v1/snmp/operation-logs — list SNMP operation logs with pagination
+func (h *Handler) ListSnmpOperationLogs(c *gin.Context) {
+	offset, limit := parseOffsetLimit(c)
+
+	data, total, err := h.svc.ListSnmpOperationLogs(c, offset, limit)
+	if err != nil {
+		utils.Error(c, 500, err.Error())
+		return
+	}
+
+	h.offsetResponse(c, data, total, offset, limit, buildBaseUrl(c))
+}

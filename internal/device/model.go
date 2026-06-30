@@ -55,6 +55,8 @@ type CpeElement struct {
 	CoonReqUrl              *string    `gorm:"column:coon_req_url;type:varchar(255)" json:"coon_req_url"`
 	InDiagnostics           *bool      `gorm:"column:in_diagnostics" json:"in_diagnostics"`
 	LowResource             *bool      `gorm:"column:low_resource" json:"low_resource"`
+	ConnectionRequestUsername *string  `gorm:"column:connection_request_username;type:varchar(255)" json:"connection_request_username"`
+	ConnectionRequestPassword *string  `gorm:"column:connection_request_password;type:varchar(255)" json:"connection_request_password"`
 }
 
 func (CpeElement) TableName() string { return "cpe_element" }

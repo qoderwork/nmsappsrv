@@ -200,6 +200,47 @@ func (h *Handler) UpdateParameterTemplate(c *gin.Context) {
 	utils.Success(c, t)
 }
 
+// DeployTemplate handles POST /parameter/templates/:templateId/deploy
+func (h *Handler) DeployTemplate(c *gin.Context) {
+	templateId, err := strconv.ParseInt(c.Param("templateId"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid template id")
+		return
+	}
+
+	var body struct {
+		ElementIds []int64 `json:"elementIds" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body: elementIds required")
+		return
+	}
+
+	username := middleware.GetUsername(c)
+	results, err := h.svc.DeployTemplate(templateId, body.ElementIds, username)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, results)
+}
+
+// TriggerBackup handles POST /parameter/:elementId/backup
+func (h *Handler) TriggerBackup(c *gin.Context) {
+	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid element id")
+		return
+	}
+
+	username := middleware.GetUsername(c)
+	if err := h.svc.TriggerBackup(elementId, username); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
+}
+
 // ---------------------------------------------------------------------------
 // ParameterBackupLog endpoints
 // ---------------------------------------------------------------------------

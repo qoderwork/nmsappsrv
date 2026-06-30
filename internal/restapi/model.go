@@ -139,3 +139,71 @@ type TBGVo struct {
 	Address       string `json:"address"`
 	WanMacAddress string `json:"wanMacAddress"`
 }
+
+// --- Device Online Status DTOs (Task 6.2) ---
+
+// DeviceOnlineStatusVo represents real-time online status of a device
+type DeviceOnlineStatusVo struct {
+	ElementId  int64  `json:"elementId"`
+	SerialNumber string `json:"serialNumber"`
+	DeviceName string `json:"deviceName"`
+	Online     bool   `json:"online"`
+	LastSeen   string `json:"lastSeen,omitempty"`
+}
+
+// --- ACS Settings DTOs (Task 6.3) ---
+
+// RestACSConfigVo represents the ACS configuration returned by the REST API
+type RestACSConfigVo struct {
+	AcsUrl            *string `json:"acsUrl"`
+	AcsUsername       *string `json:"acsUsername"`
+	ConnectionTimeout *int    `json:"connectionTimeout"`
+	InformInterval    *int    `json:"informInterval"`
+	UdpPort           *int    `json:"udpPort"`
+	TR069Enabled      *bool   `json:"tr069Enabled"`
+}
+
+// RestUpdateACSConfigRequest represents the request to update ACS configuration via REST API
+type RestUpdateACSConfigRequest struct {
+	AcsUrl            *string `json:"acsUrl"`
+	AcsUsername       *string `json:"acsUsername"`
+	AcsPassword       *string `json:"acsPassword"`
+	ConnectionTimeout *int    `json:"connectionTimeout"`
+	InformInterval    *int    `json:"informInterval"`
+	UdpPort           *int    `json:"udpPort"`
+	TR069Enabled      *bool   `json:"tr069Enabled"`
+}
+
+// --- SNMP Operation DTOs (Task 6.4) ---
+
+// SnmpGetRequest represents a request to perform an SNMP GET operation
+type SnmpGetRequest struct {
+	ElementId int64    `json:"elementId" binding:"required"`
+	OIDs      []string `json:"oids" binding:"required"`
+}
+
+// SnmpSetRequest represents a request to perform an SNMP SET operation
+type SnmpSetRequest struct {
+	ElementId  int64              `json:"elementId" binding:"required"`
+	Parameters []SnmpParameterVo  `json:"parameters" binding:"required"`
+}
+
+// SnmpParameterVo represents a single SNMP variable binding for SET operations
+type SnmpParameterVo struct {
+	OID   string `json:"oid" binding:"required"`
+	Type  string `json:"type" binding:"required"`
+	Value string `json:"value" binding:"required"`
+}
+
+// SnmpOperationLogVo represents an SNMP operation log entry
+type SnmpOperationLogVo struct {
+	Id          int64  `json:"id"`
+	ElementId   *int64 `json:"elementId"`
+	Operation   string `json:"operation"`
+	OID         string `json:"oid"`
+	Value       string `json:"value"`
+	Status      string `json:"status"`
+	ErrorMsg    string `json:"errorMsg"`
+	Operator    string `json:"operator"`
+	OperateTime string `json:"operateTime"`
+}

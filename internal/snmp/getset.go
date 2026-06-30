@@ -1,18 +1,23 @@
 package snmp
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
+	"gorm.io/gorm"
+	"nmsappsrv/internal/device"
 	"nmsappsrv/pkg/logger"
 )
 
 // SendGet performs an SNMP GET request for the given OIDs and returns the results.
-func SendGet(connInfo SnmpConnectionInfo, oids []string) ([]SnmpParameter, error) {
+func SendGet(db *gorm.DB, connInfo SnmpConnectionInfo, oids []string) ([]SnmpParameter, error) {
 	snmpClient := buildGoSNMP(connInfo)
 
 	if err := snmpClient.Connect(); err != nil {
+		logSnmpOperation(db, connInfo.IP, "GET", strings.Join(oids, ","), "", "FAILED", err.Error())
 		return nil, fmt.Errorf("SNMP connect failed to %s:%d: %w", connInfo.IP, connInfo.Port, err)
 	}
 	defer snmpClient.Conn.Close()
@@ -29,6 +34,7 @@ func SendGet(connInfo SnmpConnectionInfo, oids []string) ([]SnmpParameter, error
 
 	result, err := snmpClient.Get(prefixedOIDs)
 	if err != nil {
+		logSnmpOperation(db, connInfo.IP, "GET", strings.Join(oids, ","), "", "FAILED", err.Error())
 		return nil, fmt.Errorf("SNMP GET failed to %s:%d: %w", connInfo.IP, connInfo.Port, err)
 	}
 
@@ -41,26 +47,36 @@ func SendGet(connInfo SnmpConnectionInfo, oids []string) ([]SnmpParameter, error
 		})
 	}
 
+	// Log successful GET
+	resultJSON, _ := json.Marshal(params)
+	logSnmpOperation(db, connInfo.IP, "GET", strings.Join(oids, ","), string(resultJSON), "SUCCESS", "")
+
 	logger.Infof("SNMP GET completed for %s:%d, got %d results", connInfo.IP, connInfo.Port, len(params))
 	return params, nil
 }
 
 // SendSet performs an SNMP SET request with the given parameters.
-func SendSet(connInfo SnmpConnectionInfo, params []SnmpParameter) error {
+func SendSet(db *gorm.DB, connInfo SnmpConnectionInfo, params []SnmpParameter) error {
 	snmpClient := buildGoSNMP(connInfo)
 
 	if err := snmpClient.Connect(); err != nil {
+		oids := summarizeParamOIDs(params)
+		logSnmpOperation(db, connInfo.IP, "SET", oids, "", "FAILED", err.Error())
 		return fmt.Errorf("SNMP connect failed to %s:%d: %w", connInfo.IP, connInfo.Port, err)
 	}
 	defer snmpClient.Conn.Close()
 
 	pdus, err := buildTrapVariables(params)
 	if err != nil {
+		oids := summarizeParamOIDs(params)
+		logSnmpOperation(db, connInfo.IP, "SET", oids, "", "FAILED", err.Error())
 		return fmt.Errorf("failed to build SET PDUs: %w", err)
 	}
 
 	result, err := snmpClient.Set(pdus)
 	if err != nil {
+		oids := summarizeParamOIDs(params)
+		logSnmpOperation(db, connInfo.IP, "SET", oids, "", "FAILED", err.Error())
 		return fmt.Errorf("SNMP SET failed to %s:%d: %w", connInfo.IP, connInfo.Port, err)
 	}
 
@@ -71,6 +87,10 @@ func SendSet(connInfo SnmpConnectionInfo, params []SnmpParameter) error {
 			}
 		}
 	}
+
+	// Log successful SET
+	oids := summarizeParamOIDs(params)
+	logSnmpOperation(db, connInfo.IP, "SET", oids, "", "SUCCESS", "")
 
 	logger.Infof("SNMP SET completed for %s:%d, %d variables", connInfo.IP, connInfo.Port, len(pdus))
 	return nil
@@ -160,4 +180,44 @@ func formatSnmpValue(variable gosnmp.SnmpPDU) string {
 	default:
 		return fmt.Sprintf("%v", variable.Value)
 	}
+}
+
+// logSnmpOperation creates an audit log entry for an SNMP operation.
+func logSnmpOperation(db *gorm.DB, targetIP string, operation string, oid string, value string, status string, errMsg string) {
+	if db == nil {
+		return
+	}
+
+	// Look up element_id by IP
+	var elementId *int64
+	var elem device.CpeElement
+	if err := db.Table("cpe_element").
+		Where("device_ip = ? AND deleted = ?", targetIP, false).
+		First(&elem).Error; err == nil {
+		elementId = &elem.NeNeid
+	}
+
+	opLog := SnmpOperationLog{
+		ElementId:   elementId,
+		Operation:   operation,
+		OID:         oid,
+		Value:       value,
+		Status:      status,
+		ErrorMsg:    errMsg,
+		Operator:    "system",
+		OperateTime: time.Now(),
+	}
+
+	if err := db.Create(&opLog).Error; err != nil {
+		logger.Errorf("Failed to create snmp_operation_log: %v", err)
+	}
+}
+
+// summarizeParamOIDs builds a comma-separated list of OIDs from parameters.
+func summarizeParamOIDs(params []SnmpParameter) string {
+	oids := make([]string, 0, len(params))
+	for _, p := range params {
+		oids = append(oids, p.OID)
+	}
+	return strings.Join(oids, ",")
 }
