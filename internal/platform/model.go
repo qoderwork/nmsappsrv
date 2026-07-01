@@ -2,9 +2,8 @@ package platform
 
 // systemConfigModel maps to the system_config table (shared table, local definition)
 type systemConfigModel struct {
-	Id    int     `gorm:"primaryKey;autoIncrement"`
-	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex"`
-	Value *string `gorm:"column:config_value;type:longtext"`
+	Id     string  `gorm:"primaryKey;column:id;type:varchar(255)"`
+	Config *string `gorm:"column:config;type:longtext"`
 }
 
 func (systemConfigModel) TableName() string { return "system_config" }

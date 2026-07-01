@@ -394,9 +394,8 @@ type ZTPSetting struct {
 
 // SystemConfig 对应 system_config 表 (generic key-value config store)
 type SystemConfig struct {
-	Id    int     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex" json:"key"`
-	Value *string `gorm:"column:config_value;type:longtext" json:"value"`
+	Id     string  `gorm:"primaryKey;column:id;type:varchar(255)" json:"id"`
+	Config *string `gorm:"column:config;type:longtext" json:"config"`
 }
 
 func (SystemConfig) TableName() string { return "system_config" }

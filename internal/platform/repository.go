@@ -19,32 +19,32 @@ func NewRepository(db *gorm.DB) *Repository {
 // GetSystemConfig reads a system_config entry by config_key
 func (r *Repository) GetSystemConfig(key string) (string, error) {
 	var cfg systemConfigModel
-	if err := r.db.Where("config_key = ?", key).First(&cfg).Error; err != nil {
+	if err := r.db.Where("id = ?", key).First(&cfg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}
 		return "", err
 	}
-	if cfg.Value == nil {
+	if cfg.Config == nil {
 		return "", nil
 	}
-	return *cfg.Value, nil
+	return *cfg.Config, nil
 }
 
 // SaveSystemConfig upserts a system_config entry
 func (r *Repository) SaveSystemConfig(key, value string) error {
 	var cfg systemConfigModel
-	err := r.db.Where("config_key = ?", key).First(&cfg).Error
+	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			cfg = systemConfigModel{
-				Key:   &key,
-				Value: &value,
+				Id:     key,
+				Config: &value,
 			}
 			return r.db.Create(&cfg).Error
 		}
 		return err
 	}
-	cfg.Value = &value
+	cfg.Config = &value
 	return r.db.Save(&cfg).Error
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
@@ -32,7 +31,7 @@ func (r *Repository) CreateTask(task *NMSBackupAndRevertTask) error {
 
 func (r *Repository) GetTaskById(id int) (*NMSBackupAndRevertTask, error) {
 	var task NMSBackupAndRevertTask
-	err := r.db.Where("id = ? AND deleted = ?", id, false).First(&task).Error
+	err := r.db.Where("id = ?", id).First(&task).Error
 	if err != nil {
 		return nil, err
 	}
@@ -44,14 +43,14 @@ func (r *Repository) UpdateTask(task *NMSBackupAndRevertTask) error {
 }
 
 func (r *Repository) DeleteTask(id int) error {
-	return r.db.Model(&NMSBackupAndRevertTask{}).Where("id = ?", id).Update("deleted", true).Error
+	return r.db.Where("id = ?", id).Delete(&NMSBackupAndRevertTask{}).Error
 }
 
 func (r *Repository) ListTasks(licenseId int, page, pageSize int) ([]NMSBackupAndRevertTask, int64, error) {
 	var tasks []NMSBackupAndRevertTask
 	var total int64
 
-	query := r.db.Model(&NMSBackupAndRevertTask{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	query := r.db.Model(&NMSBackupAndRevertTask{}).Where("license_id = ?", licenseId)
 	query.Count(&total)
 
 	offset := (page - 1) * pageSize
@@ -60,10 +59,10 @@ func (r *Repository) ListTasks(licenseId int, page, pageSize int) ([]NMSBackupAn
 }
 
 // FindScheduledTasks returns all backup tasks that are scheduled (execute_mode=2)
-// with a non-empty cron_expr and not soft-deleted.
+// with a non-empty cron_expr.
 func (r *Repository) FindScheduledTasks() ([]NMSBackupAndRevertTask, error) {
 	var tasks []NMSBackupAndRevertTask
-	err := r.db.Where("execute_mode = ? AND cron_expr IS NOT NULL AND cron_expr != '' AND deleted = ?", 2, false).Find(&tasks).Error
+	err := r.db.Where("execute_mode = ? AND cron_expr IS NOT NULL AND cron_expr != ''", 2).Find(&tasks).Error
 	return tasks, err
 }
 
@@ -137,8 +136,8 @@ func (r *Repository) GetRetentionConfig() (*BackupRetentionConfig, error) {
 	// Fallback to database
 	var value string
 	err = r.db.Table("system_config").
-		Where("config_key = ?", backupRetentionConfigKey).
-		Pluck("config_value", &value).Error
+		Where("id = ?", backupRetentionConfigKey).
+		Pluck("config", &value).Error
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +175,8 @@ func (r *Repository) UpdateRetentionConfig(config *BackupRetentionConfig) error 
 	// Update database
 	var existing string
 	err = r.db.Table("system_config").
-		Where("config_key = ?", backupRetentionConfigKey).
-		Pluck("config_value", &existing).Error
+		Where("id = ?", backupRetentionConfigKey).
+		Pluck("config", &existing).Error
 	if err != nil {
 		return err
 	}
@@ -185,15 +184,14 @@ func (r *Repository) UpdateRetentionConfig(config *BackupRetentionConfig) error 
 	if existing == "" {
 		// Insert new record
 		err = r.db.Table("system_config").Create(map[string]interface{}{
-			"config_key":   backupRetentionConfigKey,
-			"config_value": string(jsonData),
-			"update_time":  time.Now(),
+			"id":     backupRetentionConfigKey,
+			"config": string(jsonData),
 		}).Error
 	} else {
 		// Update existing record
 		err = r.db.Table("system_config").
-			Where("config_key = ?", backupRetentionConfigKey).
-			Update("config_value", string(jsonData)).Error
+			Where("id = ?", backupRetentionConfigKey).
+			Update("config", string(jsonData)).Error
 	}
 	if err != nil {
 		return err

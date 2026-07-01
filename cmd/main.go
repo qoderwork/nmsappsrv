@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"nmsappsrv/internal/alarm"
@@ -58,6 +56,7 @@ import (
 	"nmsappsrv/pkg/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/qoderwork/go-infra/lifecycle"
 )
 
 func main() {
@@ -90,7 +89,8 @@ func main() {
 		MaxOpenConns: cfg.DB.MaxOpenConns,
 		LogLevel:     cfg.DB.LogLevel,
 	}); err != nil {
-		logger.Fatalf("database init failed: %v", err)
+		fmt.Fprintf(os.Stderr, "database init failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	// 3. AutoMigrate 所有表
@@ -185,12 +185,45 @@ func main() {
 	cacertH := cacert.NewHandler(db)
 	dashboardH := dashboard.NewHandler(db)
 
+	// ========== Lifecycle Manager ==========
+	// workerTask adapts the project's Start/Stop worker convention to lifecycle.Task.
+	workerTask := func(name string, start, stop func()) lifecycle.Task {
+		return lifecycle.NewFuncTask(name,
+			func(ctx context.Context) error {
+				utils.SafeGo(name, start)
+				return nil
+			},
+			func(ctx context.Context) error {
+				stop()
+				return nil
+			},
+		)
+	}
+	mgr := lifecycle.New(
+		lifecycle.WithTimeout(30 * time.Second),
+	)
+
+	// OnStop hooks: infrastructure cleanup (LIFO — runs after all tasks stop)
+	mgr.OnStop(func(ctx context.Context) error {
+		if sqlDB, err := database.DB.DB(); err == nil {
+			sqlDB.Close()
+		}
+		return nil
+	})
+	mgr.OnStop(func(ctx context.Context) error {
+		redis.RDB.Close()
+		return nil
+	})
+	mgr.OnStop(func(ctx context.Context) error {
+		logger.Cleanup()
+		return nil
+	})
 	// ========== WebSocket ==========
 	wsHub := websocket.NewHub()
 	utils.SafeGo("ws-hub", func() { wsHub.Run() })
 	wsH := websocket.NewWSHandler(wsHub)
 	wsBridge := websocket.NewBridge(wsHub, db)
-	wsBridge.Start()
+	mgr.Add(workerTask("ws-bridge", wsBridge.Start, wsBridge.Stop))
 
 	// WebSocket route (no auth required)
 	router.GET("/ws", wsH.ServeWS)
@@ -695,114 +728,98 @@ func main() {
 	router.POST("/tr069/enbAcs", acsAuth, tr069ACS.HandleEnbACS)
 	router.POST("/tr069/gnbAcs", acsAuth, tr069ACS.HandleGnbACS)
 
-	// SNMP trap receiver (UDP listener)
+	// SNMP trap receiver (UDP listener) — starts immediately, error checked inline
 	trapReceiver := snmp.NewTrapReceiver(database.DB, cfg.SNMP.TrapListenPort)
 	if err := trapReceiver.Start(); err != nil {
 		logger.Errorf("snmp trap receiver start failed: %v", err)
 	}
 
+	// ========== Register background workers as lifecycle tasks ==========
+	// Startup order = registration order; shutdown is automatic LIFO.
+
 	// SNMP queue worker (polls Redis for outbound traps)
 	snmpWorker := snmp.NewWorker(database.DB)
-	snmpWorker.Start()
+	mgr.Add(workerTask("snmp-worker", snmpWorker.Start, snmpWorker.Stop))
 
 	// SNMP periodic poller (polls SNMP devices at configured intervals)
 	snmpPoller := snmp.NewSNMPPoller(database.DB)
-	snmpPoller.Start()
+	mgr.Add(workerTask("snmp-poller", snmpPoller.Start, snmpPoller.Stop))
 
 	// HA VIP monitor (detects VIP changes and notifies SNMP subsystem)
-	var vipMonitor *ha.VIPMonitor
-	var vipSubscriber *snmp.VIPSubscriber
 	if cfg.HA.Enabled {
-		vipMonitor = ha.NewVIPMonitor(database.DB, redis.RDB, cfg)
-		vipMonitor.Start()
-
-		vipSubscriber = snmp.NewVIPSubscriber(database.DB)
-		vipSubscriber.Start()
+		vipMonitor := ha.NewVIPMonitor(database.DB, redis.RDB, cfg)
+		vipSubscriber := snmp.NewVIPSubscriber(database.DB)
+		mgr.Add(workerTask("vip-monitor", vipMonitor.Start, vipMonitor.Stop))
+		mgr.Add(workerTask("vip-subscriber", vipSubscriber.Start, vipSubscriber.Stop))
 	}
 
 	// Offline detection worker (periodically checks device online status)
 	offlineWorker := tr069.NewOfflineWorker(db)
-	offlineWorker.Start()
+	mgr.Add(workerTask("offline-worker", offlineWorker.Start, offlineWorker.Stop))
 
 	// ZTP provisioning worker (consumes queue:ztp and sends SPV to devices)
 	ztpWorker := tr069.NewZTPWorker(db, tr069MsgMgr)
-	ztpWorker.Start()
+	mgr.Add(workerTask("ztp-worker", ztpWorker.Start, ztpWorker.Stop))
 
 	// Upgrade worker (consumes queue:upgrade and dispatches TR-069 Download/Reboot)
 	tr069OpSender := tr069.NewOperationSender(db, tr069MsgMgr)
 	upgradeWorker := upgrade.NewUpgradeWorker(db, tr069OpSender)
-	upgradeWorker.Start()
+	mgr.Add(workerTask("upgrade-worker", upgradeWorker.Start, upgradeWorker.Stop))
 
 	// MML command worker (consumes queue:mml and dispatches MML commands via TR-069)
 	mmlWorker := mml.NewMMLWorker(db, tr069MsgMgr)
-	mmlWorker.Start()
+	mgr.Add(workerTask("mml-worker", mmlWorker.Start, mmlWorker.Stop))
 
 	// Parameter collection scheduler (periodically sends GPV to configured devices)
 	paramScheduler := parameter.NewScheduler(db)
-	paramScheduler.Start()
+	mgr.Add(workerTask("param-scheduler", paramScheduler.Start, paramScheduler.Stop))
 
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)
 	resourceCollector := resources.NewCollector()
-	resourceCollector.Start()
+	mgr.Add(workerTask("resource-collector", resourceCollector.Start, resourceCollector.Stop))
 
-	// Start unified cron scheduler (NMS backup jobs, etc.)
-	mainScheduler.Start()
+	// Unified cron scheduler (NMS backup jobs, etc.) — already created above for backup job registration
+	mgr.Add(workerTask("main-scheduler", mainScheduler.Start, mainScheduler.Stop))
 
 	// Alarm email notifier (subscribes to channel:alarm:notify)
-	alarmNotifier.Start()
+	mgr.Add(workerTask("alarm-notifier", alarmNotifier.Start, alarmNotifier.Stop))
+
+	// Parameter monitor threshold checker
+	mgr.Add(workerTask("param-threshold",
+		parammonitorH.StartThresholdChecker,
+		parammonitorH.StopThresholdChecker,
+	))
 
 	// STUN server (stores device NAT addresses in Redis for connection requests)
 	if cfg.STUN.Enabled {
 		stunServer := tr069.NewSTUNServer(cfg.STUN.Port)
-		stunServer.Start()
+		mgr.Add(workerTask("stun-server", stunServer.Start, stunServer.Stop))
 	}
 
-	// 6. 启动HTTP服务
+	// HTTP server as lifecycle task
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler: router,
 	}
+	mgr.Add(lifecycle.NewFuncTask("http-server",
+		func(ctx context.Context) error {
+			logger.Infof("NMS server starting on port %d...", cfg.Server.Port)
+			go func() {
+				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.Fatalf("server failed: %v", err)
+				}
+			}()
+			return nil
+		},
+		func(ctx context.Context) error {
+			return srv.Shutdown(ctx)
+		},
+	))
 
-	go func() {
-		logger.Infof("NMS server starting on port %d...", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("server failed: %v", err)
-		}
-	}()
-
-	// 7. 优雅退出
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	logger.Info("shutting down server...")
-
-	// Stop background workers
-	wsBridge.Stop()
-	snmpWorker.Stop()
-	snmpPoller.Stop()
-	if vipSubscriber != nil {
-		vipSubscriber.Stop()
+	// Run: start all tasks → wait for signal → stop all tasks (LIFO) → cleanup
+	if err := mgr.Run(); err != nil {
+		logger.Errorf("lifecycle error: %v", err)
 	}
-	if vipMonitor != nil {
-		vipMonitor.Stop()
-	}
-	offlineWorker.Stop()
-	ztpWorker.Stop()
-	mmlWorker.Stop()
-	upgradeWorker.Stop()
-	paramScheduler.Stop()
-	resourceCollector.Stop()
-	alarmNotifier.Stop()
-	parammonitorH.StopThresholdChecker()
-	mainScheduler.Stop()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Errorf("server forced to shutdown: %v", err)
-	}
-
-	logger.Info("server exited")
 }
 
 // placeholder 生成临时handler，用于尚未实现的端点

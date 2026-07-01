@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/gosnmp/gosnmp v1.43.2
+	github.com/qoderwork/go-infra v0.0.0-20260701012134-4ec0b23e8f5c
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.5
 	github.com/spf13/viper v1.18.2

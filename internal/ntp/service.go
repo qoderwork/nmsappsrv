@@ -72,17 +72,17 @@ func (s *Service) GetStatus() (string, error) {
 func (s *Service) loadConfig() (*NTPConfig, error) {
 	var sc SystemConfig
 	key := "ntp"
-	if err := s.db.Where("config_key = ?", key).First(&sc).Error; err != nil {
+	if err := s.db.Where("id = ?", key).First(&sc).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return &NTPConfig{}, nil
 		}
 		return nil, err
 	}
-	if sc.Value == nil || *sc.Value == "" {
+	if sc.Config == nil || *sc.Config == "" {
 		return &NTPConfig{}, nil
 	}
 	var cfg NTPConfig
-	if err := json.Unmarshal([]byte(*sc.Value), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(*sc.Config), &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -97,13 +97,13 @@ func (s *Service) saveConfig(cfg *NTPConfig) error {
 	key := "ntp"
 
 	var sc SystemConfig
-	err = s.db.Where("config_key = ?", key).First(&sc).Error
+	err = s.db.Where("id = ?", key).First(&sc).Error
 	if err == gorm.ErrRecordNotFound {
-		return s.db.Create(&SystemConfig{Key: &key, Value: &val}).Error
+		return s.db.Create(&SystemConfig{Id: key, Config: &val}).Error
 	}
 	if err != nil {
 		return err
 	}
-	sc.Value = &val
+	sc.Config = &val
 	return s.db.Save(&sc).Error
 }

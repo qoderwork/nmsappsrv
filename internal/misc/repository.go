@@ -534,28 +534,28 @@ func (r *Repository) FindHistoryZTPFiles(elementId int64, page, pageSize int) ([
 // GetSystemConfigValue returns the config value for a given key.
 func (r *Repository) GetSystemConfigValue(key string) (string, error) {
 	var cfg SystemConfig
-	err := r.db.Where("config_key = ?", key).First(&cfg).Error
+	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
 		return "", err
 	}
-	if cfg.Value == nil {
+	if cfg.Config == nil {
 		return "", nil
 	}
-	return *cfg.Value, nil
+	return *cfg.Config, nil
 }
 
 // SaveSystemConfigValue inserts or updates a system config entry.
 func (r *Repository) SaveSystemConfigValue(key, value string) error {
 	var cfg SystemConfig
-	err := r.db.Where("config_key = ?", key).First(&cfg).Error
+	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err == gorm.ErrRecordNotFound {
-		cfg = SystemConfig{Key: &key, Value: &value}
+		cfg = SystemConfig{Id: key, Config: &value}
 		return r.db.Create(&cfg).Error
 	}
 	if err != nil {
 		return err
 	}
-	cfg.Value = &value
+	cfg.Config = &value
 	return r.db.Save(&cfg).Error
 }
 

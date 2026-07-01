@@ -374,43 +374,43 @@ func (r *Repository) GetDeviceByElementId(elementId int64) (*device.CpeElement, 
 // GetACSConfig reads ACS config from system_config table
 func (r *Repository) GetACSConfig() (string, error) {
 	var cfg struct {
-		Value *string `gorm:"column:config_value"`
+		Config *string `gorm:"column:config"`
 	}
 	err := r.db.Table("system_config").
-		Select("config_value").
-		Where("config_key = ?", "nms_config").
+		Select("config").
+		Where("id = ?", "nms_config").
 		Scan(&cfg).Error
 	if err != nil {
 		return "", err
 	}
-	if cfg.Value == nil {
+	if cfg.Config == nil {
 		return "", nil
 	}
-	return *cfg.Value, nil
+	return *cfg.Config, nil
 }
 
 // UpdateACSConfig upserts ACS config in system_config table
 func (r *Repository) UpdateACSConfig(value string) error {
 	var existing struct {
-		Id int `gorm:"column:id"`
+		Id string `gorm:"column:id"`
 	}
 	err := r.db.Table("system_config").
 		Select("id").
-		Where("config_key = ?", "nms_config").
+		Where("id = ?", "nms_config").
 		Scan(&existing).Error
 
-	if err != nil || existing.Id == 0 {
+	if err != nil || existing.Id == "" {
 		// Insert new
 		return r.db.Table("system_config").
 			Create(map[string]interface{}{
-				"config_key":   "nms_config",
-				"config_value": value,
+				"id":     "nms_config",
+				"config": value,
 			}).Error
 	}
 	// Update existing
 	return r.db.Table("system_config").
-		Where("config_key = ?", "nms_config").
-		Update("config_value", value).Error
+		Where("id = ?", "nms_config").
+		Update("config", value).Error
 }
 
 // ============================

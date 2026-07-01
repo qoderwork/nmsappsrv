@@ -22,9 +22,9 @@ type WSMessage struct {
 
 // channelToTopic maps Redis pub/sub channels to WebSocket topics.
 var channelToTopic = map[string]string{
-	"channel:alarm:notify":   "alarm",
-	"device:status:change":   "device_status",
-	"parameter:change":       "parameter_change",
+	"channel:alarm:notify": "alarm",
+	"device:status:change": "device_status",
+	"parameter:change":     "parameter_change",
 }
 
 // Bridge bridges Redis pub/sub messages and queue messages to WebSocket clients.

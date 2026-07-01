@@ -10,9 +10,8 @@ import (
 
 // SystemConfig mirrors system_config table for key-value config storage.
 type SystemConfig struct {
-	Id    int     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex" json:"key"`
-	Value *string `gorm:"column:config_value;type:longtext" json:"value"`
+	Id     string  `gorm:"primaryKey;column:id;type:varchar(255)" json:"id"`
+	Config *string `gorm:"column:config;type:longtext" json:"config"`
 }
 
 func (SystemConfig) TableName() string { return "system_config" }
@@ -159,17 +158,17 @@ func (s *Service) GetPasswordStrategy() (*PasswordStrategyResponse, error) {
 func (s *Service) loadConfig() (*SecurityRule, error) {
 	var sc SystemConfig
 	key := "security_rule"
-	if err := s.db.Where("config_key = ?", key).First(&sc).Error; err != nil {
+	if err := s.db.Where("id = ?", key).First(&sc).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
 	}
-	if sc.Value == nil || *sc.Value == "" {
+	if sc.Config == nil || *sc.Config == "" {
 		return nil, nil
 	}
 	var cfg SecurityRule
-	if err := json.Unmarshal([]byte(*sc.Value), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(*sc.Config), &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -184,14 +183,14 @@ func (s *Service) saveConfig(cfg *SecurityRule) error {
 	key := "security_rule"
 
 	var sc SystemConfig
-	err = s.db.Where("config_key = ?", key).First(&sc).Error
+	err = s.db.Where("id = ?", key).First(&sc).Error
 	if err == gorm.ErrRecordNotFound {
-		return s.db.Create(&SystemConfig{Key: &key, Value: &val}).Error
+		return s.db.Create(&SystemConfig{Id: key, Config: &val}).Error
 	}
 	if err != nil {
 		return err
 	}
-	sc.Value = &val
+	sc.Config = &val
 	return s.db.Save(&sc).Error
 }
 

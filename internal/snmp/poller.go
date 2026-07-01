@@ -236,23 +236,21 @@ func (p *SNMPPoller) saveResults(elementID int64, results []SnmpParameter, now t
 // loadPollConfig reads the SNMP poll config from system_config.
 func (p *SNMPPoller) loadPollConfig() (*snmpPollConfig, error) {
 	var row struct {
-		Value *string `gorm:"column:value"`
+		Config *string `gorm:"column:config"`
 	}
 	err := p.db.Table("system_config").
-		Select("value").
-		Where("config_key = ?", "snmp_poll_config").
-		First(&row).Error
+		Select("config").
+		Where("id = ?", "snmp_poll_config").
+		Limit(1).
+		Find(&row).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
 		return nil, err
 	}
-	if row.Value == nil || *row.Value == "" {
+	if row.Config == nil || *row.Config == "" {
 		return nil, nil
 	}
 	var cfg snmpPollConfig
-	if err := json.Unmarshal([]byte(*row.Value), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(*row.Config), &cfg); err != nil {
 		return nil, fmt.Errorf("invalid snmp_poll_config: %w", err)
 	}
 	return &cfg, nil
@@ -265,6 +263,6 @@ func (p *SNMPPoller) updateLastRunTime(cfg *snmpPollConfig, now time.Time) {
 	cfgStr := string(cfgJson)
 
 	p.db.Table("system_config").
-		Where("config_key = ?", "snmp_poll_config").
-		Update("value", cfgStr)
+		Where("id = ?", "snmp_poll_config").
+		Update("config", cfgStr)
 }

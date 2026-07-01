@@ -313,16 +313,16 @@ func (w *ZTPWorker) buildZTPParameterValues(ztpParams map[string]interface{}, se
 // loadZTPSetting loads the ZTP configuration from system_config.
 func (w *ZTPWorker) loadZTPSetting() (*misc.ZTPSetting, error) {
 	var cfg misc.SystemConfig
-	err := w.db.Where("config_key = ?", "ztp_config").First(&cfg).Error
+	err := w.db.Where("id = ?", "ztp_config").First(&cfg).Error
 	if err != nil {
 		// No config yet, return empty defaults
 		return &misc.ZTPSetting{}, nil
 	}
-	if cfg.Value == nil || *cfg.Value == "" {
+	if cfg.Config == nil || *cfg.Config == "" {
 		return &misc.ZTPSetting{}, nil
 	}
 	var setting misc.ZTPSetting
-	if err := json.Unmarshal([]byte(*cfg.Value), &setting); err != nil {
+	if err := json.Unmarshal([]byte(*cfg.Config), &setting); err != nil {
 		return nil, fmt.Errorf("invalid ztp_config: %w", err)
 	}
 	return &setting, nil

@@ -4,10 +4,10 @@ server:
   mode: release  # debug / release / test
 
 database:
-  host: 127.0.0.1
-  port: 3306
+  host: 192.168.1.110
+  port: 13306
   user: root
-  password: root
+  password: root123456
   dbname: base_station
   charset: utf8mb4
   max_idle_conns: 10
@@ -15,8 +15,8 @@ database:
   log_level: warn  # silent / error / warn / info
 
 redis:
-  host: 127.0.0.1
-  port: 6379
+  host: 192.168.1.110
+  port: 16379
   password: ""
   db: 0
   pool_size: 20

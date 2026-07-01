@@ -243,23 +243,21 @@ func (s *Scheduler) executeCollection(cfg *scheduleConfig) {
 // loadScheduleConfig reads the schedule config from system_config.
 func (s *Scheduler) loadScheduleConfig() (*scheduleConfig, error) {
 	var row struct {
-		Value *string `gorm:"column:value"`
+		Config *string `gorm:"column:config"`
 	}
 	err := s.db.Table("system_config").
-		Select("value").
-		Where("config_key = ?", "parameter_schedule_config").
-		First(&row).Error
+		Select("config").
+		Where("id = ?", "parameter_schedule_config").
+		Limit(1).
+		Find(&row).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
 		return nil, err
 	}
-	if row.Value == nil || *row.Value == "" {
+	if row.Config == nil || *row.Config == "" {
 		return nil, nil
 	}
 	var cfg scheduleConfig
-	if err := json.Unmarshal([]byte(*row.Value), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(*row.Config), &cfg); err != nil {
 		return nil, fmt.Errorf("invalid schedule config: %w", err)
 	}
 	return &cfg, nil
@@ -272,6 +270,6 @@ func (s *Scheduler) updateLastRunTime(cfg *scheduleConfig, now time.Time) {
 	cfgStr := string(cfgJson)
 
 	s.db.Table("system_config").
-		Where("config_key = ?", "parameter_schedule_config").
-		Update("value", cfgStr)
+		Where("id = ?", "parameter_schedule_config").
+		Update("config", cfgStr)
 }

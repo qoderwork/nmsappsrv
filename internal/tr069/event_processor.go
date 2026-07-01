@@ -916,14 +916,14 @@ func (ep *EventProcessor) checkAndPresetParameters(ctx context.Context, cpe *dev
 
 	// Also check global preset config from system_config
 	var globalPreset struct {
-		Value *string `gorm:"column:value"`
+		Config *string `gorm:"column:config"`
 	}
 	if err := ep.db.Table("system_config").
-		Select("value").
-		Where("config_key = ?", "parameter_preset_config").
-		First(&globalPreset).Error; err == nil && globalPreset.Value != nil && *globalPreset.Value != "" {
+		Select("config").
+		Where("id = ?", "parameter_preset_config").
+		First(&globalPreset).Error; err == nil && globalPreset.Config != nil && *globalPreset.Config != "" {
 		var globalParams map[string]interface{}
-		if err := json.Unmarshal([]byte(*globalPreset.Value), &globalParams); err == nil {
+		if err := json.Unmarshal([]byte(*globalPreset.Config), &globalParams); err == nil {
 			if presets == nil {
 				presets = make(map[string]string)
 			}
@@ -1018,9 +1018,9 @@ func (ep *EventProcessor) checkAndTriggerAskReboot(ctx context.Context, sn strin
 
 	// Try reading runtime config from system_config table first
 	var sysCfg misc.SystemConfig
-	if err := ep.db.Where("config_key = ?", "ask_reboot_config").First(&sysCfg).Error; err == nil && sysCfg.Value != nil && *sysCfg.Value != "" {
+	if err := ep.db.Where("id = ?", "ask_reboot_config").First(&sysCfg).Error; err == nil && sysCfg.Config != nil && *sysCfg.Config != "" {
 		var arc askRebootConfig
-		if err := json.Unmarshal([]byte(*sysCfg.Value), &arc); err == nil {
+		if err := json.Unmarshal([]byte(*sysCfg.Config), &arc); err == nil {
 			enabled = arc.Enabled
 			// Override default conditions if specified
 			if len(arc.Conditions) > 0 {
@@ -1174,7 +1174,7 @@ func (ep *EventProcessor) checkDeviceLimit() error {
 	// Read platform-level device config (tenancyId=0)
 	var cfg misc.SystemConfig
 	key := "device_config_0"
-	err := ep.db.Where("config_key = ?", key).First(&cfg).Error
+	err := ep.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// No config found, allow device creation (no limit set)
@@ -1183,13 +1183,13 @@ func (ep *EventProcessor) checkDeviceLimit() error {
 		return fmt.Errorf("failed to read device config: %w", err)
 	}
 
-	if cfg.Value == nil || *cfg.Value == "" {
+	if cfg.Config == nil || *cfg.Config == "" {
 		// No config value, allow device creation
 		return nil
 	}
 
 	var deviceCfg systemsettings.DeviceConfig
-	if err := json.Unmarshal([]byte(*cfg.Value), &deviceCfg); err != nil {
+	if err := json.Unmarshal([]byte(*cfg.Config), &deviceCfg); err != nil {
 		logger.Warnf("failed to unmarshal device config: %v", err)
 		return nil // Allow creation if config is malformed
 	}
