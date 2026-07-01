@@ -21,9 +21,9 @@ import (
 	"nmsappsrv/internal/devicelog"
 	"nmsappsrv/internal/diagnostics"
 	"nmsappsrv/internal/eventlog"
+	"nmsappsrv/internal/ha"
 	"nmsappsrv/internal/health"
 	"nmsappsrv/internal/heartbeat"
-	"nmsappsrv/internal/ha"
 	"nmsappsrv/internal/license"
 	"nmsappsrv/internal/mail"
 	"nmsappsrv/internal/middleware"
@@ -32,26 +32,26 @@ import (
 	"nmsappsrv/internal/monitor"
 	"nmsappsrv/internal/nmsbackup"
 	"nmsappsrv/internal/ntp"
-	"nmsappsrv/internal/parameter"
 	"nmsappsrv/internal/paramcompare"
+	"nmsappsrv/internal/parameter"
 	"nmsappsrv/internal/parammonitor"
 	"nmsappsrv/internal/platform"
 	"nmsappsrv/internal/pm"
 	"nmsappsrv/internal/reboot"
 	"nmsappsrv/internal/reset"
 	"nmsappsrv/internal/resources"
-	"nmsappsrv/internal/scheduler"
 	"nmsappsrv/internal/restapi"
+	"nmsappsrv/internal/scheduler"
 	"nmsappsrv/internal/security"
 	"nmsappsrv/internal/site"
 	"nmsappsrv/internal/snmp"
 	sshmod "nmsappsrv/internal/ssh"
-	"nmsappsrv/internal/websocket"
 	"nmsappsrv/internal/systemsettings"
 	"nmsappsrv/internal/tenancy"
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/upgrade"
 	"nmsappsrv/internal/user"
+	"nmsappsrv/internal/websocket"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
@@ -521,18 +521,19 @@ func main() {
 			auth.POST("/param-monitor/reload", parammonitorH.ReloadMonitorParameters)
 			auth.POST("/param-monitor/batch-query", parammonitorH.BatchQueryDeviceParameters)
 			auth.POST("/param-monitor/batch-query-live", parammonitorH.BatchQueryDeviceParametersLive)
-				// Parameter Compare
-				auth.POST("/param-compare/compare", paramcompareH.Compare)
-				auth.POST("/param-compare/batch", paramcompareH.BatchCompare)
-				auth.GET("/param-compare/templates", paramcompareH.ListTemplates)
 
-				// 参数监控阈值告警 (Parameter Monitor Threshold Alerts)
-				auth.POST("/param-monitor/threshold", parammonitorH.CreateThresholdRule)
-				auth.PUT("/param-monitor/threshold/:id", parammonitorH.UpdateThresholdRule)
-				auth.DELETE("/param-monitor/threshold/:id", parammonitorH.DeleteThresholdRule)
-				auth.GET("/param-monitor/threshold", parammonitorH.ListThresholdRules)
-				auth.GET("/param-monitor/threshold/:id", parammonitorH.GetThresholdRule)
-				auth.POST("/param-monitor/threshold/test", parammonitorH.TestThresholdRule)
+			// Parameter Compare
+			auth.POST("/param-compare/compare", paramcompareH.Compare)
+			auth.POST("/param-compare/batch", paramcompareH.BatchCompare)
+			auth.GET("/param-compare/templates", paramcompareH.ListTemplates)
+
+			// 参数监控阈值告警 (Parameter Monitor Threshold Alerts)
+			auth.POST("/param-monitor/threshold", parammonitorH.CreateThresholdRule)
+			auth.PUT("/param-monitor/threshold/:id", parammonitorH.UpdateThresholdRule)
+			auth.DELETE("/param-monitor/threshold/:id", parammonitorH.DeleteThresholdRule)
+			auth.GET("/param-monitor/threshold", parammonitorH.ListThresholdRules)
+			auth.GET("/param-monitor/threshold/:id", parammonitorH.GetThresholdRule)
+			auth.POST("/param-monitor/threshold/test", parammonitorH.TestThresholdRule)
 
 			// 设备日志采集 (Device Log Collection)
 			auth.POST("/device-log/collection", devicelogH.AddLogCollectionTask)
