@@ -24,6 +24,35 @@ type Config struct {
 	LogLevel     string
 }
 
+// EnsureDatabase connects to MySQL server (without specifying a database)
+// and creates the target database if it does not exist.
+// This allows first-run startup without manual DB creation.
+func EnsureDatabase(cfg Config) error {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=%s&parseTime=True&loc=UTC",
+		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Charset)
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect MySQL server: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get sql.DB: %w", err)
+	}
+	defer sqlDB.Close()
+
+	stmt := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s",
+		cfg.DBName, cfg.Charset)
+	if err := db.Exec(stmt).Error; err != nil {
+		return fmt.Errorf("failed to create database %s: %w", cfg.DBName, err)
+	}
+
+	logger.Infof("database '%s' ensured", cfg.DBName)
+	return nil
+}
+
 func Init(cfg Config) error {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=UTC",
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName, cfg.Charset)

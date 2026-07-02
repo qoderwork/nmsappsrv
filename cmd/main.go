@@ -80,7 +80,7 @@ func main() {
 	}
 
 	// 2. 初始化数据库
-	if err := database.Init(database.Config{
+	dbCfg := database.Config{
 		Host:         cfg.DB.Host,
 		Port:         cfg.DB.Port,
 		User:         cfg.DB.User,
@@ -90,7 +90,16 @@ func main() {
 		MaxIdleConns: cfg.DB.MaxIdleConns,
 		MaxOpenConns: cfg.DB.MaxOpenConns,
 		LogLevel:     cfg.DB.LogLevel,
-	}); err != nil {
+	}
+
+	// 2a. 自动创建数据库（如果不存在）
+	if err := database.EnsureDatabase(dbCfg); err != nil {
+		fmt.Fprintf(os.Stderr, "ensure database failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 2b. 连接数据库
+	if err := database.Init(dbCfg); err != nil {
 		fmt.Fprintf(os.Stderr, "database init failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -98,6 +107,11 @@ func main() {
 	// 3. AutoMigrate 所有表
 	if err := database.AutoMigrateAll(); err != nil {
 		logger.Fatalf("auto migrate failed: %v", err)
+	}
+
+	// 3a. 初始化默认数据（租户、admin用户、admin角色）
+	if err := database.SeedInitialData(); err != nil {
+		logger.Warnf("seed initial data failed: %v", err)
 	}
 
 	// 4. 初始化Redis
