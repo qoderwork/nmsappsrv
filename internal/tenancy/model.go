@@ -10,7 +10,7 @@ type tenancyModel struct {
 	LicenseType          *string    `gorm:"column:license_type;type:varchar(255)"`
 	ExpiryDate           *time.Time `gorm:"column:expiry_date"`
 	EnbQuantity          int        `gorm:"column:enb_quantity"`
-	RoleId               *int       `gorm:"column:role_id"`
+	RoleId               *string    `gorm:"column:role_id;type:varchar(32)"`
 	UserQuantity         int        `gorm:"column:user_quantity"`
 	AcsUrl               *string    `gorm:"column:acs_url;type:varchar(255)"`
 	OmcName              *string    `gorm:"column:omc_name;type:varchar(255)"`

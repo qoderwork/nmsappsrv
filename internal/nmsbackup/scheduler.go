@@ -8,8 +8,8 @@ import (
 	"nmsappsrv/pkg/logger"
 )
 
-// BackupScheduler bridges stored CronExpr on NMS backup tasks to the unified
-// cron scheduler, so that scheduled backup tasks actually fire.
+// BackupScheduler bridges stored backup schedule definitions to the unified
+// cron scheduler, checking daily which schedules are due for execution.
 type BackupScheduler struct {
 	repo *Repository
 	svc  *Service
@@ -20,102 +20,149 @@ func NewBackupScheduler(repo *Repository, svc *Service) *BackupScheduler {
 	return &BackupScheduler{repo: repo, svc: svc}
 }
 
-// RegisterBackupJobs queries all scheduled NMS backup tasks (execute_mode=2)
-// with a non-empty cron_expr and registers each one as a cron job on the
-// unified scheduler.
+// RegisterBackupJobs registers a single daily cron job that checks all
+// recurring backup schedules (backup_type=1) and fires any that are due
+// based on their backup_interval (days) and backup_begin_time.
 func (bc *BackupScheduler) RegisterBackupJobs(sched *scheduler.Scheduler) {
-	tasks, err := bc.repo.FindScheduledTasks()
+	schedules, err := bc.repo.FindScheduledSchedules()
 	if err != nil {
-		logger.Errorf("nmsbackup: failed to query scheduled backup tasks: %v", err)
+		logger.Errorf("nmsbackup: failed to query scheduled backup schedules: %v", err)
 		return
 	}
 
-	if len(tasks) == 0 {
-		logger.Info("nmsbackup: no scheduled backup tasks found")
+	if len(schedules) == 0 {
+		logger.Info("nmsbackup: no scheduled backup schedules found")
 		return
 	}
 
-	registered := 0
-	for i := range tasks {
-		task := &tasks[i]
-		cronExpr := derefString(task.CronExpr)
-		if cronExpr == "" {
-			continue
-		}
+	logger.Infof("nmsbackup: found %d recurring backup schedules, registering daily checker", len(schedules))
 
-		jobName := fmt.Sprintf("nms-backup-%d", task.Id)
-		taskId := task.Id
-
-		err := sched.AddJobSafeGo(jobName, cronExpr, func() {
-			bc.executeBackup(taskId)
-		})
-		if err != nil {
-			logger.Errorf("nmsbackup: failed to register cron job for task %d: %v", task.Id, err)
-			continue
-		}
-		registered++
+	// Register a single daily cron job (at 00:05:00) that checks all schedules
+	err = sched.AddJobSafeGo("nms-backup-checker", "0 5 0 * * *", func() {
+		bc.checkAndFireDueSchedules()
+	})
+	if err != nil {
+		logger.Errorf("nmsbackup: failed to register daily checker cron job: %v", err)
 	}
-
-	logger.Infof("nmsbackup: registered %d/%d scheduled backup tasks", registered, len(tasks))
 }
 
-// executeBackup runs a single backup task outside of an HTTP request context.
-func (bc *BackupScheduler) executeBackup(taskId int) {
-	task, err := bc.repo.GetTaskById(taskId)
+// checkAndFireDueSchedules iterates all recurring schedules and fires
+// any that are due based on backup_interval and last execution time.
+func (bc *BackupScheduler) checkAndFireDueSchedules() {
+	schedules, err := bc.repo.FindScheduledSchedules()
 	if err != nil {
-		logger.Errorf("nmsbackup: cron trigger — task %d not found: %v", taskId, err)
+		logger.Errorf("nmsbackup: checker — failed to query schedules: %v", err)
 		return
 	}
 
 	now := time.Now()
 
-	// Mark as running
-	runningStatus := 2
-	task.Status = &runningStatus
-	task.LastRunTime = &now
-	task.UpdateTime = &now
-	if err := bc.repo.UpdateTask(task); err != nil {
-		logger.Errorf("nmsbackup: cron trigger — failed to update task %d status: %v", taskId, err)
+	for i := range schedules {
+		schedule := &schedules[i]
+		interval := derefInt(schedule.BackupInterval)
+		if interval <= 0 {
+			interval = 1 // default to daily
+		}
+
+		beginTime := schedule.BackupBeginTime
+		if beginTime == nil || beginTime.After(now) {
+			continue // not yet started
+		}
+
+		// Find last execution time from task records
+		lastFire := bc.getLastFireTime(schedule.Id)
+		if lastFire == nil {
+			// Never fired — check if begin_time has passed
+			if now.Before(*beginTime) {
+				continue
+			}
+			// Fire now
+			bc.executeBackup(schedule)
+			continue
+		}
+
+		// Check if interval has elapsed since last fire
+		daysSinceLastFire := int(now.Sub(*lastFire).Hours() / 24)
+		if daysSinceLastFire >= interval {
+			bc.executeBackup(schedule)
+		}
+	}
+}
+
+// getLastFireTime returns the most recent execution start time for a schedule
+// by querying task records with nms_backup_id = scheduleId.
+func (bc *BackupScheduler) getLastFireTime(scheduleId int) *time.Time {
+	var task NMSBackupAndRevertTask
+	err := bc.repo.GetDB().Where("nms_backup_id = ? AND task_type = ?", scheduleId, "backup").
+		Order("start_time DESC").First(&task).Error
+	if err != nil {
+		return nil
+	}
+	return task.StartTime
+}
+
+// executeBackup runs a single backup for a schedule outside of an HTTP request.
+func (bc *BackupScheduler) executeBackup(schedule *NMSBackupAndRevert) {
+	now := time.Now()
+
+	// Mark schedule as running
+	runningStatus := 1
+	schedule.BackupStatus = &runningStatus
+	if err := bc.repo.UpdateSchedule(schedule); err != nil {
+		logger.Errorf("nmsbackup: cron trigger — failed to update schedule %d status: %v", schedule.Id, err)
 		return
 	}
 
-	// Create backup record
-	backupRecord := &NMSBackupAndRevert{
-		TaskId:     intPtr(task.Id),
-		FileName:   strPtr(fmt.Sprintf("backup_%d_%s.sql.gz", task.Id, now.Format("20060102_150405"))),
-		FilePath:   strPtr(fmt.Sprintf("/data/backups/nms/backup_%d_%s.sql.gz", task.Id, now.Format("20060102_150405"))),
-		Status:     intPtr(1), // success
-		CreateTime: &now,
-		User:       strPtr("cron-scheduler"),
+	// Create task execution record
+	task := &NMSBackupAndRevertTask{
+		Name:        strPtr(derefString(schedule.BackupName)),
+		TaskType:    strPtr("backup"),
+		ExecuteMode: intPtr(3), // schedule time
+		Status:      intPtr(2), // running
+		StartTime:   &now,
+		CreateTime:  &now,
+		UpdateTime:  &now,
+		User:        strPtr("cron-scheduler"),
+		NmsBackupId: intPtr(schedule.Id),
 	}
 
-	if err := bc.repo.CreateBackupRecord(backupRecord); err != nil {
-		logger.Errorf("nmsbackup: cron trigger — failed to create backup record for task %d: %v", taskId, err)
-		failedStatus := 4
-		task.Status = &failedStatus
-		bc.repo.UpdateTask(task)
+	if err := bc.repo.CreateTask(task); err != nil {
+		logger.Errorf("nmsbackup: cron trigger — failed to create task for schedule %d: %v", schedule.Id, err)
+		failedStatus := 3
+		schedule.BackupStatus = &failedStatus
+		bc.repo.UpdateSchedule(schedule)
 		return
 	}
+
+	// Simulate backup execution (actual mysqldump requires external tools)
+	fileName := fmt.Sprintf("backup_%d_%s.sql.gz", schedule.Id, now.Format("20060102_150405"))
+	endTime := time.Now()
+	duration := int(endTime.Sub(now).Seconds())
+
+	// Update task as done
+	taskDone := 3
+	task.Status = &taskDone
+	task.EndTime = &endTime
+	bc.repo.UpdateTask(task)
+
+	// Update schedule: completed
+	completedStatus := 2
+	schedule.BackupStatus = &completedStatus
+	schedule.BackupTimeCost = intPtr(duration)
+	schedule.FileName = strPtr(fileName)
+	bc.repo.UpdateSchedule(schedule)
 
 	// Create log record
 	logRecord := &NMSBackupAndRevertLog{
-		TaskId:        intPtr(task.Id),
-		BackupId:      intPtr(backupRecord.Id),
-		OperationType: strPtr("backup"),
-		Status:        intPtr(1), // success
-		StartTime:     &now,
-		EndTime:       &now,
-		User:          strPtr("cron-scheduler"),
+		FileName:      strPtr(fileName),
+		Time:          &now,
+		OperationUser: strPtr("cron-scheduler"),
+		Result:        intPtr(0), // success
 	}
 
 	if err := bc.repo.CreateLog(logRecord); err != nil {
-		logger.Errorf("nmsbackup: cron trigger — failed to create log for task %d: %v", taskId, err)
+		logger.Errorf("nmsbackup: cron trigger — failed to create log for schedule %d: %v", schedule.Id, err)
 	}
 
-	// Mark as done
-	doneStatus := 3
-	task.Status = &doneStatus
-	bc.repo.UpdateTask(task)
-
-	logger.Infof("nmsbackup: cron backup task %d completed successfully", taskId)
+	logger.Infof("nmsbackup: cron backup for schedule %d completed", schedule.Id)
 }

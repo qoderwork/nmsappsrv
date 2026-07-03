@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	backupRetentionConfigKey = "nms_backup_retention"
+	backupRetentionConfigKey = "backup_and_restore_config"
 )
 
 type Repository struct {
@@ -23,7 +23,50 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// --- Task operations ---
+// --- Schedule definition operations (nms_backup_and_revert) ---
+
+func (r *Repository) CreateSchedule(schedule *NMSBackupAndRevert) error {
+	return r.db.Create(schedule).Error
+}
+
+func (r *Repository) GetScheduleById(id int) (*NMSBackupAndRevert, error) {
+	var schedule NMSBackupAndRevert
+	err := r.db.Where("id = ?", id).First(&schedule).Error
+	if err != nil {
+		return nil, err
+	}
+	return &schedule, nil
+}
+
+func (r *Repository) UpdateSchedule(schedule *NMSBackupAndRevert) error {
+	return r.db.Save(schedule).Error
+}
+
+func (r *Repository) DeleteSchedule(id int) error {
+	return r.db.Where("id = ?", id).Delete(&NMSBackupAndRevert{}).Error
+}
+
+func (r *Repository) ListSchedules(licenseId int, page, pageSize int) ([]NMSBackupAndRevert, int64, error) {
+	var schedules []NMSBackupAndRevert
+	var total int64
+
+	query := r.db.Model(&NMSBackupAndRevert{}).Where("license_id = ?", licenseId)
+	query.Count(&total)
+
+	offset := (page - 1) * pageSize
+	err := query.Offset(offset).Limit(pageSize).Order("id DESC").Find(&schedules).Error
+	return schedules, total, err
+}
+
+// FindScheduledSchedules returns all backup schedules that are recurring (backup_type=1)
+// with a non-nil backup_begin_time.
+func (r *Repository) FindScheduledSchedules() ([]NMSBackupAndRevert, error) {
+	var schedules []NMSBackupAndRevert
+	err := r.db.Where("backup_type = ? AND backup_begin_time IS NOT NULL", 1).Find(&schedules).Error
+	return schedules, err
+}
+
+// --- Task operations (nms_backup_and_revert_task) ---
 
 func (r *Repository) CreateTask(task *NMSBackupAndRevertTask) error {
 	return r.db.Create(task).Error
@@ -46,46 +89,7 @@ func (r *Repository) DeleteTask(id int) error {
 	return r.db.Where("id = ?", id).Delete(&NMSBackupAndRevertTask{}).Error
 }
 
-func (r *Repository) ListTasks(licenseId int, page, pageSize int) ([]NMSBackupAndRevertTask, int64, error) {
-	var tasks []NMSBackupAndRevertTask
-	var total int64
-
-	query := r.db.Model(&NMSBackupAndRevertTask{}).Where("license_id = ?", licenseId)
-	query.Count(&total)
-
-	offset := (page - 1) * pageSize
-	err := query.Offset(offset).Limit(pageSize).Order("id DESC").Find(&tasks).Error
-	return tasks, total, err
-}
-
-// FindScheduledTasks returns all backup tasks that are scheduled (execute_mode=2)
-// with a non-empty cron_expr.
-func (r *Repository) FindScheduledTasks() ([]NMSBackupAndRevertTask, error) {
-	var tasks []NMSBackupAndRevertTask
-	err := r.db.Where("execute_mode = ? AND cron_expr IS NOT NULL AND cron_expr != ''", 2).Find(&tasks).Error
-	return tasks, err
-}
-
-// --- Backup record operations ---
-
-func (r *Repository) CreateBackupRecord(record *NMSBackupAndRevert) error {
-	return r.db.Create(record).Error
-}
-
-func (r *Repository) GetBackupById(id int) (*NMSBackupAndRevert, error) {
-	var record NMSBackupAndRevert
-	err := r.db.Where("id = ?", id).First(&record).Error
-	if err != nil {
-		return nil, err
-	}
-	return &record, nil
-}
-
-func (r *Repository) DeleteBackupRecordsByTaskId(taskId int) error {
-	return r.db.Where("task_id = ?", taskId).Delete(&NMSBackupAndRevert{}).Error
-}
-
-// --- Log operations ---
+// --- Log operations (nms_backup_and_revert_log) ---
 
 func (r *Repository) CreateLog(log *NMSBackupAndRevertLog) error {
 	return r.db.Create(log).Error
@@ -104,14 +108,11 @@ func (r *Repository) GetLogById(id int) (*NMSBackupAndRevertLog, error) {
 	return &log, nil
 }
 
-func (r *Repository) ListLogs(taskId int, page, pageSize int) ([]NMSBackupAndRevertLog, int64, error) {
+func (r *Repository) ListLogs(page, pageSize int) ([]NMSBackupAndRevertLog, int64, error) {
 	var logs []NMSBackupAndRevertLog
 	var total int64
 
 	query := r.db.Model(&NMSBackupAndRevertLog{})
-	if taskId > 0 {
-		query = query.Where("task_id = ?", taskId)
-	}
 	query.Count(&total)
 
 	offset := (page - 1) * pageSize
@@ -143,11 +144,9 @@ func (r *Repository) GetRetentionConfig() (*BackupRetentionConfig, error) {
 	}
 
 	if value == "" {
-		// Return defaults
+		// Return defaults (matches Java default: 7 days)
 		return &BackupRetentionConfig{
-			MaxBackupCount: intPtr(10),
-			RetentionDays:  intPtr(30),
-			AutoCleanup:    boolPtr(false),
+			BackupFileSavedDays: intPtr(7),
 		}, nil
 	}
 
@@ -204,12 +203,6 @@ func (r *Repository) UpdateRetentionConfig(config *BackupRetentionConfig) error 
 	return nil
 }
 
-// --- Helper functions ---
-
-func intPtr(i int) *int {
-	return &i
-}
-
-func boolPtr(b bool) *bool {
-	return &b
+func (r *Repository) GetDB() *gorm.DB {
+	return r.db
 }

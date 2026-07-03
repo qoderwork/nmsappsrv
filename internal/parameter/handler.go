@@ -67,6 +67,28 @@ func (h *Handler) SetParameter(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
+// BatchSetParameter handles POST /parameters/batch-set
+// Sets multiple parameters atomically on a single device (aligns with Java batch SPV).
+func (h *Handler) BatchSetParameter(c *gin.Context) {
+	var req BatchSetParameterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.Values) == 0 {
+		utils.Error(c, http.StatusBadRequest, "values must not be empty")
+		return
+	}
+
+	username := middleware.GetUsername(c)
+	if err := h.svc.BatchSetParameter(req.ElementId, req.Values, username); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
+}
+
 // ListParameterLogs handles GET /:elementId/logs?page=&pageSize=
 func (h *Handler) ListParameterLogs(c *gin.Context) {
 	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)

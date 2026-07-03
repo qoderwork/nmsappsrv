@@ -10,7 +10,7 @@ type License struct {
 	LicenseType          *string    `gorm:"column:license_type;type:varchar(255)" json:"license_type"`
 	ExpiryDate           *time.Time `gorm:"column:expiry_date" json:"expiry_date"`
 	EnbQuantity          int        `gorm:"column:enb_quantity" json:"enb_quantity"`
-	RoleId               *int       `gorm:"column:role_id" json:"role_id"`
+	RoleId               *string    `gorm:"column:role_id;type:varchar(32)" json:"role_id"`
 	UserQuantity         int        `gorm:"column:user_quantity" json:"user_quantity"`
 	AcsUrl               *string    `gorm:"column:acs_url;type:varchar(255)" json:"acs_url"`
 	OmcName              *string    `gorm:"column:omc_name;type:varchar(255)" json:"omc_name"`
@@ -37,8 +37,8 @@ func (BaseStationLicense) TableName() string { return "base_station_license" }
 
 // SASConfig 对应 sasconfig 表
 type SASConfig struct {
-	Id           int  `gorm:"primaryKey;autoIncrement" json:"id"`
-	LicenseId    *int `gorm:"column:license_id;uniqueIndex" json:"license_id"`
+	Id           int   `gorm:"primaryKey;autoIncrement" json:"id"`
+	LicenseId    *int  `gorm:"column:license_id;uniqueIndex" json:"license_id"`
 	AutoRegister *bool `gorm:"column:auto_register" json:"auto_register"`
 }
 

@@ -38,6 +38,44 @@ func (r *Repository) FindParametersByElementId(elementId int64) ([]ParameterAttr
 	return pas, nil
 }
 
+// FindParameterVosByElementId returns enriched ParameterVo for a device by joining
+// parameter_attributes + parameter definition + element_basic_info_parameter (current values).
+// This matches Java's getListParameterForDeviceVO behavior.
+func (r *Repository) FindParameterVosByElementId(elementId int64) ([]ParameterVo, error) {
+	var vos []ParameterVo
+	err := r.db.Raw(`
+		SELECT
+			p.name AS param_name,
+			p.name AS custom_name,
+			COALESCE(p.path, '') AS tr069_name,
+			COALESCE(ebp.param_value, '') AS value,
+			COALESCE(p.param_type, '') AS type,
+			COALESCE(p.regular_expression, '') AS regular_expression,
+			p.length,
+			COALESCE(p.unit, '') AS unit,
+			DATE_FORMAT(p.update_time, '%Y-%m-%d %H:%i:%s') AS update_time,
+			p.id AS parameter_id,
+			COALESCE(p.param_range, '') AS mapping_value,
+			IFNULL(p.is_writable, false) AS writable,
+			COALESCE(p.remark, '') AS remark,
+			IFNULL(p.need_reboot, false) AS need_reboot,
+			COALESCE(p.hint, '') AS hint,
+			IFNULL(p.multiple_check, false) AS multiple_check,
+			COALESCE(p.separator, '') AS separator
+		FROM parameter_attributes pa
+		JOIN parameter p ON p.id = pa.id
+		LEFT JOIN element_basic_info_parameter ebp
+			ON ebp.element_id = pa.element_id AND ebp.param_name = COALESCE(p.path, p.name)
+		WHERE pa.element_id = ?
+		ORDER BY p.sort, p.name
+	`, elementId).Scan(&vos).Error
+	if err != nil {
+		logger.Errorf("FindParameterVosByElementId error: %v", err)
+		return nil, err
+	}
+	return vos, nil
+}
+
 // FindParameterAttributes returns a single parameter attribute row for the
 // given element and parameter name.
 func (r *Repository) FindParameterAttributes(elementId int64, paramName string) (*ParameterAttributes, error) {

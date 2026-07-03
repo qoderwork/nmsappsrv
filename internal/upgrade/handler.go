@@ -74,13 +74,21 @@ func (h *Handler) DeleteUpgradeFile(c *gin.Context) {
 // UpgradeTask endpoints
 // ---------------------------------------------------------------------------
 
-// ListUpgradeTasks handles GET /tasks?page=&pageSize=
+// ListUpgradeTasks handles GET /tasks?page=&pageSize=&searchText=&taskName=&startTime=&endTime=&deviceType=
 func (h *Handler) ListUpgradeTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	tenancyId := middleware.GetLicenseId(c)
 
-	data, total, err := h.svc.ListUpgradeTasks(tenancyId, page, pageSize)
+	filter := UpgradeTaskFilter{
+		SearchText: c.Query("searchText"),
+		TaskName:   c.Query("taskName"),
+		StartTime:  c.Query("startTime"),
+		EndTime:    c.Query("endTime"),
+		DeviceType: c.Query("deviceType"),
+	}
+
+	data, total, err := h.svc.ListUpgradeTasks(tenancyId, filter, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list upgrade tasks")
 		return

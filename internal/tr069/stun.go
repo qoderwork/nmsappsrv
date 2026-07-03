@@ -37,6 +37,17 @@ const stunMagicCookie uint32 = 0x2112A442
 // stunTTL is the Redis key TTL for STUN address entries.
 const stunTTL = 10 * time.Minute
 
+// stunUDP is the shared UDP socket for sending connection requests.
+// Set by STUNServer.listenLoop() when the STUN server starts.
+// Connection requests are sent from the same socket so the device's NAT
+// table allows them through (matches Java GetConnectionServiceImpl.setSocket()).
+var stunUDP *net.UDPConn
+
+// getSTUNUDP returns the shared STUN UDP socket, or nil if STUN is not running.
+func getSTUNUDP() *net.UDPConn {
+	return stunUDP
+}
+
 // STUNServer listens for STUN Binding Requests from CPE devices on UDP.
 // When a device sends a STUN binding request, the server reads the source IP:port
 // from the UDP packet and stores it in Redis at device:stun:{sn} so that
@@ -87,6 +98,7 @@ func (s *STUNServer) Stop() {
 	s.running = false
 	if s.conn != nil {
 		s.conn.Close()
+		stunUDP = nil
 	}
 	close(s.done)
 	logger.Info("STUN server stopped")
@@ -113,6 +125,7 @@ func (s *STUNServer) listenLoop() {
 
 	s.mu.Lock()
 	s.conn = conn
+	stunUDP = conn // share socket for UDP connection requests
 	s.mu.Unlock()
 
 	logger.Infof("STUN server listening on UDP :%d", s.port)

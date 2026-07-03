@@ -57,11 +57,27 @@ func (r *Repository) DeleteUpgradeFile(id int) error {
 
 // FindUpgradeTasks returns a paginated list of upgrade tasks for the given
 // tenancy together with the total count.
-func (r *Repository) FindUpgradeTasks(tenancyId int, offset, limit int) ([]UpgradeTask, int64, error) {
+func (r *Repository) FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error) {
 	var tasks []UpgradeTask
 	var total int64
 
 	query := r.db.Model(&UpgradeTask{}).Where("tenancy_id = ?", tenancyId)
+
+	if filter.SearchText != "" {
+		query = query.Where("name LIKE ? OR user LIKE ?", "%"+filter.SearchText+"%", "%"+filter.SearchText+"%")
+	}
+	if filter.TaskName != "" {
+		query = query.Where("name LIKE ?", "%"+filter.TaskName+"%")
+	}
+	if filter.StartTime != "" {
+		query = query.Where("operation_time >= ?", filter.StartTime)
+	}
+	if filter.EndTime != "" {
+		query = query.Where("operation_time <= ?", filter.EndTime)
+	}
+	if filter.DeviceType != "" {
+		query = query.Where("device_type = ?", filter.DeviceType)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindUpgradeTasks count error: %v", err)

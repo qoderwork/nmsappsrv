@@ -1,6 +1,10 @@
 package user
 
-import "time"
+import (
+	"crypto/rand"
+	"fmt"
+	"time"
+)
 
 // SysUser 对应 sys_user 表
 type SysUser struct {
@@ -20,24 +24,100 @@ type SysUser struct {
 	PasswordModifyTime   *time.Time `gorm:"column:password_modify_time" json:"password_modify_time"`
 	Salt                 *string    `gorm:"column:salt;type:varchar(255)" json:"salt"`
 	CreateUserId         *int       `gorm:"column:create_user_id" json:"create_user_id"`
+	Avatar               *string    `gorm:"column:avatar;type:varchar(255)" json:"avatar"`
+	LoginErrorTime       *time.Time `gorm:"column:login_error_time" json:"login_error_time"`
+	CreateUserName       *string    `gorm:"column:create_user_name;type:varchar(255)" json:"create_user_name"`
+	UpdateTime           *time.Time `gorm:"column:update_time" json:"update_time"`
+	FirstLogin           *bool      `gorm:"column:first_login" json:"first_login"`
+	Deleted              *bool      `gorm:"column:deleted" json:"deleted"`
 }
 
 func (SysUser) TableName() string { return "sys_user" }
 
-// Role 对应 role 表
+// UserDTO is the API response DTO for user data, excluding sensitive fields (password, salt).
+type UserDTO struct {
+	Id                 int        `json:"id"`
+	Username           *string    `json:"username"`
+	Email              *string    `json:"email"`
+	PhoneNumber        *string    `json:"phoneNumber"`
+	RealName           *string    `json:"realName"`
+	Status             *int       `json:"status"`
+	LicenseId          *int       `json:"licenseId"`
+	CreateTime         *time.Time `json:"createTime"`
+	LastLoginTime      *time.Time `json:"lastLoginTime"`
+	LoginErrorTimes    *int       `json:"loginErrorTimes"`
+	LastLockTime       *time.Time `json:"lastLockTime"`
+	Enable             *bool      `json:"enable"`
+	PasswordModifyTime *time.Time `json:"passwordModifyTime"`
+	CreateUserId       *int       `json:"createUserId"`
+	Avatar             *string    `json:"avatar"`
+	LoginErrorTime     *time.Time `json:"loginErrorTime"`
+	CreateUserName     *string    `json:"createUserName"`
+	UpdateTime         *time.Time `json:"updateTime"`
+	FirstLogin         *bool      `json:"firstLogin"`
+	Roles              []string   `json:"roles,omitempty"`
+}
+
+// ToUserDTO converts a SysUser to a UserDTO (strips password/salt).
+func ToUserDTO(u *SysUser) UserDTO {
+	return UserDTO{
+		Id:                 u.Id,
+		Username:           u.Username,
+		Email:              u.Email,
+		PhoneNumber:        u.PhoneNumber,
+		RealName:           u.RealName,
+		Status:             u.Status,
+		LicenseId:          u.LicenseId,
+		CreateTime:         u.CreateTime,
+		LastLoginTime:      u.LastLoginTime,
+		LoginErrorTimes:    u.LoginErrorTimes,
+		LastLockTime:       u.LastLockTime,
+		Enable:             u.Enable,
+		PasswordModifyTime: u.PasswordModifyTime,
+		CreateUserId:       u.CreateUserId,
+		Avatar:             u.Avatar,
+		LoginErrorTime:     u.LoginErrorTime,
+		CreateUserName:     u.CreateUserName,
+		UpdateTime:         u.UpdateTime,
+		FirstLogin:         u.FirstLogin,
+	}
+}
+
+// ToUserDTOs converts a slice of SysUser to a slice of UserDTO.
+func ToUserDTOs(users []SysUser) []UserDTO {
+	dtos := make([]UserDTO, len(users))
+	for i, u := range users {
+		dtos[i] = ToUserDTO(&u)
+	}
+	return dtos
+}
+
+// Role 对应 role 表 (Java: String id, not auto-increment)
 type Role struct {
-	Id          int     `gorm:"primaryKey;autoIncrement" json:"id"`
-	RoleName    *string `gorm:"column:role_name;type:varchar(255)" json:"role_name"`
-	Description *string `gorm:"column:description;type:varchar(255)" json:"description"`
-	LicenseId   *int    `gorm:"column:license_id" json:"license_id"`
+	Id          string     `gorm:"primaryKey;type:varchar(32)" json:"id"`
+	RoleName    *string    `gorm:"column:role_name;type:varchar(255)" json:"role_name"`
+	Description *string    `gorm:"column:description;type:varchar(255)" json:"description"`
+	LicenseId   *int       `gorm:"column:license_id" json:"license_id"`
+	UseToSSO    *bool      `gorm:"column:use_to_sso" json:"use_to_sso"`
+	DefaultRole *bool      `gorm:"column:default_role" json:"default_role"`
+	User        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
+	UpdateTime  *time.Time `gorm:"column:update_time" json:"update_time"`
 }
 
 func (Role) TableName() string { return "role" }
 
+// BeforeCreate auto-generates a UUID v4 primary key if not already set.
+func (r *Role) BeforeCreate(tx interface{ Error() error }) error {
+	if r.Id == "" {
+		r.Id = generateUUID()
+	}
+	return nil
+}
+
 // RoleHasPermission 对应 role_has_permission 表
 type RoleHasPermission struct {
 	Id           int     `gorm:"primaryKey;autoIncrement" json:"id"`
-	RoleId       *int    `gorm:"column:role_id" json:"role_id"`
+	RoleId       *string `gorm:"column:role_id;type:varchar(32)" json:"role_id"`
 	PermissionId *string `gorm:"column:permission_id;type:varchar(255)" json:"permission_id"`
 }
 
@@ -45,9 +125,9 @@ func (RoleHasPermission) TableName() string { return "role_has_permission" }
 
 // UserHasRole 对应 user_has_role 表
 type UserHasRole struct {
-	Id     int `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserId int `gorm:"column:user_id" json:"user_id"`
-	RoleId int `gorm:"column:role_id" json:"role_id"`
+	Id     int    `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserId int    `gorm:"column:user_id" json:"user_id"`
+	RoleId string `gorm:"column:role_id;type:varchar(32)" json:"role_id"`
 }
 
 func (UserHasRole) TableName() string { return "user_has_role" }
@@ -127,7 +207,7 @@ const (
 	LoginTypeLogout = 2
 )
 
-// 密码过期天数
+// 密码过期天的
 const PasswordExpiredDays = 180
 
 // 用户不活跃锁定天数
@@ -147,3 +227,13 @@ const IPLockMinutes = 30
 
 // JWT TTL（分钟）
 const JTTTLMintues = 60
+
+// generateUUID returns a random UUID v4 string (32 hex chars with dashes).
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}

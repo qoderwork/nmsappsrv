@@ -18,22 +18,27 @@ import (
 var JWTSecret = []byte("nmsappsrv-secret-key")
 
 // Claims defines the payload carried inside each JWT.
+// Aligned with Java: includes roleNames and ssoType fields.
 type Claims struct {
-	UserID    int    `json:"user_id"`
-	Username  string `json:"username"`
-	LicenseID int    `json:"license_id"`
+	UserID    int      `json:"user_id"`
+	Username  string   `json:"username"`
+	LicenseID int      `json:"license_id"`
+	RoleNames []string `json:"role_names"`
+	SsoType   string   `json:"sso_type"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken creates a signed JWT that is valid for 60 minutes.
 // It also stores the token in Redis under SECURITY_JWT_LOGIN:{username}
 // so that only the most recently issued token is valid.
-func GenerateToken(userId int, username string, licenseId int) (string, error) {
+func GenerateToken(userId int, username string, licenseId int, roleNames []string, ssoType string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:    userId,
 		Username:  username,
 		LicenseID: licenseId,
+		RoleNames: roleNames,
+		SsoType:   ssoType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(60 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -127,6 +132,8 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
 		c.Set("license_id", claims.LicenseID)
+		c.Set("role_names", claims.RoleNames)
+		c.Set("sso_type", claims.SsoType)
 
 		c.Next()
 	}
@@ -172,4 +179,30 @@ func GetLicenseId(c *gin.Context) int {
 		return 0
 	}
 	return id
+}
+
+// GetRoleNames extracts the authenticated user's role names from the gin context.
+func GetRoleNames(c *gin.Context) []string {
+	v, ok := c.Get("role_names")
+	if !ok {
+		return nil
+	}
+	names, ok := v.([]string)
+	if !ok {
+		return nil
+	}
+	return names
+}
+
+// GetSsoType extracts the authenticated user's SSO type from the gin context.
+func GetSsoType(c *gin.Context) string {
+	v, ok := c.Get("sso_type")
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }

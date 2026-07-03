@@ -53,8 +53,8 @@ func (s *Service) DeleteUpgradeFile(id int) error {
 // UpgradeTask
 // ---------------------------------------------------------------------------
 
-// ListUpgradeTasks returns a paginated list of upgrade tasks.
-func (s *Service) ListUpgradeTasks(tenancyId int, page, pageSize int) ([]UpgradeTask, int64, error) {
+// ListUpgradeTasks returns a paginated list of upgrade task VOs with computed fields.
+func (s *Service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -62,7 +62,64 @@ func (s *Service) ListUpgradeTasks(tenancyId int, page, pageSize int) ([]Upgrade
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindUpgradeTasks(tenancyId, offset, pageSize)
+	tasks, total, err := s.repo.FindUpgradeTasks(tenancyId, filter, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Convert to VOs with computed fields
+	vos := make([]UpgradeTaskVo, 0, len(tasks))
+	for _, t := range tasks {
+		vo := UpgradeTaskVo{
+			Id:          t.Id,
+			Status:      t.Status,
+			ExecuteMode: t.ExecuteMode,
+		}
+		if t.Name != nil {
+			vo.Name = *t.Name
+		}
+		if t.User != nil {
+			vo.User = *t.User
+		}
+		if t.OperationTime != nil {
+			vo.OperationTime = t.OperationTime.Format("2006-01-02 15:04:05")
+		}
+		if t.StartTime != nil {
+			vo.StartTime = t.StartTime.Format("2006-01-02 15:04:05")
+		}
+		if t.EndTime != nil {
+			vo.EndTime = t.EndTime.Format("2006-01-02 15:04:05")
+		}
+		if t.DeviceType != nil {
+			vo.DeviceType = *t.DeviceType
+		}
+		if t.UpgradeType != nil {
+			vo.UpgradeType = *t.UpgradeType
+		}
+
+		// Compute device count from elementIds
+		elementIds := ParseElementIds(derefString(t.ElementIds))
+		vo.DeviceCount = len(elementIds)
+
+		// Lookup version from UpgradeFile
+		if t.UpgradeFileId != nil && *t.UpgradeFileId > 0 {
+			if f, err := s.repo.FindUpgradeFileByID(*t.UpgradeFileId); err == nil && f.Version != nil {
+				vo.Version = *f.Version
+			}
+		}
+
+		// Compute progress from UpgradeLog counts
+		var successCount, failCount int64
+		s.repo.db.Model(&UpgradeLog{}).Where("task_id = ? AND success = ?", t.Id, true).Count(&successCount)
+		s.repo.db.Model(&UpgradeLog{}).Where("task_id = ? AND success = ?", t.Id, false).Count(&failCount)
+		vo.SuccessCount = int(successCount)
+		vo.FailCount = int(failCount)
+		vo.Progress = fmt.Sprintf("%d/%d", successCount+failCount, vo.DeviceCount)
+
+		vos = append(vos, vo)
+	}
+
+	return vos, total, nil
 }
 
 // GetUpgradeTask returns a single upgrade task by ID.

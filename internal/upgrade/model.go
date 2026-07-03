@@ -34,6 +34,35 @@ type UpgradeTask struct {
 
 func (UpgradeTask) TableName() string { return "upgrade_task" }
 
+// UpgradeTaskVo is the API response VO for upgrade task queries (computed fields).
+type UpgradeTaskVo struct {
+	Id            int        `json:"id"`
+	Name          string     `json:"name"`
+	User          string     `json:"user"`
+	OperationTime string     `json:"operationTime"`
+	Status        *int       `json:"status"`
+	StartTime     string     `json:"startTime"`
+	EndTime       string     `json:"endTime"`
+	ExecuteMode   *int       `json:"executeMode"`
+	DeviceType    string     `json:"deviceType"`
+	UpgradeType   string     `json:"upgradeType"`
+	Version       string     `json:"version"`       // from UpgradeFile join
+	DeviceCount   int        `json:"deviceCount"`    // len(elementIds)
+	Progress      string     `json:"progress"`       // e.g. "3/10"
+	SuccessCount  int        `json:"successCount"`
+	FailCount     int        `json:"failCount"`
+	TenancyName   string     `json:"tenancyName"`
+}
+
+// UpgradeTaskFilter holds query parameters for filtering upgrade task lists.
+type UpgradeTaskFilter struct {
+	SearchText  string
+	TaskName    string
+	StartTime   string
+	EndTime     string
+	DeviceType  string
+}
+
 // UpgradeFile 对应 upgrade_file 表
 type UpgradeFile struct {
 	Id               int        `gorm:"primaryKey;autoIncrement" json:"id"`

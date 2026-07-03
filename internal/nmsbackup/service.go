@@ -18,38 +18,54 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// AddBackupTask creates a new backup task
-func (s *Service) AddBackupTask(c *gin.Context, req *AddNMSBackupTaskRequest) (*NMSBackupAndRevertTask, error) {
+// AddBackupSchedule creates a new backup schedule definition (nms_backup_and_revert)
+func (s *Service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest) (*NMSBackupAndRevert, error) {
 	username := middleware.GetUsername(c)
 	licenseId := middleware.GetLicenseId(c)
 	now := time.Now()
 
-	task := &NMSBackupAndRevertTask{
-		Name:        strPtr(req.Name),
-		TaskType:    strPtr("backup"),
-		ExecuteMode: intPtr(req.ExecuteMode),
-		Status:      intPtr(1), // waiting
-		CreateTime:  &now,
-		UpdateTime:  &now,
-		User:        strPtr(username),
-		LicenseId:   intPtr(licenseId),
+	schedule := &NMSBackupAndRevert{
+		CreateTime:     &now,
+		CreateUserName: strPtr(username),
+		BackupName:     strPtr(req.BackupName),
+		BackupType:     intPtr(req.BackupType),
+		BackupStatus:   intPtr(0), // ready
+		LicenseId:      intPtr(licenseId),
 	}
 
-	if req.ExecuteMode == 2 && req.CronExpr != "" {
-		task.CronExpr = strPtr(req.CronExpr)
+	if req.BackupType == 1 {
+		// Scheduled
+		schedule.BackupInterval = intPtr(req.BackupInterval)
+		if req.BackupBeginTime != "" {
+			t, err := parseTime(req.BackupBeginTime)
+			if err != nil {
+				return nil, fmt.Errorf("invalid backupBeginTime: %w", err)
+			}
+			schedule.BackupBeginTime = &t
+		}
 	}
 
-	if err := s.repo.CreateTask(task); err != nil {
-		logger.Errorf("Failed to create backup task: %v", err)
-		return nil, fmt.Errorf("failed to create backup task")
+	if req.PmInterval > 0 {
+		schedule.PmInterval = intPtr(req.PmInterval)
+	}
+	if req.MrInterval > 0 {
+		schedule.MrInterval = intPtr(req.MrInterval)
+	}
+	if req.XlogInterval > 0 {
+		schedule.XlogInterval = intPtr(req.XlogInterval)
 	}
 
-	logger.Infof("Created backup task %d by user %s", task.Id, username)
-	return task, nil
+	if err := s.repo.CreateSchedule(schedule); err != nil {
+		logger.Errorf("Failed to create backup schedule: %v", err)
+		return nil, fmt.Errorf("failed to create backup schedule")
+	}
+
+	logger.Infof("Created backup schedule %d (%s) by user %s", schedule.Id, req.BackupName, username)
+	return schedule, nil
 }
 
-// ListBackupTasks returns paginated list of backup tasks
-func (s *Service) ListBackupTasks(c *gin.Context, req *ListNMSBackupTaskRequest) ([]NMSBackupTaskVo, int64, error) {
+// ListBackupSchedules returns paginated list of backup schedules
+func (s *Service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequest) ([]NMSBackupTaskVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	page := req.Page
@@ -61,21 +77,24 @@ func (s *Service) ListBackupTasks(c *gin.Context, req *ListNMSBackupTaskRequest)
 		pageSize = 10
 	}
 
-	tasks, total, err := s.repo.ListTasks(licenseId, page, pageSize)
+	schedules, total, err := s.repo.ListSchedules(licenseId, page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	var result []NMSBackupTaskVo
-	for _, task := range tasks {
+	for _, sch := range schedules {
 		vo := NMSBackupTaskVo{
-			Id:          task.Id,
-			Name:        derefString(task.Name),
-			ExecuteMode: derefInt(task.ExecuteMode),
-			CronExpr:    derefString(task.CronExpr),
-			Status:      derefInt(task.Status),
-			CreateTime:  formatTime(task.CreateTime),
-			LastRunTime: formatTime(task.LastRunTime),
+			Id:              sch.Id,
+			BackupName:      derefString(sch.BackupName),
+			BackupType:      derefInt(sch.BackupType),
+			BackupInterval:  derefInt(sch.BackupInterval),
+			BackupBeginTime: formatTime(sch.BackupBeginTime),
+			BackupStatus:    derefInt(sch.BackupStatus),
+			PmInterval:      derefInt(sch.PmInterval),
+			MrInterval:      derefInt(sch.MrInterval),
+			XlogInterval:    derefInt(sch.XlogInterval),
+			CreateTime:      formatTime(sch.CreateTime),
 		}
 		result = append(result, vo)
 	}
@@ -83,154 +102,217 @@ func (s *Service) ListBackupTasks(c *gin.Context, req *ListNMSBackupTaskRequest)
 	return result, total, nil
 }
 
-// ModifyBackupTask updates an existing backup task
-func (s *Service) ModifyBackupTask(c *gin.Context, req *ModifyNMSBackupTaskRequest) error {
-	task, err := s.repo.GetTaskById(req.Id)
+// ModifyBackupSchedule updates an existing backup schedule
+func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskRequest) error {
+	schedule, err := s.repo.GetScheduleById(req.Id)
 	if err != nil {
-		return fmt.Errorf("task not found")
+		return fmt.Errorf("schedule not found")
 	}
 
-	now := time.Now()
-	task.UpdateTime = &now
+	if req.BackupName != "" {
+		schedule.BackupName = strPtr(req.BackupName)
+	}
+	if req.BackupType != nil {
+		schedule.BackupType = req.BackupType
+	}
+	if req.BackupInterval != nil {
+		schedule.BackupInterval = req.BackupInterval
+	}
+	if req.BackupBeginTime != nil {
+		t, err := parseTime(*req.BackupBeginTime)
+		if err != nil {
+			return fmt.Errorf("invalid backupBeginTime: %w", err)
+		}
+		schedule.BackupBeginTime = &t
+	}
+	if req.PmInterval != nil {
+		schedule.PmInterval = req.PmInterval
+	}
+	if req.MrInterval != nil {
+		schedule.MrInterval = req.MrInterval
+	}
+	if req.XlogInterval != nil {
+		schedule.XlogInterval = req.XlogInterval
+	}
 
-	if req.Name != "" {
-		task.Name = strPtr(req.Name)
-	}
-	if req.ExecuteMode != nil {
-		task.ExecuteMode = req.ExecuteMode
-	}
-	if req.CronExpr != nil {
-		task.CronExpr = req.CronExpr
+	if err := s.repo.UpdateSchedule(schedule); err != nil {
+		logger.Errorf("Failed to modify backup schedule %d: %v", req.Id, err)
+		return fmt.Errorf("failed to modify backup schedule")
 	}
 
-	if err := s.repo.UpdateTask(task); err != nil {
-		logger.Errorf("Failed to modify backup task %d: %v", req.Id, err)
-		return fmt.Errorf("failed to modify backup task")
-	}
-
-	logger.Infof("Modified backup task %d", req.Id)
+	logger.Infof("Modified backup schedule %d", req.Id)
 	return nil
 }
 
-// RunBackupTask triggers immediate backup execution
-func (s *Service) RunBackupTask(c *gin.Context, req *RunNMSBackupTaskRequest) error {
+// RunBackup triggers immediate backup execution for a schedule
+func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error {
 	username := middleware.GetUsername(c)
 
-	task, err := s.repo.GetTaskById(req.TaskId)
+	schedule, err := s.repo.GetScheduleById(req.Id)
 	if err != nil {
-		return fmt.Errorf("task not found")
+		return fmt.Errorf("schedule not found")
 	}
 
-	// Update task status to running
 	now := time.Now()
-	runningStatus := 2
-	task.Status = &runningStatus
-	task.LastRunTime = &now
-	task.UpdateTime = &now
 
-	if err := s.repo.UpdateTask(task); err != nil {
-		return fmt.Errorf("failed to update task status")
+	// Mark schedule as running
+	runningStatus := 1
+	schedule.BackupStatus = &runningStatus
+	if err := s.repo.UpdateSchedule(schedule); err != nil {
+		return fmt.Errorf("failed to update schedule status")
 	}
 
-	// Create backup record
-	backupRecord := &NMSBackupAndRevert{
-		TaskId:     intPtr(task.Id),
-		FileName:   strPtr(fmt.Sprintf("backup_%d_%s.sql.gz", task.Id, now.Format("20060102_150405"))),
-		FilePath:   strPtr(fmt.Sprintf("/data/backups/nms/backup_%d_%s.sql.gz", task.Id, now.Format("20060102_150405"))),
-		Status:     intPtr(1), // success
-		CreateTime: &now,
-		User:       strPtr(username),
+	// Create task execution record
+	task := &NMSBackupAndRevertTask{
+		Name:        strPtr(derefString(schedule.BackupName)),
+		TaskType:    strPtr("backup"),
+		ExecuteMode: intPtr(1), // immediately
+		Status:      intPtr(1), // waiting
+		CreateTime:  &now,
+		UpdateTime:  &now,
+		User:        strPtr(username),
+		NmsBackupId: intPtr(schedule.Id),
 	}
 
-	if err := s.repo.CreateBackupRecord(backupRecord); err != nil {
-		logger.Errorf("Failed to create backup record: %v", err)
-		return fmt.Errorf("failed to create backup record")
+	if err := s.repo.CreateTask(task); err != nil {
+		logger.Errorf("Failed to create backup task record: %v", err)
+		failedStatus := 3
+		schedule.BackupStatus = &failedStatus
+		s.repo.UpdateSchedule(schedule)
+		return fmt.Errorf("failed to create task record")
 	}
+
+	// Mark task as running
+	taskRunning := 2
+	task.Status = &taskRunning
+	task.StartTime = &now
+	s.repo.UpdateTask(task)
+
+	// Simulate backup execution (actual mysqldump requires external tools)
+	fileName := fmt.Sprintf("backup_%d_%s.sql.gz", schedule.Id, now.Format("20060102_150405"))
+	endTime := time.Now()
+	duration := int(endTime.Sub(now).Seconds())
+
+	// Update task as done
+	taskDone := 3
+	task.Status = &taskDone
+	task.EndTime = &endTime
+	s.repo.UpdateTask(task)
+
+	// Update schedule: completed
+	completedStatus := 2
+	schedule.BackupStatus = &completedStatus
+	schedule.BackupTimeCost = intPtr(duration)
+	schedule.FileName = strPtr(fileName)
+	s.repo.UpdateSchedule(schedule)
 
 	// Create log record
 	logRecord := &NMSBackupAndRevertLog{
-		TaskId:        intPtr(task.Id),
-		BackupId:      intPtr(backupRecord.Id),
-		OperationType: strPtr("backup"),
-		Status:        intPtr(1), // success
-		StartTime:     &now,
-		EndTime:       &now,
-		User:          strPtr(username),
+		FileName:      strPtr(fileName),
+		Time:          &now,
+		OperationUser: strPtr(username),
+		Result:        intPtr(0), // success
 	}
 
 	if err := s.repo.CreateLog(logRecord); err != nil {
 		logger.Errorf("Failed to create backup log: %v", err)
 	}
 
-	// Update task status to done
-	doneStatus := 3
-	task.Status = &doneStatus
-	s.repo.UpdateTask(task)
-
-	logger.Warnf("Backup task %d completed. Note: Actual mysqldump execution requires external tools", task.Id)
-	logger.Infof("Backup task %d executed by user %s", task.Id, username)
+	logger.Warnf("Backup schedule %d completed. Note: Actual mysqldump execution requires external tools", schedule.Id)
+	logger.Infof("Backup schedule %d executed by user %s", schedule.Id, username)
 
 	return nil
 }
 
-// DeleteBackupTask deletes a backup task and associated records
-func (s *Service) DeleteBackupTask(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
-	// Delete associated backup records
-	if err := s.repo.DeleteBackupRecordsByTaskId(req.TaskId); err != nil {
-		logger.Errorf("Failed to delete backup records for task %d: %v", req.TaskId, err)
+// DeleteBackupSchedule deletes a backup schedule
+func (s *Service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
+	if err := s.repo.DeleteSchedule(req.Id); err != nil {
+		logger.Errorf("Failed to delete backup schedule %d: %v", req.Id, err)
+		return fmt.Errorf("failed to delete backup schedule")
 	}
 
-	// Delete task
-	if err := s.repo.DeleteTask(req.TaskId); err != nil {
-		logger.Errorf("Failed to delete backup task %d: %v", req.TaskId, err)
-		return fmt.Errorf("failed to delete backup task")
-	}
-
-	logger.Infof("Deleted backup task %d", req.TaskId)
+	logger.Infof("Deleted backup schedule %d", req.Id)
 	return nil
 }
 
-// RevertBackupTask triggers restore from backup
-func (s *Service) RevertBackupTask(c *gin.Context, req *RevertNMSBackupTaskRequest) error {
+// RevertBackup triggers restore from a backup schedule's file
+func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) error {
 	username := middleware.GetUsername(c)
 
-	backup, err := s.repo.GetBackupById(req.BackupId)
+	schedule, err := s.repo.GetScheduleById(req.Id)
 	if err != nil {
-		return fmt.Errorf("backup record not found")
+		return fmt.Errorf("schedule not found")
 	}
 
 	now := time.Now()
 
-	// Create revert log record
+	// Mark revert as running
+	schedule.RevertStatus = intPtr(1) // running
+	schedule.RevertBeginTime = &now
+	s.repo.UpdateSchedule(schedule)
+
+	// Create task execution record
+	task := &NMSBackupAndRevertTask{
+		Name:        strPtr(derefString(schedule.BackupName)),
+		TaskType:    strPtr("revert"),
+		ExecuteMode: intPtr(1),
+		Status:      intPtr(1),
+		CreateTime:  &now,
+		UpdateTime:  &now,
+		User:        strPtr(username),
+		NmsBackupId: intPtr(schedule.Id),
+	}
+
+	if err := s.repo.CreateTask(task); err != nil {
+		logger.Errorf("Failed to create revert task record: %v", err)
+		return fmt.Errorf("failed to create task record")
+	}
+
+	// Mark task as running then done
+	taskRunning := 2
+	task.Status = &taskRunning
+	task.StartTime = &now
+	s.repo.UpdateTask(task)
+
+	endTime := time.Now()
+	taskDone := 3
+	task.Status = &taskDone
+	task.EndTime = &endTime
+	s.repo.UpdateTask(task)
+
+	// Mark revert as completed
+	schedule.RevertStatus = intPtr(2) // completed
+	schedule.RevertEndTime = &endTime
+	s.repo.UpdateSchedule(schedule)
+
+	// Create log record
 	logRecord := &NMSBackupAndRevertLog{
-		TaskId:        backup.TaskId,
-		BackupId:      intPtr(backup.Id),
-		OperationType: strPtr("revert"),
-		Status:        intPtr(1), // success
-		StartTime:     &now,
-		EndTime:       &now,
-		User:          strPtr(username),
+		FileName:      schedule.FileName,
+		Time:          &now,
+		OperationUser: strPtr(username),
+		Result:        intPtr(0), // success
 	}
 
 	if err := s.repo.CreateLog(logRecord); err != nil {
 		logger.Errorf("Failed to create revert log: %v", err)
-		return fmt.Errorf("failed to create revert log")
 	}
 
-	logger.Warnf("Revert task completed for backup %d. Note: Actual mysql restore requires external tools", req.BackupId)
-	logger.Infof("Revert task executed for backup %d by user %s", req.BackupId, username)
+	logger.Warnf("Revert completed for schedule %d. Note: Actual mysql restore requires external tools", req.Id)
+	logger.Infof("Revert executed for schedule %d by user %s", req.Id, username)
 
 	return nil
 }
 
 // GetBackupRetentionConfig reads retention configuration
-func (s *Service) GetBackupRetentionConfig() (*BackupRetentionConfig, error) {
+func (s *Service) GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, error) {
 	config, err := s.repo.GetRetentionConfig()
 	if err != nil {
 		logger.Errorf("Failed to get backup retention config: %v", err)
 		return nil, fmt.Errorf("failed to get retention config")
 	}
-	return config, nil
+	return &GetBackupAndRestoreConfigDTO{
+		BackupFileSavedDays: derefInt(config.BackupFileSavedDays),
+	}, nil
 }
 
 // UpdateBackupRetentionConfig updates retention configuration
@@ -240,14 +322,8 @@ func (s *Service) UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest)
 		return fmt.Errorf("failed to get current config")
 	}
 
-	if req.MaxBackupCount != nil {
-		config.MaxBackupCount = req.MaxBackupCount
-	}
-	if req.RetentionDays != nil {
-		config.RetentionDays = req.RetentionDays
-	}
-	if req.AutoCleanup != nil {
-		config.AutoCleanup = req.AutoCleanup
+	if req.BackupFileSavedDays != nil {
+		config.BackupFileSavedDays = req.BackupFileSavedDays
 	}
 
 	if err := s.repo.UpdateRetentionConfig(config); err != nil {
@@ -270,7 +346,7 @@ func (s *Service) ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogV
 		pageSize = 10
 	}
 
-	logs, total, err := s.repo.ListLogs(req.TaskId, page, pageSize)
+	logs, total, err := s.repo.ListLogs(page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -279,13 +355,11 @@ func (s *Service) ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogV
 	for _, log := range logs {
 		vo := NMSBackupLogVo{
 			Id:            log.Id,
-			TaskId:        derefIntPtr(log.TaskId),
-			OperationType: derefString(log.OperationType),
-			Status:        derefInt(log.Status),
-			StartTime:     formatTime(log.StartTime),
-			EndTime:       formatTime(log.EndTime),
-			User:          derefString(log.User),
-			FailureReason: derefString(log.FailureReason),
+			FileName:      derefString(log.FileName),
+			Time:          formatTime(log.Time),
+			OperationUser: derefString(log.OperationUser),
+			Result:        derefInt(log.Result),
+			Reason:        derefString(log.Reason),
 		}
 		result = append(result, vo)
 	}
@@ -322,11 +396,8 @@ func derefInt(i *int) int {
 	return *i
 }
 
-func derefIntPtr(i *int) int {
-	if i == nil {
-		return 0
-	}
-	return *i
+func intPtr(i int) *int {
+	return &i
 }
 
 func formatTime(t *time.Time) string {
@@ -334,4 +405,18 @@ func formatTime(t *time.Time) string {
 		return ""
 	}
 	return t.Format("2006-01-02 15:04:05")
+}
+
+func parseTime(s string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported time format: %s", s)
 }

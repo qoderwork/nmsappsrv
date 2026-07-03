@@ -101,8 +101,8 @@ func (r *Repository) UpdateRole(role *Role) error {
 	return r.db.Save(role).Error
 }
 
-// DeleteRole removes a role by ID.
-func (r *Repository) DeleteRole(id int) error {
+// DeleteRole removes a role by ID (string UUID).
+func (r *Repository) DeleteRole(id string) error {
 	return r.db.Where("id = ?", id).Delete(&Role{}).Error
 }
 
@@ -111,7 +111,7 @@ func (r *Repository) DeleteRole(id int) error {
 // ---------------------------------------------------------------------------
 
 // FindPermissionsByRoleId returns all permission associations for a role.
-func (r *Repository) FindPermissionsByRoleId(roleId int) ([]RoleHasPermission, error) {
+func (r *Repository) FindPermissionsByRoleId(roleId string) ([]RoleHasPermission, error) {
 	var perms []RoleHasPermission
 	if err := r.db.Where("role_id = ?", roleId).Find(&perms).Error; err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (r *Repository) FindPermissionsByRoleId(roleId int) ([]RoleHasPermission, e
 
 // SavePermissions replaces all permission associations for a role. It deletes
 // existing rows and inserts the new set inside a transaction.
-func (r *Repository) SavePermissions(roleId int, permissionIds []string) error {
+func (r *Repository) SavePermissions(roleId string, permissionIds []string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("role_id = ?", roleId).Delete(&RoleHasPermission{}).Error; err != nil {
 			return err
@@ -150,7 +150,7 @@ func (r *Repository) FindUserRoles(userId int) ([]UserHasRole, error) {
 }
 
 // SaveUserRoles replaces all role associations for a user.
-func (r *Repository) SaveUserRoles(userId int, roleIds []int) error {
+func (r *Repository) SaveUserRoles(userId int, roleIds []string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userId).Delete(&UserHasRole{}).Error; err != nil {
 			return err

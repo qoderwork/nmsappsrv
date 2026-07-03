@@ -28,9 +28,46 @@ func NewService(db *gorm.DB) *Service {
 // ParameterAttributes
 // ---------------------------------------------------------------------------
 
-// GetParameters returns all parameter attributes for the given element.
-func (s *Service) GetParameters(elementId int64) ([]ParameterAttributes, error) {
-	return s.repo.FindParametersByElementId(elementId)
+// GetParameters returns enriched parameter data for the given element, including
+// device metadata and full parameter definitions with current values.
+func (s *Service) GetParameters(elementId int64) (*DeviceParameterDetailVo, error) {
+	// 1. Get device metadata
+	var deviceInfo struct {
+		SerialNumber string `gorm:"column:serial_number"`
+		DeviceName   string `gorm:"column:device_name"`
+		DeviceType   string `gorm:"column:device_type"`
+	}
+	if err := s.repo.db.Table("cpe_element").
+		Select("serial_number, device_name, device_type").
+		Where("ne_neid = ? AND deleted = ?", elementId, false).
+		Scan(&deviceInfo).Error; err != nil {
+		return nil, fmt.Errorf("device not found: %w", err)
+	}
+
+	// 2. Check online status from Redis
+	online := false
+	if deviceInfo.SerialNumber != "" {
+		ctx := context.Background()
+		val, err := redis.Get(ctx, fmt.Sprintf("device:online:%s", deviceInfo.SerialNumber))
+		if err == nil && val == "true" {
+			online = true
+		}
+	}
+
+	// 3. Get enriched parameters
+	params, err := s.repo.FindParameterVosByElementId(elementId)
+	if err != nil {
+		return nil, fmt.Errorf("get parameters: %w", err)
+	}
+
+	return &DeviceParameterDetailVo{
+		ElementId:    elementId,
+		SerialNumber: deviceInfo.SerialNumber,
+		DeviceName:   deviceInfo.DeviceName,
+		DeviceType:   deviceInfo.DeviceType,
+		Online:       online,
+		Parameters:   params,
+	}, nil
 }
 
 // SetParameter updates a parameter value for the given element and dispatches
@@ -129,6 +166,106 @@ func (s *Service) SetParameter(elementId int64, paramName string, value string, 
 
 	logger.Infof("SetParameter dispatched to device %s (neId=%d): %s=%s",
 		deviceInfo.SerialNumber, elementId, paramName, value)
+	return nil
+}
+
+// BatchSetParameter sets multiple parameters atomically on a single device.
+// Aligns with Java batch SPV: sends a single SetParameterValues RPC with all parameters.
+func (s *Service) BatchSetParameter(elementId int64, records []SetParameterRecord, username string) error {
+	ctx := context.Background()
+
+	// 1. Look up device serial number
+	var deviceInfo struct {
+		SerialNumber string `gorm:"column:serial_number"`
+		DeviceName   string `gorm:"column:device_name"`
+	}
+	if err := s.repo.db.Table("cpe_element").
+		Select("serial_number, device_name").
+		Where("ne_neid = ? AND deleted = ?", elementId, false).
+		Scan(&deviceInfo).Error; err != nil {
+		return fmt.Errorf("device not found: %w", err)
+	}
+	if deviceInfo.SerialNumber == "" {
+		return fmt.Errorf("device %d has no serial number", elementId)
+	}
+
+	// 2. Build parameter list for SPV
+	paramList := make([]soap.ParameterValueStruct, 0, len(records))
+	entries := make([]setParamEntry, 0, len(records))
+	for _, r := range records {
+		paramList = append(paramList, soap.ParameterValueStruct{
+			Name:  r.ParamName,
+			Value: r.Value,
+			Type:  "xsd:string",
+		})
+		entries = append(entries, setParamEntry{ParamName: r.ParamName, ParamValue: r.Value})
+	}
+
+	// 3. Create event_log tracking entry (status=1 pending)
+	now := time.Now()
+	eventLogId, err := s.repo.InsertEventLog("SetParameterValues", elementId, username, 1, "")
+	if err != nil {
+		return fmt.Errorf("create event_log: %w", err)
+	}
+
+	// 4. Build SOAP SetParameterValues XML
+	headerId := soap.GenerateHeaderID()
+	soapXml := soap.BuildSetParameterValues(headerId, paramList, "")
+
+	// 5. Update event_log with tracking data
+	opParamJSON, _ := json.Marshal(entries)
+	trackData, _ := json.Marshal(map[string]interface{}{
+		"header_id":      headerId,
+		"serial_number":  deviceInfo.SerialNumber,
+		"operation_type": "SET_PARAMETER_VALUES",
+		"operationParam": string(opParamJSON),
+		"event_log_id":   eventLogId,
+		"batch":          true,
+		"param_count":    len(records),
+		"issue_time":     now.Format(time.RFC3339),
+	})
+	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+		Updates(map[string]interface{}{
+			"command_track_data": string(trackData),
+			"command_issue_time": now,
+		})
+
+	// 6. Cache track data in Redis for response processing
+	trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+	trackJson, _ := json.Marshal(map[string]interface{}{
+		"header_id":      headerId,
+		"sn":             deviceInfo.SerialNumber,
+		"operation_type": "SET_PARAMETER_VALUES",
+		"event_log_id":   eventLogId,
+	})
+	redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+	// 7. Push SOAP XML to device queue
+	queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
+	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
+		logger.Errorf("failed to push batch SPV to device queue %s: %v", deviceInfo.SerialNumber, err)
+		s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4) // 4=fail
+		return fmt.Errorf("push to device queue: %w", err)
+	}
+	redis.Expire(ctx, queueKey, 24*time.Hour)
+
+	// 8. Create parameter_log for each parameter (audit trail)
+	for _, r := range records {
+		paramName := r.ParamName
+		log := &ParameterLog{
+			ParameterName: &paramName,
+			NewValue:      &r.Value,
+			ChangeUser:    &username,
+			ChangeTime:    &now,
+			ElementId:     &elementId,
+		}
+		if err := s.repo.CreateParameterLogWithID(log); err != nil {
+			logger.Errorf("failed to create parameter_log for %s: %v", paramName, err)
+			// Non-fatal: the command was already dispatched
+		}
+	}
+
+	logger.Infof("batch SPV: sent %d params to device %s (elementId=%d)", len(records), deviceInfo.SerialNumber, elementId)
 	return nil
 }
 

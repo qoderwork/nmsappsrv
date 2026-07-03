@@ -111,6 +111,91 @@ type DeleteObject struct {
 	ParameterKey string
 }
 
+// Capture (ACS -> CPE) — vendor extension for packet capture
+type Capture struct {
+	CommandKey      string
+	CaptureType     string
+	CaptureOptional string
+	FAPI            string
+	Size            int
+	CaptureSwitch   string // "1"=start, "0"=stop
+	URL             string
+	Username        string
+	Password        string
+	TransmitIP      string
+}
+
+// UpgradeDeviceStruct — single device entry in BatchUpgrade
+type UpgradeDeviceStruct struct {
+	DeviceRouteList []string
+	URL             string
+	FileSize        int64
+	TargetFileName  string
+}
+
+// BatchUpgrade (ACS -> CPE) — upgrade multiple devices in one RPC
+type BatchUpgrade struct {
+	CommandKey       string
+	UpgradeDeviceList []UpgradeDeviceStruct
+}
+
+// HttpRequest — single HTTP request in HttpRequestProxy
+type HttpRequest struct {
+	URL        string
+	HttpMethod string // GET, POST, PUT, DELETE
+	Body       string
+	RequestId  string
+}
+
+// HttpRequestProxy (ACS -> CPE) — proxy HTTP requests through CPE
+type HttpRequestProxy struct {
+	Requests []HttpRequest
+}
+
+// SetParameterAttributesStruct — single parameter attribute entry
+type SetParameterAttributesStruct struct {
+	Name               string
+	Notification       int
+	NotificationChange bool
+	AccessListChange   bool
+	AccessList         []string
+}
+
+// SetParameterAttributes (ACS -> CPE)
+type SetParameterAttributes struct {
+	ParameterList []SetParameterAttributesStruct
+}
+
+// CBSDInfo — single CBSD entry in UpdateCBSDStatus
+type CBSDInfo struct {
+	State              string
+	CBSDSerialNumber   string
+	TxPower            *int
+	LowFrequency       *int64
+	HighFrequency      *int64
+	TransmitExpireTime string
+}
+
+// UpdateCBSDStatus (ACS -> CPE) — update CBSD status info
+type UpdateCBSDStatus struct {
+	CBSDInfos []CBSDInfo
+}
+
+// ShellDownload (ACS -> CPE) — like Download but with extra UploadURL field
+type ShellDownload struct {
+	CommandKey     string
+	FileType       string
+	URL            string
+	Username       string
+	Password       string
+	FileSize       int
+	TargetFileName string
+	DelaySeconds   int
+	SuccessURL     string
+	FailureURL     string
+	UploadURL      string
+}
+
 // TransferComplete (CPE -> ACS)
 type TransferComplete struct {
 	Header       SoapHeader
@@ -662,6 +747,9 @@ var supportedRPCMethods = []string{
 	"cwmp:Reboot",
 	"cwmp:FactoryReset",
 	"cwmp:GetRPCMethods",
+	"cwmp:SetParameterAttributes",
+	"cwmp:GetParameterAttributes",
+	"cwmp:SoftReboot",
 }
 
 // BuildGetRPCMethodsResponse builds a GetRPCMethodsResponse SOAP XML listing supported methods.
@@ -678,6 +766,294 @@ func BuildGetRPCMethodsResponse(headerId string) string {
 	}
 	b.WriteString(`</MethodList>`)
 	writeSoapClose(&b, "GetRPCMethodsResponse")
+	return b.String()
+}
+
+// BuildCapture builds Capture request SOAP XML (vendor extension)
+func BuildCapture(headerId string, cap *Capture) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`Capture>`)
+	if cap.CommandKey != "" {
+		b.WriteString(`<CommandKey>`)
+		b.WriteString(EscapeXML(cap.CommandKey))
+		b.WriteString(`</CommandKey>`)
+	}
+	if cap.CaptureType != "" {
+		b.WriteString(`<CaptureType>`)
+		b.WriteString(EscapeXML(cap.CaptureType))
+		b.WriteString(`</CaptureType>`)
+	}
+	if cap.CaptureOptional != "" {
+		b.WriteString(`<CaptureOptional>`)
+		b.WriteString(EscapeXML(cap.CaptureOptional))
+		b.WriteString(`</CaptureOptional>`)
+	}
+	if cap.FAPI != "" {
+		b.WriteString(`<FAPI>`)
+		b.WriteString(EscapeXML(cap.FAPI))
+		b.WriteString(`</FAPI>`)
+	}
+	if cap.Size > 0 {
+		b.WriteString(`<Size>`)
+		b.WriteString(strconv.Itoa(cap.Size))
+		b.WriteString(`</Size>`)
+	}
+	if cap.CaptureSwitch != "" {
+		b.WriteString(`<CaptureSwitch>`)
+		b.WriteString(EscapeXML(cap.CaptureSwitch))
+		b.WriteString(`</CaptureSwitch>`)
+	}
+	if cap.URL != "" {
+		b.WriteString(`<URL>`)
+		b.WriteString(EscapeXML(cap.URL))
+		b.WriteString(`</URL>`)
+	}
+	if cap.Username != "" {
+		b.WriteString(`<Username>`)
+		b.WriteString(EscapeXML(cap.Username))
+		b.WriteString(`</Username>`)
+	}
+	if cap.Password != "" {
+		b.WriteString(`<Password>`)
+		b.WriteString(EscapeXML(cap.Password))
+		b.WriteString(`</Password>`)
+	}
+	if cap.TransmitIP != "" {
+		b.WriteString(`<TransmitIp>`)
+		b.WriteString(EscapeXML(cap.TransmitIP))
+		b.WriteString(`</TransmitIp>`)
+	}
+	writeSoapClose(&b, "Capture")
+	return b.String()
+}
+
+// BuildSoftReboot builds SoftReboot request SOAP XML
+func BuildSoftReboot(headerId string, commandKey string) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`SoftReboot><CommandKey>`)
+	b.WriteString(EscapeXML(commandKey))
+	b.WriteString(`</CommandKey>`)
+	writeSoapClose(&b, "SoftReboot")
+	return b.String()
+}
+
+// BuildBatchUpgrade builds BatchUpgrade request SOAP XML (vendor extension)
+func BuildBatchUpgrade(headerId string, batch *BatchUpgrade) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`BatchUpgrade><CommandKey>`)
+	b.WriteString(EscapeXML(batch.CommandKey))
+	b.WriteString(`</CommandKey>`)
+	b.WriteString(`<UpgradeDeviceList soap-enc:arrayType="cwmp:UpgradeDeviceStruct[`)
+	b.WriteString(strconv.Itoa(len(batch.UpgradeDeviceList)))
+	b.WriteString(`]">`)
+	for _, dev := range batch.UpgradeDeviceList {
+		b.WriteString(`<UpgradeDeviceStruct>`)
+		b.WriteString(`<DeviceRouteList soap-enc:arrayType="xsd:string[`)
+		b.WriteString(strconv.Itoa(len(dev.DeviceRouteList)))
+		b.WriteString(`]">`)
+		for _, route := range dev.DeviceRouteList {
+			b.WriteString(`<string>`)
+			b.WriteString(EscapeXML(route))
+			b.WriteString(`</string>`)
+		}
+		b.WriteString(`</DeviceRouteList>`)
+		b.WriteString(`<URL>`)
+		b.WriteString(EscapeXML(dev.URL))
+		b.WriteString(`</URL>`)
+		b.WriteString(`<FileSize>`)
+		b.WriteString(strconv.FormatInt(dev.FileSize, 10))
+		b.WriteString(`</FileSize>`)
+		b.WriteString(`<TargetFileName>`)
+		b.WriteString(EscapeXML(dev.TargetFileName))
+		b.WriteString(`</TargetFileName>`)
+		b.WriteString(`</UpgradeDeviceStruct>`)
+	}
+	b.WriteString(`</UpgradeDeviceList>`)
+	writeSoapClose(&b, "BatchUpgrade")
+	return b.String()
+}
+
+// BuildCancelFutureUpgrade builds CancelFutureUpgrade request SOAP XML (vendor extension)
+func BuildCancelFutureUpgrade(headerId string, commandKey string) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`CancelFutureUpgrade><CommandKey>`)
+	b.WriteString(EscapeXML(commandKey))
+	b.WriteString(`</CommandKey>`)
+	writeSoapClose(&b, "CancelFutureUpgrade")
+	return b.String()
+}
+
+// BuildHttpRequestProxy builds HttpRequestProxy request SOAP XML (vendor extension)
+func BuildHttpRequestProxy(headerId string, proxy *HttpRequestProxy) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`HttpRequestProxy><HttpRequests soap-enc:arrayType="xsd:HttpRequest[`)
+	b.WriteString(strconv.Itoa(len(proxy.Requests)))
+	b.WriteString(`]">`)
+	for _, req := range proxy.Requests {
+		b.WriteString(`<HttpRequest>`)
+		b.WriteString(`<Url>`)
+		b.WriteString(EscapeXML(req.URL))
+		b.WriteString(`</Url>`)
+		b.WriteString(`<HttpMethod>`)
+		b.WriteString(EscapeXML(req.HttpMethod))
+		b.WriteString(`</HttpMethod>`)
+		if req.Body != "" {
+			b.WriteString(`<Body>`)
+			b.WriteString(EscapeXML(req.Body))
+			b.WriteString(`</Body>`)
+		}
+		b.WriteString(`<RequestId>`)
+		b.WriteString(EscapeXML(req.RequestId))
+		b.WriteString(`</RequestId>`)
+		b.WriteString(`</HttpRequest>`)
+	}
+	b.WriteString(`</HttpRequests>`)
+	writeSoapClose(&b, "HttpRequestProxy")
+	return b.String()
+}
+
+// BuildSetParameterAttributes builds SetParameterAttributes request SOAP XML
+func BuildSetParameterAttributes(headerId string, spa *SetParameterAttributes) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`SetParameterAttributes><ParameterList soap-enc:arrayType="cwmp:SetParameterAttributesStruct[`)
+	b.WriteString(strconv.Itoa(len(spa.ParameterList)))
+	b.WriteString(`]">`)
+	for _, p := range spa.ParameterList {
+		b.WriteString(`<SetParameterAttributesStruct>`)
+		b.WriteString(`<Name>`)
+		b.WriteString(EscapeXML(p.Name))
+		b.WriteString(`</Name>`)
+		b.WriteString(`<Notification>`)
+		b.WriteString(strconv.Itoa(p.Notification))
+		b.WriteString(`</Notification>`)
+		b.WriteString(`<NotificationChange>`)
+		b.WriteString(strconv.FormatBool(p.NotificationChange))
+		b.WriteString(`</NotificationChange>`)
+		b.WriteString(`<AccessListChange>`)
+		b.WriteString(strconv.FormatBool(p.AccessListChange))
+		b.WriteString(`</AccessListChange>`)
+		b.WriteString(`<AccessList soap-enc:arrayType="cwmp:string[`)
+		b.WriteString(strconv.Itoa(len(p.AccessList)))
+		b.WriteString(`]">`)
+		for _, a := range p.AccessList {
+			b.WriteString(`<string>`)
+			b.WriteString(EscapeXML(a))
+			b.WriteString(`</string>`)
+		}
+		b.WriteString(`</AccessList>`)
+		b.WriteString(`</SetParameterAttributesStruct>`)
+	}
+	b.WriteString(`</ParameterList>`)
+	writeSoapClose(&b, "SetParameterAttributes")
+	return b.String()
+}
+
+// BuildGetParameterAttributes builds GetParameterAttributes request SOAP XML
+func BuildGetParameterAttributes(headerId string, names []string) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`GetParameterAttributes><ParameterNames soap-enc:arrayType="xsd:string[`)
+	b.WriteString(strconv.Itoa(len(names)))
+	b.WriteString(`]">`)
+	for _, name := range names {
+		b.WriteString(`<string>`)
+		b.WriteString(EscapeXML(name))
+		b.WriteString(`</string>`)
+	}
+	b.WriteString(`</ParameterNames>`)
+	writeSoapClose(&b, "GetParameterAttributes")
+	return b.String()
+}
+
+// BuildUpdateCBSDStatus builds UpdateCBSDStatus request SOAP XML (vendor extension)
+func BuildUpdateCBSDStatus(headerId string, ucs *UpdateCBSDStatus) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`UpdateCBSDStatus><CBSDInfos soap-enc:arrayType="cwmp:CBSDInfo[`)
+	b.WriteString(strconv.Itoa(len(ucs.CBSDInfos)))
+	b.WriteString(`]">`)
+	for _, info := range ucs.CBSDInfos {
+		b.WriteString(`<CBSDInfo>`)
+		b.WriteString(`<State>`)
+		b.WriteString(EscapeXML(info.State))
+		b.WriteString(`</State>`)
+		if info.CBSDSerialNumber != "" {
+			b.WriteString(`<CBSDSerialNumber>`)
+			b.WriteString(EscapeXML(info.CBSDSerialNumber))
+			b.WriteString(`</CBSDSerialNumber>`)
+		}
+		if info.TxPower != nil {
+			b.WriteString(`<TxPower>`)
+			b.WriteString(strconv.Itoa(*info.TxPower))
+			b.WriteString(`</TxPower>`)
+		}
+		if info.LowFrequency != nil {
+			b.WriteString(`<LowFrequency>`)
+			b.WriteString(strconv.FormatInt(*info.LowFrequency, 10))
+			b.WriteString(`</LowFrequency>`)
+		}
+		if info.HighFrequency != nil {
+			b.WriteString(`<HighFrequency>`)
+			b.WriteString(strconv.FormatInt(*info.HighFrequency, 10))
+			b.WriteString(`</HighFrequency>`)
+		}
+		if info.TransmitExpireTime != "" {
+			b.WriteString(`<TransmitExpireTime>`)
+			b.WriteString(EscapeXML(info.TransmitExpireTime))
+			b.WriteString(`</TransmitExpireTime>`)
+		}
+		b.WriteString(`</CBSDInfo>`)
+	}
+	b.WriteString(`</CBSDInfos>`)
+	writeSoapClose(&b, "UpdateCBSDStatus")
+	return b.String()
+}
+
+// BuildShellDownload builds ShellDownload request SOAP XML (vendor extension with UploadURL)
+func BuildShellDownload(headerId string, sd *ShellDownload) string {
+	var b strings.Builder
+	writeSoapOpen(&b, headerId)
+	b.WriteString(`ShellDownload>`)
+	b.WriteString(`<CommandKey>`)
+	b.WriteString(EscapeXML(sd.CommandKey))
+	b.WriteString(`</CommandKey>`)
+	b.WriteString(`<FileType>`)
+	b.WriteString(EscapeXML(sd.FileType))
+	b.WriteString(`</FileType>`)
+	b.WriteString(`<URL>`)
+	b.WriteString(EscapeXML(sd.URL))
+	b.WriteString(`</URL>`)
+	b.WriteString(`<Username>`)
+	b.WriteString(EscapeXML(sd.Username))
+	b.WriteString(`</Username>`)
+	b.WriteString(`<Password>`)
+	b.WriteString(EscapeXML(sd.Password))
+	b.WriteString(`</Password>`)
+	b.WriteString(`<FileSize>`)
+	b.WriteString(strconv.Itoa(sd.FileSize))
+	b.WriteString(`</FileSize>`)
+	b.WriteString(`<TargetFileName>`)
+	b.WriteString(EscapeXML(sd.TargetFileName))
+	b.WriteString(`</TargetFileName>`)
+	b.WriteString(`<DelaySeconds>`)
+	b.WriteString(strconv.Itoa(sd.DelaySeconds))
+	b.WriteString(`</DelaySeconds>`)
+	b.WriteString(`<SuccessURL>`)
+	b.WriteString(EscapeXML(sd.SuccessURL))
+	b.WriteString(`</SuccessURL>`)
+	b.WriteString(`<FailureURL>`)
+	b.WriteString(EscapeXML(sd.FailureURL))
+	b.WriteString(`</FailureURL>`)
+	b.WriteString(`<UploadURL>`)
+	b.WriteString(EscapeXML(sd.UploadURL))
+	b.WriteString(`</UploadURL>`)
+	writeSoapClose(&b, "ShellDownload")
 	return b.String()
 }
 

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +79,24 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 		}
 
 		logger.Infof("device %s not found, auto-creating", sn)
+
+		// Resolve default license_id from system_config (aligns with Java auto-registration)
+		var resolvedLicenseId *int
+		var configValue string
+		if err := ep.db.Table("system_config").Where("config_key = ?", "default_license").Limit(1).Scan(&configValue).Error; err == nil && configValue != "" {
+			if lid, err := strconv.Atoi(configValue); err == nil && lid > 0 {
+				resolvedLicenseId = &lid
+			}
+		}
+
+		// Determine rootNode from first Inform parameter (e.g. "Device" or "InternetGatewayDevice")
+		rootNode := "Device"
+		if len(inform.ParameterList) > 0 {
+			if idx := strings.Index(inform.ParameterList[0].Name, "."); idx > 0 {
+				rootNode = inform.ParameterList[0].Name[:idx]
+			}
+		}
+
 		cpe = device.CpeElement{
 			SerialNumber:    stringPtr(sn),
 			Status:          stringPtr("online"),
@@ -85,23 +106,65 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 			ModelName:       stringPtr(inform.DeviceId.ProductClass),
 			Generation:      stringPtr(generation),
 			DeviceType:      stringPtr(deviceType),
+			IsNewVersion:    deviceType != "cpe",
+			RootNode:        stringPtr(rootNode),
 			LoadedBasicInfo: false,
 			IsInitialized:   false,
 			Deleted:         false,
+			LicenseId:       resolvedLicenseId,
 		}
 
-		// Extract basic info from Inform parameters
+		// Extract basic info from Inform parameters (matches Java extraBasicInfo)
+		macRegex := regexp.MustCompile(`Device\.Ethernet\.Interface\.\d+\.MACAddress`)
+		var macs []string
 		for _, param := range inform.ParameterList {
-			switch param.Name {
-			case "InternetGatewayDevice.DeviceInfo.SoftwareVersion":
+			switch {
+			case param.Name == rootNode+".DeviceInfo.SoftwareVersion" ||
+				param.Name == rootNode+".DeviceInfo.MU.1.SoftwareVersion" ||
+				param.Name == rootNode+".DeviceInfo.MU.1.Slot.1.SoftwareVersion":
 				cpe.SoftwareVersion = stringPtr(param.Value)
-			case "InternetGatewayDevice.DeviceInfo.HardwareVersion":
+			case param.Name == rootNode+".DeviceInfo.HardwareVersion" ||
+				param.Name == rootNode+".DeviceInfo.MU.1.HardwareVersion" ||
+				param.Name == rootNode+".DeviceInfo.MU.1.Slot.1.HardwareVersion":
 				cpe.HardwareVersion = stringPtr(param.Value)
-			case "InternetGatewayDevice.DeviceInfo.Manufacturer":
-				cpe.Manufacturer = stringPtr(param.Value)
-			case "InternetGatewayDevice.DeviceInfo.ModelName":
+			case param.Name == rootNode+".DeviceInfo.FirmwareVersion" ||
+				param.Name == "Device.DeviceInfo.MU.1.FirmwareVersion":
+				cpe.FirmwareVersion = stringPtr(param.Value)
+			case param.Name == "Device.DeviceInfo.FullSoftwareVersion":
+				cpe.FullSoftwareVersion = stringPtr(param.Value)
+			case param.Name == "Device.DeviceInfo.StmVersion":
+				cpe.StmVersion = stringPtr(param.Value)
+			case param.Name == rootNode+".DeviceInfo.ModelName" ||
+				param.Name == rootNode+".DeviceInfo.MU.1.ModelName" ||
+				param.Name == rootNode+".DeviceInfo.MU.1.Slot.1.ModelName":
 				cpe.ModelName = stringPtr(param.Value)
+			case param.Name == rootNode+".DeviceInfo.Manufacturer":
+				cpe.Manufacturer = stringPtr(param.Value)
+			case param.Name == rootNode+".ManagementServer.URL":
+				cpe.CoonReqUrl = stringPtr(param.Value)
+			case macRegex.MatchString(param.Name):
+				// Strip dashes, collect for sorting
+				macs = append(macs, strings.ReplaceAll(param.Value, "-", ""))
 			}
+		}
+
+		// Sort and join MAC addresses (matches Java behavior)
+		if len(macs) > 0 {
+			sort.Strings(macs)
+			// Deduplicate
+			unique := macs[:0]
+			for i, m := range macs {
+				if i == 0 || m != macs[i-1] {
+					unique = append(unique, m)
+				}
+			}
+			macStr := strings.Join(unique, ",")
+			cpe.Mac = stringPtr(macStr)
+		}
+
+		// Fallback: modelName = productClass if not found in params
+		if cpe.ModelName == nil || *cpe.ModelName == "" {
+			cpe.ModelName = stringPtr(inform.DeviceId.ProductClass)
 		}
 
 		if err := ep.db.Create(&cpe).Error; err != nil {
@@ -126,7 +189,7 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 
 	// Process each event code
 	for _, evt := range inform.EventList {
-		ep.processEventCode(ctx, evt, sn)
+		ep.processEventCode(ctx, evt, sn, inform.ParameterList)
 	}
 
 	// Trigger device initialization if not yet initialized (first Inform after boot)
@@ -162,38 +225,93 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 }
 
 // processEventCode handles individual TR069 event codes.
-func (ep *EventProcessor) processEventCode(ctx context.Context, evt soap.EventStruct, sn string) {
+// Aligned with Java InformMessageProcessor.processEvent (21 event codes).
+func (ep *EventProcessor) processEventCode(ctx context.Context, evt soap.EventStruct, sn string, params []soap.ParameterValueStruct) {
+	paramMap := buildParamMap(params)
+
 	switch evt.Code {
 	case "0 BOOTSTRAP":
-		logger.Infof("device %s: BOOTSTRAP event", sn)
+		ep.handleBootstrap(ctx, sn, paramMap)
 
 	case "1 BOOT":
-		logger.Infof("device %s: BOOT event", sn)
-		// Clear rebooting flag in Redis
-		rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
-		if err := redis.Del(ctx, rebootKey); err != nil {
-			logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
-		}
+		ep.handleBoot(ctx, sn, paramMap)
 
 	case "2 PERIODIC":
-		// No action needed for periodic inform
 		logger.Debugf("device %s: PERIODIC event", sn)
 
 	case "4 VALUE CHANGE":
-		logger.Infof("device %s: VALUE CHANGE event - triggering parameter refresh", sn)
-		// Auto-fetch changed parameters by sending a GPV for basic param paths
-		go ep.fetchChangedParameters(sn)
+		logger.Infof("device %s: VALUE CHANGE event", sn)
+		ep.handleValueChange(ctx, sn, params)
+
+	case "6 CONNECTION REQUEST":
+		logger.Infof("device %s: CONNECTION REQUEST event", sn)
+		ep.handleConnectionRequest(ctx, sn)
+
+	case "8 DIAGNOSTICS COMPLETE":
+		logger.Infof("device %s: DIAGNOSTICS COMPLETE event", sn)
+		ep.handleDiagnosticsComplete(ctx, sn)
+
+	case "101 ALARM":
+		logger.Infof("device %s: ALARM event - command key: %s", sn, evt.CommandKey)
+		ep.handleValueChange(ctx, sn, params)
+
+	case "102 UPGRADE FINISH":
+		logger.Infof("device %s: UPGRADE FINISH event - command key: %s", sn, evt.CommandKey)
+		ep.handleUpgradeFinish(ctx, sn, params, evt.CommandKey)
+
+	case "103 ADD OBJECT":
+		logger.Infof("device %s: ADD OBJECT event", sn)
+		ep.handleAddObject(ctx, sn, paramMap)
+
+	case "104 DELETE OBJECT":
+		logger.Infof("device %s: DELETE OBJECT event", sn)
+		ep.handleDeleteObject(ctx, sn, paramMap)
+
+	case "105 STARTUP STAGE REPORT":
+		logger.Infof("device %s: STARTUP STAGE REPORT event", sn)
+		ep.handleStartupStage(ctx, sn, paramMap)
+
+	case "106 STARTUP RESULT REPORT":
+		logger.Infof("device %s: STARTUP RESULT REPORT event", sn)
+		ep.handleStartupResult(ctx, sn, paramMap)
+
+	case "107 UNIT UPGRADE RESULT":
+		logger.Infof("device %s: UNIT UPGRADE RESULT event - command key: %s", sn, evt.CommandKey)
+		ep.handleUnitUpgradeResult(ctx, sn, params, evt.CommandKey)
 
 	case "M Reboot":
 		logger.Infof("device %s: M Reboot event", sn)
-		// Clear rebooting flag in Redis
 		rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
 		if err := redis.Del(ctx, rebootKey); err != nil {
 			logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
 		}
 
-	case "101 ALARM":
-		logger.Infof("device %s: ALARM event - command key: %s", sn, evt.CommandKey)
+	case "M PCI CHANGE":
+		logger.Infof("device %s: PCI CHANGE event", sn)
+		ep.handlePCIChange(ctx, sn, paramMap)
+
+	case "X Restore Complete":
+		logger.Infof("device %s: Restore Complete event", sn)
+		ep.handleRestoreComplete(ctx, sn)
+
+	case "X ASK REBOOT":
+		logger.Infof("device %s: ASK REBOOT event", sn)
+		// Handled by checkAndTriggerAskReboot post-processor in ProcessInform
+
+	case "X 681D64 MMLREPORT":
+		logger.Infof("device %s: MML REPORT event", sn)
+		ep.handleMMLReport(ctx, sn, paramMap)
+
+	case "X E01CEE BATCHSTAGE":
+		// No action needed (same as Java)
+
+	case "X E01CEE BATCHRESULT":
+		logger.Infof("device %s: BATCH RESULT event", sn)
+		ep.handleBatchResult(ctx, sn, paramMap)
+
+	case "X E01CEE BATCHCHECKRESULT":
+		logger.Infof("device %s: BATCH CHECK RESULT event", sn)
+		ep.handleBatchCheckResult(ctx, sn, paramMap)
 
 	default:
 		logger.Infof("device %s: vendor-specific event code: %s, command key: %s", sn, evt.Code, evt.CommandKey)
@@ -260,6 +378,574 @@ func (ep *EventProcessor) fetchChangedParameters(sn string) {
 		return
 	}
 	logger.Infof("VALUE CHANGE: GPV sent to device %s for %d params", sn, len(paramPaths))
+}
+
+// fetchChangedParametersDynamic sends a GPV for the parameter names reported in the VALUE CHANGE event.
+// This replaces the hardcoded GetBasicParamPaths approach with dynamic discovery from event params.
+func (ep *EventProcessor) fetchChangedParametersDynamic(sn string, eventParams []soap.ParameterValueStruct) {
+	if len(eventParams) == 0 {
+		return
+	}
+
+	ctx := context.Background()
+
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		logger.Warnf("VALUE CHANGE dynamic: device %s not found: %v", sn, err)
+		return
+	}
+
+	// Extract parameter names from the event params
+	paramPaths := make([]string, 0, len(eventParams))
+	for _, p := range eventParams {
+		if p.Name != "" {
+			paramPaths = append(paramPaths, p.Name)
+		}
+	}
+	if len(paramPaths) == 0 {
+		return
+	}
+
+	headerId := soap.GenerateHeaderID()
+	soapXml := soap.BuildGetParameterValues(headerId, paramPaths)
+
+	// Save tracking data
+	now := time.Now()
+	eventType := "GET_PARAMETER_VALUES"
+	trackData, _ := json.Marshal(map[string]interface{}{
+		"header_id":       headerId,
+		"serial_number":   sn,
+		"operation_type":  eventType,
+		"is_value_change": true,
+		"issue_time":      now.Format(time.RFC3339),
+	})
+	evLog := eventlog.EventLog{
+		EventType:        &eventType,
+		OperationTime:    &now,
+		CommandIssueTime: &now,
+		ElementId:        &cpe.NeNeid,
+		Status:           intPtr(1),
+		CommandTrackData: stringPtr(string(trackData)),
+	}
+	ep.db.Create(&evLog)
+
+	// Cache in Redis
+	trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+	trackJson, _ := json.Marshal(map[string]interface{}{
+		"header_id":       headerId,
+		"sn":              sn,
+		"operation_type":  eventType,
+		"event_log_id":    evLog.Id,
+		"is_value_change": true,
+	})
+	redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+	// Push to device queue
+	msgMgr := NewMessageManager()
+	if err := msgMgr.PutMessage(sn, soapXml); err != nil {
+		logger.Errorf("VALUE CHANGE dynamic: failed to push GPV to device %s: %v", sn, err)
+		return
+	}
+	logger.Infof("VALUE CHANGE dynamic: GPV sent to device %s for %d event params", sn, len(paramPaths))
+}
+
+// buildParamMap converts a ParameterValueStruct slice to a name→value map for quick lookup.
+func buildParamMap(params []soap.ParameterValueStruct) map[string]string {
+	m := make(map[string]string, len(params))
+	for _, p := range params {
+		if p.Value != "" {
+			m[p.Name] = p.Value
+		}
+	}
+	return m
+}
+
+// handleBootstrap processes "0 BOOTSTRAP" event.
+// Java: conditionally reloads all parameters when ACS URL contains gnbInitialAcs.
+func (ep *EventProcessor) handleBootstrap(ctx context.Context, sn string, paramMap map[string]string) {
+	logger.Infof("device %s: BOOTSTRAP event", sn)
+
+	// Check if ACS URL contains gnbInitialAcs (ZTP initial provisioning)
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	// Read ACS URL from Inform parameters or from device record
+	acsUrl := paramMap["InternetGatewayDevice.ManagementServer.URL"]
+	if acsUrl == "" && cpe.DeviceIp != nil {
+		// Fall back to checking if device was in initial ACS flow
+		acsUrl = ""
+	}
+
+	if strings.Contains(acsUrl, "gnbInitialAcs") {
+		// Clear geo data
+		geoKey := fmt.Sprintf("device_geo_%d", cpe.NeNeid)
+		redis.Del(ctx, geoKey)
+		ep.db.Model(&cpe).Updates(map[string]interface{}{
+			"longitude": nil,
+			"latitude":  nil,
+		})
+
+		// Trigger full parameter reload (async)
+		utils.SafeGo("BootstrapReload-"+sn, func() {
+			msgMgr := NewMessageManager()
+			opSender := NewOperationSender(ep.db, msgMgr)
+			opSender.SendGetParameterNames(sn, "Device.", false, "bootstrap_reload_"+sn)
+		})
+	}
+}
+
+// handleBoot processes "1 BOOT" event.
+// Java: clears geo data, sends reboot notification via Redis pub/sub, clears reboot user key.
+func (ep *EventProcessor) handleBoot(ctx context.Context, sn string, paramMap map[string]string) {
+	logger.Infof("device %s: BOOT event", sn)
+
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	// Clear reboot user key
+	rebootUserKey := fmt.Sprintf("rebootUser_%d", cpe.NeNeid)
+	redis.Del(ctx, rebootUserKey)
+
+	// Clear geo data
+	geoKey := fmt.Sprintf("device_geo_%d", cpe.NeNeid)
+	redis.Del(ctx, geoKey)
+
+	// Publish reboot notification via Redis pub/sub
+	notification := map[string]interface{}{
+		"type":       "reboot_notification",
+		"element_id": cpe.NeNeid,
+		"timestamp":  time.Now().Unix(),
+	}
+	if notifyJson, err := json.Marshal(notification); err == nil {
+		redis.Publish(ctx, "web_callback", string(notifyJson))
+	}
+
+	// Clear rebooting flag
+	rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
+	redis.Del(ctx, rebootKey)
+}
+
+// handleConnectionRequest processes "6 CONNECTION REQUEST" event.
+// Java: records the latest connection request timestamp in Redis.
+func (ep *EventProcessor) handleConnectionRequest(ctx context.Context, sn string) {
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	connKey := fmt.Sprintf("device:conn_request_time:%d", cpe.NeNeid)
+	redis.Set(ctx, connKey, fmt.Sprintf("%d", time.Now().UnixMilli()), 24*time.Hour)
+}
+
+// handleDiagnosticsComplete processes "8 DIAGNOSTICS COMPLETE" event.
+// Java: sends GetParameterNames for TraceRouteDiagnostics.RouteHops.
+func (ep *EventProcessor) handleDiagnosticsComplete(ctx context.Context, sn string) {
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	// Send GPN for diagnostics results
+	msgMgr := NewMessageManager()
+	opSender := NewOperationSender(ep.db, msgMgr)
+	opSender.SendGetParameterNames(sn, "Device.TraceRouteDiagnostics.RouteHops.", false, "diagnostics_"+sn)
+
+	logger.Infof("device %s: diagnostics complete, GPN sent for TraceRouteDiagnostics", sn)
+}
+
+// handleValueChange processes "4 VALUE CHANGE" and "101 ALARM" events.
+// Java: runs valueChangeInformReceiveAfter + getParameterValuesAfter postprocessors.
+// Saves Inform parameters to DB and triggers parameter refresh.
+func (ep *EventProcessor) handleValueChange(ctx context.Context, sn string, params []soap.ParameterValueStruct) {
+	// Save parameter values from the Inform to element_basic_info_parameter
+	if len(params) > 0 {
+		var cpe device.CpeElement
+		if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err == nil && cpe.NeNeid != 0 {
+			// Acquire Redis distributed lock (same as Java GetParametersPostprocessor)
+			lockKey := fmt.Sprintf("red_lock_add_parameter_names_%d", cpe.NeNeid)
+			if redis.Lock(ctx, lockKey, 30*time.Second) {
+				defer redis.Unlock(ctx, lockKey)
+				ep.saveParameterValues(ctx, sn, params)
+			}
+		}
+	}
+
+	// Use event params directly for GPV (dynamic discovery instead of hardcoded paths)
+	go ep.fetchChangedParametersDynamic(sn, params)
+}
+
+// handleUpgradeFinish processes "102 UPGRADE FINISH" event.
+// Java: parses eventLogId from commandKey (format: "X_{eventLogId}"), triggers batch upgrade postprocessor.
+func (ep *EventProcessor) handleUpgradeFinish(ctx context.Context, sn string, params []soap.ParameterValueStruct, commandKey string) {
+	if commandKey == "" {
+		logger.Warnf("device %s: UPGRADE FINISH with empty command key", sn)
+		return
+	}
+
+	parts := strings.SplitN(commandKey, "_", 2)
+	if len(parts) < 2 {
+		logger.Warnf("device %s: UPGRADE FINISH invalid command key format: %s", sn, commandKey)
+		return
+	}
+
+	var eventLogId int64
+	if _, err := fmt.Sscanf(parts[1], "%d", &eventLogId); err != nil {
+		logger.Warnf("device %s: UPGRADE FINISH failed to parse eventLogId from commandKey=%s: %v", sn, commandKey, err)
+		return
+	}
+
+	logger.Infof("device %s: UPGRADE FINISH eventLogId=%d", sn, eventLogId)
+
+	// Update upgrade_log status to done
+	now := time.Now()
+	done := true
+	ep.db.Table("upgrade_log").
+		Where("command_track_id = ?", eventLogId).
+		Updates(map[string]interface{}{
+			"is_done":   &done,
+			"done_time": &now,
+			"success":   &done,
+		})
+
+	// Update software version from Inform parameters if available
+	paramMap := buildParamMap(params)
+	if swVer, ok := paramMap["Device.DeviceInfo.SoftwareVersion"]; ok {
+		ep.db.Model(&device.CpeElement{}).
+			Where("serial_number = ? AND deleted = ?", sn, false).
+			Update("software_version", swVer)
+	}
+}
+
+// handleUnitUpgradeResult processes "107 UNIT UPGRADE RESULT" event.
+// Java: only processes for specific models (HCS-NW-FEMTO008, HCS-NW-FEMTO009).
+func (ep *EventProcessor) handleUnitUpgradeResult(ctx context.Context, sn string, params []soap.ParameterValueStruct, commandKey string) {
+	// Check device model
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	modelName := ""
+	if cpe.ModelName != nil {
+		modelName = *cpe.ModelName
+	}
+
+	// Java: only process for specific models
+	supportedModels := map[string]bool{
+		"HCS-NW-FEMTO008": true,
+		"HCS-NW-FEMTO009": true,
+	}
+	if !supportedModels[modelName] {
+		logger.Debugf("device %s: UNIT UPGRADE RESULT ignored for model %s", sn, modelName)
+		return
+	}
+
+	var eventLogId int64
+	if commandKey != "" {
+		parts := strings.SplitN(commandKey, "_", 2)
+		if len(parts) >= 2 {
+			fmt.Sscanf(parts[1], "%d", &eventLogId)
+		}
+	}
+
+	logger.Infof("device %s: UNIT UPGRADE RESULT eventLogId=%d", sn, eventLogId)
+
+	if eventLogId > 0 {
+		now := time.Now()
+		done := true
+		ep.db.Table("upgrade_log").
+			Where("command_track_id = ?", eventLogId).
+			Updates(map[string]interface{}{
+				"is_done":   &done,
+				"done_time": &now,
+				"success":   &done,
+			})
+	}
+}
+
+// handleStartupStage processes "105 STARTUP STAGE REPORT" event.
+// Java: maps stage value to progress (1→3, 2→4, else→5), updates ZTP log.
+func (ep *EventProcessor) handleStartupStage(ctx context.Context, sn string, paramMap map[string]string) {
+	stageStr := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.Startup.Stage"]
+	if stageStr == "" {
+		return
+	}
+
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	var progress int
+	switch stageStr {
+	case "1":
+		progress = 3
+	case "2":
+		progress = 4
+	default:
+		progress = 5
+	}
+
+	// Update ZTP log progress
+	ep.db.Model(&misc.ZTPLog{}).
+		Where("element_id = ? AND done = ?", cpe.NeNeid, false).
+		Update("progress", &progress)
+
+	logger.Infof("device %s: startup stage=%s, progress=%d", sn, stageStr, progress)
+}
+
+// handleStartupResult processes "106 STARTUP RESULT REPORT" event.
+// Java: checks startup status, updates ZTP log with success/failure, triggers sync on success.
+func (ep *EventProcessor) handleStartupResult(ctx context.Context, sn string, paramMap map[string]string) {
+	status := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.Startup.Status"]
+	info := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.Startup.FailureCause"]
+
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	// Look up active ZTP log
+	var ztpLog misc.ZTPLog
+	if err := ep.db.Where("element_id = ? AND done = ?", cpe.NeNeid, false).Limit(1).Find(&ztpLog).Error; err != nil {
+		logger.Warnf("device %s: no active ZTP log found for startup result", sn)
+		return
+	}
+
+	now := time.Now()
+	if status == "1" {
+		// Success
+		ep.db.Model(&ztpLog).Updates(map[string]interface{}{
+			"progress":  6,
+			"done":      true,
+			"end_time":  &now,
+			"info":      info,
+		})
+
+		// Create ZTP retry log
+		ep.db.Create(&misc.ZTPRetryLog{
+			ElementId:  &cpe.NeNeid,
+			RetryTime:  &now,
+			Info:       stringPtr("ZTP completed successfully"),
+		})
+
+		// Trigger parameter and alarm sync
+		utils.SafeGo("ZTPSync-"+sn, func() {
+			msgMgr := NewMessageManager()
+			opSender := NewOperationSender(ep.db, msgMgr)
+			opSender.SendGetParameterNames(sn, "Device.", false, "ztp_param_sync_"+sn)
+			opSender.SendGetParameterValues(sn, []string{"Device.FaultMgmt.CurrentAlarm."}, "ztp_alarm_sync_"+sn)
+		})
+
+		logger.Infof("device %s: ZTP startup success", sn)
+	} else {
+		// Failure
+		if ztpLog.Progress != nil && *ztpLog.Progress == 5 {
+			ep.db.Model(&ztpLog).Updates(map[string]interface{}{
+				"done":      true,
+				"end_time":  &now,
+				"info":      info,
+				"has_fault": true,
+			})
+		} else {
+			ep.db.Model(&ztpLog).Updates(map[string]interface{}{
+				"done":      true,
+				"end_time":  &now,
+				"info":      info,
+				"has_fault": true,
+			})
+		}
+
+		// Create fault retry log
+		ep.db.Create(&misc.ZTPRetryLog{
+			ElementId:  &cpe.NeNeid,
+			RetryTime:  &now,
+			Info:       stringPtr(fmt.Sprintf("ZTP failed: %s", info)),
+		})
+
+		logger.Warnf("device %s: ZTP startup failed: %s", sn, info)
+	}
+}
+
+// handleAddObject processes "103 ADD OBJECT" event.
+// Java: reads AddEndPoint from Inform params, syncs object additions.
+func (ep *EventProcessor) handleAddObject(ctx context.Context, sn string, paramMap map[string]string) {
+	addEndPoint := paramMap["Device.DeviceInfo.AddEndPoint"]
+	if addEndPoint == "" {
+		return
+	}
+
+	logger.Infof("device %s: ADD OBJECT endPoint=%s", sn, addEndPoint)
+
+	// Java: addObjectAfter is currently commented out in the postprocessor.
+	// We log the event for observability but take no action, matching Java behavior.
+}
+
+// handleDeleteObject processes "104 DELETE OBJECT" event.
+// Java: reads DelEndPoint, deletes matching params from element_basic_info_parameter.
+func (ep *EventProcessor) handleDeleteObject(ctx context.Context, sn string, paramMap map[string]string) {
+	delEndPoint := paramMap["Device.DeviceInfo.DelEndPoint"]
+	if delEndPoint == "" {
+		return
+	}
+
+	logger.Infof("device %s: DELETE OBJECT delEndPoint=%s", sn, delEndPoint)
+
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	// Delete matching parameters (Java: deleteByElementIdAndNameLike)
+	paths := strings.Split(delEndPoint, ",")
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			ep.db.Where("element_id = ? AND param_name LIKE ?", cpe.NeNeid, path+"%").
+				Delete(&device.ElementBasicInfoParameter{})
+		}
+	}
+}
+
+// handleRestoreComplete processes "X Restore Complete" event.
+// Java: triggers full parameter reload via GetParameterNames for "Device.".
+func (ep *EventProcessor) handleRestoreComplete(ctx context.Context, sn string) {
+	utils.SafeGo("RestoreComplete-"+sn, func() {
+		msgMgr := NewMessageManager()
+		opSender := NewOperationSender(ep.db, msgMgr)
+		opSender.SendGetParameterNames(sn, "Device.", false, "restore_complete_"+sn)
+	})
+	logger.Infof("device %s: restore complete, full parameter reload triggered", sn)
+}
+
+// handlePCIChange processes "M PCI CHANGE" event.
+// Java: reads PhyCellID from Inform params, publishes PCI change notification.
+func (ep *EventProcessor) handlePCIChange(ctx context.Context, sn string, paramMap map[string]string) {
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	pci := paramMap["Device.Services.FAPService.1.CellConfig.1.NR.RAN.RF.PhyCellID"]
+
+	notification := map[string]interface{}{
+		"type":       "pci_change",
+		"element_id": cpe.NeNeid,
+		"pci":        pci,
+		"timestamp":  time.Now().Unix(),
+	}
+	if notifyJson, err := json.Marshal(notification); err == nil {
+		redis.Publish(ctx, "web_callback", string(notifyJson))
+	}
+
+	logger.Infof("device %s: PCI changed to %s", sn, pci)
+}
+
+// handleMMLReport processes "X 681D64 MMLREPORT" event.
+// Java: extracts CMDUID and result, updates mml_execute_result, sends web callback.
+func (ep *EventProcessor) handleMMLReport(ctx context.Context, sn string, paramMap map[string]string) {
+	uid := paramMap["Device.mml.CMDUID"]
+	if uid == "" {
+		return
+	}
+
+	reportValue := paramMap["Device.mml.ReportValue"]
+	logger.Infof("device %s: MML report uid=%s", sn, uid)
+
+	// Update mml_execute_result by uid
+	now := time.Now()
+	result := struct {
+		ResultReturnedTime *time.Time `gorm:"column:result_returned_time"`
+		Result             *string    `gorm:"column:result"`
+		Status             *string    `gorm:"column:status"`
+	}{
+		ResultReturnedTime: &now,
+		Result:             stringPtr(reportValue),
+		Status:             stringPtr("completed"),
+	}
+
+	if err := ep.db.Table("mml_execute_result").
+		Where("uid = ?", uid).
+		Updates(&result).Error; err != nil {
+		logger.Warnf("device %s: failed to update MML result for uid=%s: %v", sn, uid, err)
+	}
+
+	// Send web callback for MML result
+	callback := map[string]interface{}{
+		"type":       "mml_result_returned",
+		"sn":         sn,
+		"uid":        uid,
+		"timestamp":  time.Now().Unix(),
+	}
+	if cbJson, err := json.Marshal(callback); err == nil {
+		redis.Publish(ctx, "web_callback", string(cbJson))
+	}
+
+	// Clean up Redis key for this UID
+	redis.Del(ctx, "mml:uid:"+uid)
+}
+
+// handleBatchResult processes "X E01CEE BATCHRESULT" event.
+// Java: extracts batch status/failureCause, updates batch_process_file_send_log.
+func (ep *EventProcessor) handleBatchResult(ctx context.Context, sn string, paramMap map[string]string) {
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	status := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batch.Status"]
+	failureCause := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batch.FailureCause"]
+
+	// Update batch_process_file_send_log: find pending record (status=1) for this element
+	var newStatus int
+	if status == "1" {
+		newStatus = 2 // success
+	} else {
+		newStatus = 3 // failure
+	}
+
+	updates := map[string]interface{}{
+		"status":     newStatus,
+		"fault_info": failureCause,
+	}
+	ep.db.Table("batch_process_file_send_log").
+		Where("element_id = ? AND status = ?", cpe.NeNeid, 1).
+		Updates(updates)
+
+	logger.Infof("device %s: batch result status=%s, newStatus=%d", sn, status, newStatus)
+}
+
+// handleBatchCheckResult processes "X E01CEE BATCHCHECKRESULT" event.
+// Java: extracts check status/failureCause, updates batch_process_file_send_log.
+func (ep *EventProcessor) handleBatchCheckResult(ctx context.Context, sn string, paramMap map[string]string) {
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		return
+	}
+
+	status := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batchCheck.Status"]
+	failureCause := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batchCheck.FailureCause"]
+
+	var newStatus int
+	if status == "1" {
+		newStatus = 4 // check success
+	} else {
+		newStatus = 5 // check failure
+	}
+
+	updates := map[string]interface{}{
+		"status":     newStatus,
+		"fault_info": failureCause,
+	}
+	ep.db.Table("batch_process_file_send_log").
+		Where("element_id = ? AND status = ?", cpe.NeNeid, 1).
+		Updates(updates)
+
+	logger.Infof("device %s: batch check result status=%s, newStatus=%d", sn, status, newStatus)
 }
 
 // autoAssignToDefaultGroups assigns a newly created device to all default groups.
@@ -338,6 +1024,9 @@ func (ep *EventProcessor) ProcessResult(soapXml string, sn string, deviceType st
 
 	// Based on message type, process the response
 	switch msgType {
+	case soap.MsgGetParameterNamesResponse:
+		ep.processGetParameterNamesResponse(ctx, soapXml, sn, &eventLog)
+
 	case soap.MsgGetParameterValuesResponse:
 		ep.processGetParameterValuesResponse(ctx, soapXml, sn, &eventLog)
 
@@ -373,6 +1062,131 @@ func (ep *EventProcessor) ProcessResult(soapXml string, sn string, deviceType st
 		"msg_type":  msgType,
 		"event_log": eventLog,
 	})
+}
+
+// processGetParameterNamesResponse handles GetParameterNamesResponse from CPE.
+// During init flow (is_init=true), saves discovered parameter names and sends follow-up GPV for leaf parameters.
+func (ep *EventProcessor) processGetParameterNamesResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing GetParameterNamesResponse for SN=%s", sn)
+
+	params, err := soap.ParseGetParameterNamesResponse(soapXml)
+	if err != nil {
+		logger.Errorf("failed to parse GPN response for SN=%s: %v", sn, err)
+		eventLog.EventType = stringPtr("GET_PARAMETER_NAMES_RESPONSE")
+		eventLog.Status = intPtr(-1)
+		eventLog.FaultInfo = stringPtr(err.Error())
+		return
+	}
+
+	if len(params) == 0 {
+		logger.Warnf("GPN response for SN=%s contains no parameters", sn)
+		eventLog.EventType = stringPtr("GET_PARAMETER_NAMES_RESPONSE")
+		eventLog.Status = intPtr(0)
+		return
+	}
+
+	eventLog.EventType = stringPtr("GET_PARAMETER_NAMES_RESPONSE")
+
+	// Check if this is part of the init flow
+	isInit := false
+	if eventLog.CommandTrackData != nil {
+		var trackData map[string]interface{}
+		if err := json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData); err == nil {
+			if init, ok := trackData["is_init"].(bool); ok {
+				isInit = init
+			}
+		}
+	}
+
+	// Look up device
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error; err != nil {
+		logger.Errorf("failed to find device %s for GPN processing: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		eventLog.FaultInfo = stringPtr(fmt.Sprintf("device not found: %s", sn))
+		return
+	}
+
+	// Save all discovered parameter names to element_basic_info_parameter (with empty value)
+	now := time.Now()
+	for _, p := range params {
+		if p.Name == "" {
+			continue
+		}
+		rawSQL := `INSERT INTO element_basic_info_parameter (element_id, param_name, param_value, update_time)
+			VALUES (?, ?, '', ?)
+			ON DUPLICATE KEY UPDATE update_time = VALUES(update_time)`
+		ep.db.Exec(rawSQL, cpe.NeNeid, p.Name, now)
+	}
+
+	logger.Infof("GPN: saved %d parameter names for SN=%s (neId=%d)", len(params), sn, cpe.NeNeid)
+
+	// For init flow: filter to leaf parameters and send GPV
+	if isInit {
+		var leafParams []string
+		for _, p := range params {
+			// Leaf parameters don't end with "." (object paths end with ".")
+			if p.Name != "" && !strings.HasSuffix(p.Name, ".") {
+				leafParams = append(leafParams, p.Name)
+			}
+		}
+
+		if len(leafParams) == 0 {
+			logger.Infof("GPN init: no leaf params found for SN=%s, all %d params are objects", sn, len(params))
+			eventLog.Status = intPtr(0)
+			return
+		}
+
+		// Send GPV for discovered leaf parameters (stage 2 of init)
+		headerId := soap.GenerateHeaderID()
+		soapXml := soap.BuildGetParameterValues(headerId, leafParams)
+
+		// Save tracking data for the GPV stage
+		gpvEventType := "INIT_GPV"
+		gpvTrackData, _ := json.Marshal(map[string]interface{}{
+			"header_id":      headerId,
+			"serial_number":  sn,
+			"operation_type": gpvEventType,
+			"is_init":        true,
+			"stage":          "gpv",
+			"param_count":    len(leafParams),
+			"issue_time":     time.Now().Format(time.RFC3339),
+		})
+		gpvEventLog := eventlog.EventLog{
+			EventType:        &gpvEventType,
+			OperationTime:    &now,
+			CommandIssueTime: &now,
+			ElementId:        &cpe.NeNeid,
+			Status:           intPtr(1),
+			CommandTrackData: stringPtr(string(gpvTrackData)),
+		}
+		ep.db.Create(&gpvEventLog)
+
+		// Cache in Redis
+		trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+		trackJson, _ := json.Marshal(map[string]interface{}{
+			"header_id":      headerId,
+			"sn":             sn,
+			"operation_type": gpvEventType,
+			"event_log_id":   gpvEventLog.Id,
+			"is_init":        true,
+			"stage":          "gpv",
+		})
+		redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
+
+		// Push GPV to device queue
+		msgMgr := NewMessageManager()
+		if err := msgMgr.PutMessage(sn, soapXml); err != nil {
+			logger.Errorf("GPN init: failed to push GPV to device %s: %v", sn, err)
+			eventLog.Status = intPtr(-1)
+			eventLog.FaultInfo = stringPtr(fmt.Sprintf("failed to push init GPV: %v", err))
+			return
+		}
+
+		logger.Infof("GPN init: GPV sent for SN=%s, requesting %d leaf parameters", sn, len(leafParams))
+	}
+
+	eventLog.Status = intPtr(0)
 }
 
 // processGetParameterValuesResponse extracts parameter values and saves to element_basic_info_parameter table.
@@ -774,20 +1588,67 @@ func (ep *EventProcessor) updateDeviceOnlineStatus(ctx context.Context, sn strin
 
 // updateDeviceBasicInfo updates device basic information from Inform parameters.
 func (ep *EventProcessor) updateDeviceBasicInfo(ctx context.Context, cpe *device.CpeElement, params []soap.ParameterValueStruct) {
-	for _, param := range params {
-		switch param.Name {
-		case "InternetGatewayDevice.DeviceInfo.SoftwareVersion":
-			cpe.SoftwareVersion = stringPtr(param.Value)
-		case "InternetGatewayDevice.DeviceInfo.HardwareVersion":
-			cpe.HardwareVersion = stringPtr(param.Value)
-		case "InternetGatewayDevice.DeviceInfo.Manufacturer":
-			cpe.Manufacturer = stringPtr(param.Value)
-		case "InternetGatewayDevice.DeviceInfo.ModelName":
-			cpe.ModelName = stringPtr(param.Value)
-		case "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress":
-			cpe.DeviceIp = stringPtr(param.Value)
+	// Determine rootNode from CpeElement or first param
+	rootNode := "Device"
+	if cpe.RootNode != nil && *cpe.RootNode != "" {
+		rootNode = *cpe.RootNode
+	} else if len(params) > 0 {
+		if idx := strings.Index(params[0].Name, "."); idx > 0 {
+			rootNode = params[0].Name[:idx]
 		}
 	}
+
+	macRegex := regexp.MustCompile(`Device\.Ethernet\.Interface\.\d+\.MACAddress`)
+	var macs []string
+
+	for _, param := range params {
+		switch {
+		case param.Name == rootNode+".DeviceInfo.SoftwareVersion" ||
+			param.Name == rootNode+".DeviceInfo.MU.1.SoftwareVersion" ||
+			param.Name == rootNode+".DeviceInfo.MU.1.Slot.1.SoftwareVersion":
+			cpe.SoftwareVersion = stringPtr(param.Value)
+		case param.Name == rootNode+".DeviceInfo.HardwareVersion" ||
+			param.Name == rootNode+".DeviceInfo.MU.1.HardwareVersion" ||
+			param.Name == rootNode+".DeviceInfo.MU.1.Slot.1.HardwareVersion":
+			cpe.HardwareVersion = stringPtr(param.Value)
+		case param.Name == rootNode+".DeviceInfo.FirmwareVersion" ||
+			param.Name == "Device.DeviceInfo.MU.1.FirmwareVersion":
+			cpe.FirmwareVersion = stringPtr(param.Value)
+		case param.Name == "Device.DeviceInfo.FullSoftwareVersion":
+			cpe.FullSoftwareVersion = stringPtr(param.Value)
+		case param.Name == "Device.DeviceInfo.StmVersion":
+			cpe.StmVersion = stringPtr(param.Value)
+		case param.Name == rootNode+".DeviceInfo.ModelName" ||
+			param.Name == rootNode+".DeviceInfo.MU.1.ModelName" ||
+			param.Name == rootNode+".DeviceInfo.MU.1.Slot.1.ModelName":
+			cpe.ModelName = stringPtr(param.Value)
+		case param.Name == rootNode+".DeviceInfo.Manufacturer":
+			cpe.Manufacturer = stringPtr(param.Value)
+		case param.Name == rootNode+".ManagementServer.URL":
+			cpe.CoonReqUrl = stringPtr(param.Value)
+		case param.Name == "Device.SoftwareCtrl.ManualActivateTargetSoftVersion":
+			cpe.TargetVersion = stringPtr(param.Value)
+		case param.Name == "Device.SoftwareCtrl.ManualActivateTargetFwVersion":
+			cpe.TargetHardwareVersion = stringPtr(param.Value)
+		case param.Name == rootNode+".WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress":
+			cpe.DeviceIp = stringPtr(param.Value)
+		case macRegex.MatchString(param.Name):
+			macs = append(macs, strings.ReplaceAll(param.Value, "-", ""))
+		}
+	}
+
+	// Sort and join MAC addresses
+	if len(macs) > 0 {
+		sort.Strings(macs)
+		unique := macs[:0]
+		for i, m := range macs {
+			if i == 0 || m != macs[i-1] {
+				unique = append(unique, m)
+			}
+		}
+		cpe.Mac = stringPtr(strings.Join(unique, ","))
+	}
+
 	cpe.LoadedBasicInfo = true
 }
 
@@ -838,26 +1699,27 @@ func (ep *EventProcessor) triggerDeviceInit(sn string, neId int64, deviceType st
 
 	logger.Infof("starting device initialization for SN=%s (neId=%d, type=%s)", sn, neId, deviceType)
 
-	// Get the parameter paths to query based on device type
-	paramPaths := GetBasicParamPaths(deviceType)
-	if len(paramPaths) == 0 {
-		logger.Warnf("no basic param paths for device type %s, marking as initialized", deviceType)
-		ep.db.Model(&device.CpeElement{}).Where("ne_neid = ?", neId).Update("is_initialized", true)
-		return
+	// Look up rootNode from device record (default to "Device")
+	var cpe device.CpeElement
+	rootNode := "Device"
+	if err := ep.db.Where("ne_neid = ?", neId).First(&cpe).Error; err == nil && cpe.RootNode != nil && *cpe.RootNode != "" {
+		rootNode = *cpe.RootNode
 	}
 
-	// Build GPV SOAP XML
+	// Stage 1: Send GPN with root path to discover all parameters dynamically
 	headerId := soap.GenerateHeaderID()
-	soapXml := soap.BuildGetParameterValues(headerId, paramPaths)
+	soapXml := soap.BuildGetParameterNames(headerId, rootNode+".", false)
 
 	// Save tracking data to event_log
 	now := time.Now()
-	eventType := "GET_PARAMETER_VALUES"
+	eventType := "INIT_GPN"
 	trackData, _ := json.Marshal(map[string]interface{}{
 		"header_id":      headerId,
 		"serial_number":  sn,
 		"operation_type": eventType,
 		"is_init":        true,
+		"stage":          "gpn",
+		"root_node":      rootNode,
 		"issue_time":     now.Format(time.RFC3339),
 	})
 	eventLog := eventlog.EventLog{
@@ -880,20 +1742,21 @@ func (ep *EventProcessor) triggerDeviceInit(sn string, neId int64, deviceType st
 		"operation_type": eventType,
 		"event_log_id":   eventLog.Id,
 		"is_init":        true,
+		"stage":          "gpn",
+		"root_node":      rootNode,
 	})
 	redis.Set(ctx, trackKey, string(trackJson), 24*time.Hour)
 
-	// Push SOAP to device queue via MessageManager
+	// Push GPN SOAP to device queue
 	msgMgr := NewMessageManager()
 	if err := msgMgr.PutMessage(sn, soapXml); err != nil {
-		logger.Errorf("failed to push init GPV to device %s queue: %v", sn, err)
+		logger.Errorf("failed to push init GPN to device %s queue: %v", sn, err)
 		return
 	}
 
-	logger.Infof("device init GPV sent for SN=%s, requesting %d parameters", sn, len(paramPaths))
+	logger.Infof("device init GPN sent for SN=%s, root=%s.", sn, rootNode)
 
-	// Mark device as initialized (the GPV response will be processed asynchronously)
-	// We mark it here to prevent repeated init triggers on subsequent Informs
+	// Mark device as initialized to prevent repeated init triggers on subsequent Informs
 	ep.db.Model(&device.CpeElement{}).Where("ne_neid = ?", neId).Update("is_initialized", true)
 }
 

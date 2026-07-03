@@ -14,7 +14,7 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// AddNMSBackupTask creates a new backup task
+// AddNMSBackupTask creates a new backup schedule
 func (h *Handler) AddNMSBackupTask(c *gin.Context) {
 	var req AddNMSBackupTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -22,16 +22,16 @@ func (h *Handler) AddNMSBackupTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.svc.AddBackupTask(c, &req)
+	schedule, err := h.svc.AddBackupSchedule(c, &req)
 	if err != nil {
 		utils.Error(c, 500, err.Error())
 		return
 	}
 
-	utils.Success(c, task)
+	utils.Success(c, schedule)
 }
 
-// ListNMSBackupTask returns paginated list of backup tasks
+// ListNMSBackupTask returns paginated list of backup schedules
 func (h *Handler) ListNMSBackupTask(c *gin.Context) {
 	var req ListNMSBackupTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -39,7 +39,7 @@ func (h *Handler) ListNMSBackupTask(c *gin.Context) {
 		return
 	}
 
-	data, total, err := h.svc.ListBackupTasks(c, &req)
+	data, total, err := h.svc.ListBackupSchedules(c, &req)
 	if err != nil {
 		utils.Error(c, 500, err.Error())
 		return
@@ -57,7 +57,7 @@ func (h *Handler) ListNMSBackupTask(c *gin.Context) {
 	utils.Paginated(c, data, total, page, pageSize)
 }
 
-// ModifyNMSBackupTask updates an existing backup task
+// ModifyNMSBackupTask updates an existing backup schedule
 func (h *Handler) ModifyNMSBackupTask(c *gin.Context) {
 	var req ModifyNMSBackupTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -65,7 +65,7 @@ func (h *Handler) ModifyNMSBackupTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.ModifyBackupTask(c, &req); err != nil {
+	if err := h.svc.ModifyBackupSchedule(c, &req); err != nil {
 		utils.Error(c, 500, err.Error())
 		return
 	}
@@ -81,7 +81,7 @@ func (h *Handler) RunNMSBackupTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.RunBackupTask(c, &req); err != nil {
+	if err := h.svc.RunBackup(c, &req); err != nil {
 		utils.Error(c, 500, err.Error())
 		return
 	}
@@ -89,7 +89,7 @@ func (h *Handler) RunNMSBackupTask(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
-// DeleteNMSBackupTask deletes a backup task and associated records
+// DeleteNMSBackupTask deletes a backup schedule
 func (h *Handler) DeleteNMSBackupTask(c *gin.Context) {
 	var req DeleteNMSBackupTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -97,7 +97,7 @@ func (h *Handler) DeleteNMSBackupTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.DeleteBackupTask(c, &req); err != nil {
+	if err := h.svc.DeleteBackupSchedule(c, &req); err != nil {
 		utils.Error(c, 500, err.Error())
 		return
 	}
@@ -113,7 +113,7 @@ func (h *Handler) RevertNMSBackupTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.RevertBackupTask(c, &req); err != nil {
+	if err := h.svc.RevertBackup(c, &req); err != nil {
 		utils.Error(c, 500, err.Error())
 		return
 	}

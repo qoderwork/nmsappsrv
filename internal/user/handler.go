@@ -54,7 +54,10 @@ func (h *Handler) Login(c *gin.Context) {
 		licenseId = *u.LicenseId
 	}
 
-	token, err := middleware.GenerateToken(u.Id, *u.Username, licenseId)
+	// Resolve role names for JWT claims (aligned with Java JWT structure)
+	roleNames, _ := h.svc.GetRoleNamesForUser(u.Id, licenseId)
+
+	token, err := middleware.GenerateToken(u.Id, *u.Username, licenseId, roleNames, "")
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to generate token")
 		return
@@ -103,7 +106,9 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "failed to list users")
 		return
 	}
-	utils.Paginated(c, data, total, page, pageSize)
+	// Convert to DTOs to exclude sensitive fields (password, salt)
+	dtos := ToUserDTOs(data)
+	utils.Paginated(c, dtos, total, page, pageSize)
 }
 
 // CreateUser handles POST /users
@@ -122,7 +127,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "failed to create user")
 		return
 	}
-	utils.Success(c, &u)
+	// Return DTO to exclude sensitive fields (password, salt)
+	dto := ToUserDTO(&u)
+	utils.Success(c, &dto)
 }
 
 // UpdateUser handles PUT /users/:id
@@ -144,7 +151,9 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 		utils.Error(c, http.StatusInternalServerError, "failed to update user")
 		return
 	}
-	utils.Success(c, &u)
+	// Return DTO to exclude sensitive fields (password, salt)
+	dto := ToUserDTO(&u)
+	utils.Success(c, &dto)
 }
 
 // DeleteUser handles DELETE /users/:id
@@ -360,8 +369,8 @@ func (h *Handler) CreateRole(c *gin.Context) {
 
 // UpdateRole handles PUT /roles/:id
 func (h *Handler) UpdateRole(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		utils.Error(c, http.StatusBadRequest, "invalid role id")
 		return
 	}
@@ -382,8 +391,8 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 
 // DeleteRole handles DELETE /roles/:id
 func (h *Handler) DeleteRole(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		utils.Error(c, http.StatusBadRequest, "invalid role id")
 		return
 	}
@@ -406,8 +415,8 @@ type permissionRequest struct {
 
 // GetRolePermissions handles GET /roles/:id/permissions
 func (h *Handler) GetRolePermissions(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		utils.Error(c, http.StatusBadRequest, "invalid role id")
 		return
 	}
@@ -422,8 +431,8 @@ func (h *Handler) GetRolePermissions(c *gin.Context) {
 
 // UpdateRolePermissions handles PUT /roles/:id/permissions
 func (h *Handler) UpdateRolePermissions(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		utils.Error(c, http.StatusBadRequest, "invalid role id")
 		return
 	}

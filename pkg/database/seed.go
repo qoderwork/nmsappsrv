@@ -17,6 +17,7 @@ const (
 	DefaultAdminPassword = "Admin@123"
 	DefaultLicenseName   = "Default"
 	DefaultLicenseId     = "1"
+	DefaultAdminRoleId   = "admin"
 )
 
 // SeedInitialData creates default tenant, admin user, and admin role if they don't exist.
@@ -89,6 +90,7 @@ func ensureAdminRole(licenseId int) (*user.Role, error) {
 
 	desc := "System Administrator"
 	role = user.Role{
+		Id:          DefaultAdminRoleId,
 		RoleName:    &roleName,
 		Description: &desc,
 		LicenseId:   &licenseId,
@@ -100,7 +102,7 @@ func ensureAdminRole(licenseId int) (*user.Role, error) {
 	return &role, nil
 }
 
-func ensureAdminUser(licenseId int, roleId int) error {
+func ensureAdminUser(licenseId int, roleId string) error {
 	var count int64
 	DB.Model(&user.SysUser{}).Where("username = ?", DefaultAdminUsername).Count(&count)
 	if count > 0 {

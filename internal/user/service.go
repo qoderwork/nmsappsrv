@@ -442,8 +442,8 @@ func (s *Service) UpdateRole(r *Role) error {
 	return s.repo.UpdateRole(r)
 }
 
-// DeleteRole removes a role by ID.
-func (s *Service) DeleteRole(id int) error {
+// DeleteRole removes a role by ID (string UUID).
+func (s *Service) DeleteRole(id string) error {
 	return s.repo.DeleteRole(id)
 }
 
@@ -452,13 +452,49 @@ func (s *Service) DeleteRole(id int) error {
 // ---------------------------------------------------------------------------
 
 // GetRolePermissions returns all permission associations for a role.
-func (s *Service) GetRolePermissions(roleId int) ([]RoleHasPermission, error) {
+func (s *Service) GetRolePermissions(roleId string) ([]RoleHasPermission, error) {
 	return s.repo.FindPermissionsByRoleId(roleId)
 }
 
 // UpdateRolePermissions replaces the permission set for a role.
-func (s *Service) UpdateRolePermissions(roleId int, permissionIds []string) error {
+func (s *Service) UpdateRolePermissions(roleId string, permissionIds []string) error {
 	return s.repo.SavePermissions(roleId, permissionIds)
+}
+
+// ---------------------------------------------------------------------------
+// Role Name Resolution (for JWT claims)
+// ---------------------------------------------------------------------------
+
+// GetRoleNamesForUser returns the role names for a given user.
+func (s *Service) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
+	userRoles, err := s.repo.FindUserRoles(userId)
+	if err != nil {
+		return nil, err
+	}
+	if len(userRoles) == 0 {
+		return nil, nil
+	}
+
+	allRoles, err := s.repo.FindRoles(licenseId)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build lookup map: role ID → role name
+	roleMap := make(map[string]string, len(allRoles))
+	for _, r := range allRoles {
+		if r.RoleName != nil {
+			roleMap[r.Id] = *r.RoleName
+		}
+	}
+
+	var names []string
+	for _, ur := range userRoles {
+		if name, ok := roleMap[ur.RoleId]; ok {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ type Alarm struct {
 	ClearUser             *string    `gorm:"column:clear_user;type:varchar(255)" json:"clear_user"`
 	IsSuppressed          *bool      `gorm:"column:is_suppressed" json:"is_suppressed"`
 	SuppressionReason     *string    `gorm:"column:suppression_reason;type:varchar(255)" json:"suppression_reason"`
+	Comment               *string    `gorm:"column:comment;type:longtext" json:"comment"`
 }
 
 func (Alarm) TableName() string { return "alarm" }

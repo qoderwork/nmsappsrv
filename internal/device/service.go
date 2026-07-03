@@ -2,7 +2,11 @@ package device
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"strings"
@@ -234,6 +238,19 @@ func (s *Service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 		newVersion = true
 	}
 
+	// --- Check license quota before adding devices ---
+	addCount := 0
+	for _, row := range rows {
+		if strings.EqualFold(row.Operation, "Add") || row.Operation == "" {
+			addCount++
+		}
+	}
+	if addCount > 0 {
+		if err := s.checkDeviceQuota(licenseId, "", addCount); err != nil {
+			return nil, err
+		}
+	}
+
 	// --- Process each row ---
 	for _, row := range rows {
 		op := strings.ToLower(row.Operation)
@@ -247,10 +264,11 @@ func (s *Service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 				result.FailedCount++
 				continue
 			}
+			encryptedLocation := s.encryptLocation(row.Location)
 			elem := &CpeElement{
 				SerialNumber:         strPtr(row.SerialNumber),
 				DeviceName:           strPtr(row.DeviceName),
-				InstallationLocation: strPtr(row.Location),
+				InstallationLocation: strPtr(encryptedLocation),
 				Longitude:            strPtr(row.Longitude),
 				Latitude:             strPtr(row.Latitude),
 				DeviceType:           strPtr(dbDeviceType),
@@ -278,7 +296,8 @@ func (s *Service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 				continue
 			}
 			existing.DeviceName = strPtr(row.DeviceName)
-			existing.InstallationLocation = strPtr(row.Location)
+			encryptedLocation := s.encryptLocation(row.Location)
+			existing.InstallationLocation = strPtr(encryptedLocation)
 			existing.Longitude = strPtr(row.Longitude)
 			existing.Latitude = strPtr(row.Latitude)
 			if err := s.repo.Update(existing); err != nil {
@@ -333,6 +352,125 @@ func (s *Service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 	}
 
 	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// License quota check
+// ---------------------------------------------------------------------------
+
+// checkDeviceQuota verifies that adding `count` more devices won't exceed the license quota.
+// Returns an error if the quota would be exceeded.
+func (s *Service) checkDeviceQuota(licenseId int, deviceType string, count int) error {
+	if licenseId <= 0 || count <= 0 {
+		return nil
+	}
+
+	// Determine quota column based on device type
+	quotaKey := "cpeQuantity"
+	switch deviceType {
+	case "enb":
+		quotaKey = "enbQuantity"
+	case "gnb":
+		quotaKey = "gnbQuantity"
+	}
+
+	// Read quota from license table
+	var quota int
+	err := s.repo.db.Table("license").Where("id = ?", licenseId).Scan(&quota).Error
+	// If we can't read quota, skip check
+	if err != nil || quota <= 0 {
+		return nil
+	}
+
+	// Count existing devices of this type for this license
+	var existing int64
+	query := s.repo.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	switch deviceType {
+	case "enb":
+		query = query.Where("device_type = ?", "enb")
+	case "gnb":
+		query = query.Where("device_type = ?", "gnb")
+	default:
+		query = query.Where("device_type = ? OR device_type IS NULL", "cpe")
+	}
+	query.Count(&existing)
+
+	if int(existing)+count > quota {
+		return fmt.Errorf("device quota exceeded for %s: %d/%d (requesting +%d)", quotaKey, existing, quota, count)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Location encryption (AES-GCM)
+// ---------------------------------------------------------------------------
+
+// encryptLocation encrypts installation location data using AES-GCM.
+// Returns the original value if encryption key is not configured.
+func (s *Service) encryptLocation(location string) string {
+	key := s.getLocationEncryptionKey()
+	if len(key) == 0 {
+		return location
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		logger.Errorf("encryptLocation: failed to create cipher: %v", err)
+		return location
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		logger.Errorf("encryptLocation: failed to create GCM: %v", err)
+		return location
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		logger.Errorf("encryptLocation: failed to generate nonce: %v", err)
+		return location
+	}
+	encrypted := gcm.Seal(nonce, nonce, []byte(location), nil)
+	return base64.StdEncoding.EncodeToString(encrypted)
+}
+
+// decryptLocation decrypts AES-GCM encrypted location data.
+func (s *Service) decryptLocation(encrypted string) string {
+	key := s.getLocationEncryptionKey()
+	if len(key) == 0 {
+		return encrypted
+	}
+	data, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return encrypted
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return encrypted
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return encrypted
+	}
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return encrypted
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	decrypted, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return encrypted
+	}
+	return string(decrypted)
+}
+
+// getLocationEncryptionKey reads the AES key from system_config.
+// Returns empty slice if not configured.
+func (s *Service) getLocationEncryptionKey() []byte {
+	var configValue string
+	if err := s.repo.db.Table("system_config").Where("config_key = ?", "location_encryption_key").Limit(1).Scan(&configValue).Error; err == nil && configValue != "" {
+		// Use SHA-256 to ensure 32-byte key
+		hash := sha256.Sum256([]byte(configValue))
+		return hash[:]
+	}
+	return nil
 }
 
 // --- pointer helpers local to this file ---
