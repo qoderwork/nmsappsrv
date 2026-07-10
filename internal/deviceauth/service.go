@@ -21,12 +21,12 @@ const (
 
 // Service manages device authentication configuration.
 type Service struct {
-	db *gorm.DB
+	repo *Repository
 }
 
 // NewService creates a new device auth config service.
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{repo: NewRepository(db)}
 }
 
 // GetConfig loads the device auth config for a tenant.
@@ -44,8 +44,8 @@ func (s *Service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
 	}
 
 	// Load from DB
-	var sc misc.SystemConfig
-	if err := s.db.Where("id = ?", configDBKey).First(&sc).Error; err != nil {
+	sc, err := s.repo.GetConfig(configDBKey)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -77,9 +77,8 @@ func (s *Service) SaveConfig(cfg *DeviceAuthConfig) error {
 	jsonStr := string(jsonBytes)
 
 	sc := misc.SystemConfig{Id: configDBKey, Config: &jsonStr}
-	result := s.db.Save(&sc)
-	if result.Error != nil {
-		return result.Error
+	if err := s.repo.SaveConfig(&sc); err != nil {
+		return err
 	}
 
 	// Invalidate Redis cache

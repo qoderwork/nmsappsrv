@@ -13,15 +13,43 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Service contains the business logic for user management.
-type Service struct {
-	repo *Repository
-	db   *gorm.DB
+// Service defines the business-logic contract for user management.
+type Service interface {
+	Login(username, password string) (*SysUser, error)
+	Logout(username, jwtToken string) error
+	RecordLogin(username, ip string, licenseId int, result int) error
+	RecordLogout(username, ip string, licenseId int) error
+	ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64, error)
+	CreateUser(u *SysUser) error
+	UpdateUser(u *SysUser) error
+	DeleteUser(id int) error
+	KickOutUser(userId int) error
+	UnlockUser(userId int) error
+	ModifyPassword(username, oldPassword, newPassword string) error
+	EnableUser(userId int) error
+	DisableUser(userId int) error
+	ResetPassword(adminId, userId int) (string, error)
+	ResetPasswordByLink(username, key, newPassword string) error
+	SetTenancyForUser(userId, licenseId int) error
+	GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error)
+	NeedChangePassword(userId int) (*NeedChangePasswordResponse, error)
+	ListRoles(licenseId int) ([]Role, error)
+	CreateRole(r *Role) error
+	UpdateRole(r *Role) error
+	DeleteRole(id string) error
+	GetRolePermissions(roleId string) ([]RoleHasPermission, error)
+	UpdateRolePermissions(roleId string, permissionIds []string) error
+	GetRoleNamesForUser(userId int, licenseId int) ([]string, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db), db: db}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------------------------------------------------------------------------
@@ -29,7 +57,7 @@ func NewService(db *gorm.DB) *Service {
 // ---------------------------------------------------------------------------
 
 // Login validates credentials and returns the user on success.
-func (s *Service) Login(username, password string) (*SysUser, error) {
+func (s *service) Login(username, password string) (*SysUser, error) {
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
 		return nil, errors.New("invalid username or password")
@@ -49,7 +77,7 @@ func (s *Service) Login(username, password string) (*SysUser, error) {
 // Logout invalidates the current JWT token.
 // 1. Delete SECURITY_JWT_LOGIN:{username}
 // 2. Add JWT to blacklist SECURITY_JWT_BLACK:{jwt} with TTL
-func (s *Service) Logout(username, jwtToken string) error {
+func (s *service) Logout(username, jwtToken string) error {
 	ctx := context.Background()
 
 	// Delete login key
@@ -68,7 +96,7 @@ func (s *Service) Logout(username, jwtToken string) error {
 }
 
 // RecordLogin creates a login log entry.
-func (s *Service) RecordLogin(username, ip string, licenseId int, result int) error {
+func (s *service) RecordLogin(username, ip string, licenseId int, result int) error {
 	now := time.Now()
 	log := LoginLog{
 		Username:  &username,
@@ -81,7 +109,7 @@ func (s *Service) RecordLogin(username, ip string, licenseId int, result int) er
 }
 
 // RecordLogout creates a logout log entry.
-func (s *Service) RecordLogout(username, ip string, licenseId int) error {
+func (s *service) RecordLogout(username, ip string, licenseId int) error {
 	now := time.Now()
 	logType := LoginTypeLogout
 	info := "Logout"
@@ -102,7 +130,7 @@ func (s *Service) RecordLogout(username, ip string, licenseId int) error {
 // ---------------------------------------------------------------------------
 
 // ListUsers returns a paginated user list.
-func (s *Service) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64, error) {
+func (s *service) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -114,7 +142,7 @@ func (s *Service) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64
 }
 
 // CreateUser hashes the password and persists a new user.
-func (s *Service) CreateUser(u *SysUser) error {
+func (s *service) CreateUser(u *SysUser) error {
 	if u.Password != nil && *u.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -137,7 +165,7 @@ func (s *Service) CreateUser(u *SysUser) error {
 
 // UpdateUser persists changes to an existing user. If the password field has
 // changed it is re-hashed before saving.
-func (s *Service) UpdateUser(u *SysUser) error {
+func (s *service) UpdateUser(u *SysUser) error {
 	if u.Password != nil && *u.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -150,7 +178,7 @@ func (s *Service) UpdateUser(u *SysUser) error {
 }
 
 // DeleteUser removes a user by ID and invalidates their session.
-func (s *Service) DeleteUser(id int) error {
+func (s *service) DeleteUser(id int) error {
 	u, err := s.repo.FindUserByID(id)
 	if err != nil {
 		return err
@@ -167,7 +195,7 @@ func (s *Service) DeleteUser(id int) error {
 // ---------------------------------------------------------------------------
 
 // KickOutUser forces a user to logout by removing their JWT login key.
-func (s *Service) KickOutUser(userId int) error {
+func (s *service) KickOutUser(userId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return err
@@ -180,7 +208,7 @@ func (s *Service) KickOutUser(userId int) error {
 }
 
 // UnlockUser unlocks a locked user by resetting error counters.
-func (s *Service) UnlockUser(userId int) error {
+func (s *service) UnlockUser(userId int) error {
 	now := time.Now()
 	return s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"last_login_time":   now,
@@ -190,7 +218,7 @@ func (s *Service) UnlockUser(userId int) error {
 }
 
 // ModifyPassword changes a user's password after validating the old one.
-func (s *Service) ModifyPassword(username, oldPassword, newPassword string) error {
+func (s *service) ModifyPassword(username, oldPassword, newPassword string) error {
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
 		return errors.New("user not found")
@@ -239,7 +267,7 @@ func (s *Service) ModifyPassword(username, oldPassword, newPassword string) erro
 }
 
 // EnableUser enables a user account.
-func (s *Service) EnableUser(userId int) error {
+func (s *service) EnableUser(userId int) error {
 	enable := true
 	return s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"enable": enable,
@@ -247,7 +275,7 @@ func (s *Service) EnableUser(userId int) error {
 }
 
 // DisableUser disables a user account and invalidates their session.
-func (s *Service) DisableUser(userId int) error {
+func (s *service) DisableUser(userId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return err
@@ -269,7 +297,7 @@ func (s *Service) DisableUser(userId int) error {
 
 // ResetPassword resets a user's password (admin action).
 // Returns a reset key that can be used to construct a reset link.
-func (s *Service) ResetPassword(adminId, userId int) (string, error) {
+func (s *service) ResetPassword(adminId, userId int) (string, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return "", err
@@ -302,7 +330,7 @@ func (s *Service) ResetPassword(adminId, userId int) (string, error) {
 }
 
 // ResetPasswordByLink validates a reset key and sets a new password.
-func (s *Service) ResetPasswordByLink(username, key, newPassword string) error {
+func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 	ctx := context.Background()
 	redisKey := RedisKeyPwdReset + key
 
@@ -354,7 +382,7 @@ func (s *Service) ResetPasswordByLink(username, key, newPassword string) error {
 }
 
 // SetTenancyForUser updates a user's license/tenancy and forces re-login.
-func (s *Service) SetTenancyForUser(userId, licenseId int) error {
+func (s *service) SetTenancyForUser(userId, licenseId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return err
@@ -374,7 +402,7 @@ func (s *Service) SetTenancyForUser(userId, licenseId int) error {
 }
 
 // GetLoginFailedTimes returns the failed login count for a user.
-func (s *Service) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error) {
+func (s *service) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return nil, err
@@ -398,7 +426,7 @@ func (s *Service) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, er
 }
 
 // NeedChangePassword checks if a user needs to change their password.
-func (s *Service) NeedChangePassword(userId int) (*NeedChangePasswordResponse, error) {
+func (s *service) NeedChangePassword(userId int) (*NeedChangePasswordResponse, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return nil, err
@@ -428,22 +456,22 @@ func (s *Service) NeedChangePassword(userId int) (*NeedChangePasswordResponse, e
 // ---------------------------------------------------------------------------
 
 // ListRoles returns all roles for the given license.
-func (s *Service) ListRoles(licenseId int) ([]Role, error) {
+func (s *service) ListRoles(licenseId int) ([]Role, error) {
 	return s.repo.FindRoles(licenseId)
 }
 
 // CreateRole persists a new role.
-func (s *Service) CreateRole(r *Role) error {
+func (s *service) CreateRole(r *Role) error {
 	return s.repo.CreateRole(r)
 }
 
 // UpdateRole persists changes to an existing role.
-func (s *Service) UpdateRole(r *Role) error {
+func (s *service) UpdateRole(r *Role) error {
 	return s.repo.UpdateRole(r)
 }
 
 // DeleteRole removes a role by ID (string UUID).
-func (s *Service) DeleteRole(id string) error {
+func (s *service) DeleteRole(id string) error {
 	return s.repo.DeleteRole(id)
 }
 
@@ -452,12 +480,12 @@ func (s *Service) DeleteRole(id string) error {
 // ---------------------------------------------------------------------------
 
 // GetRolePermissions returns all permission associations for a role.
-func (s *Service) GetRolePermissions(roleId string) ([]RoleHasPermission, error) {
+func (s *service) GetRolePermissions(roleId string) ([]RoleHasPermission, error) {
 	return s.repo.FindPermissionsByRoleId(roleId)
 }
 
 // UpdateRolePermissions replaces the permission set for a role.
-func (s *Service) UpdateRolePermissions(roleId string, permissionIds []string) error {
+func (s *service) UpdateRolePermissions(roleId string, permissionIds []string) error {
 	return s.repo.SavePermissions(roleId, permissionIds)
 }
 
@@ -466,7 +494,7 @@ func (s *Service) UpdateRolePermissions(roleId string, permissionIds []string) e
 // ---------------------------------------------------------------------------
 
 // GetRoleNamesForUser returns the role names for a given user.
-func (s *Service) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
+func (s *service) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
 	userRoles, err := s.repo.FindUserRoles(userId)
 	if err != nil {
 		return nil, err
@@ -503,7 +531,7 @@ func (s *Service) GetRoleNamesForUser(userId int, licenseId int) ([]string, erro
 
 // invalidateUser removes the user's JWT login key from Redis, effectively
 // forcing them to re-authenticate on their next request.
-func (s *Service) invalidateUser(username string) {
+func (s *service) invalidateUser(username string) {
 	ctx := context.Background()
 	loginKey := RedisKeyJWTLogin + username
 	if err := redis.Del(ctx, loginKey); err != nil {
@@ -512,7 +540,7 @@ func (s *Service) invalidateUser(username string) {
 }
 
 // checkPasswordHistory checks if the new password matches any of the last N passwords.
-func (s *Service) checkPasswordHistory(username, newPassword string, limit int) error {
+func (s *service) checkPasswordHistory(username, newPassword string, limit int) error {
 	history, err := s.repo.FindRecentPasswords(username, limit)
 	if err != nil {
 		logger.Warnf("checkPasswordHistory: %v", err)
@@ -529,7 +557,7 @@ func (s *Service) checkPasswordHistory(username, newPassword string, limit int) 
 }
 
 // savePasswordHistory saves a password hash to the history table.
-func (s *Service) savePasswordHistory(username, hashedPassword string) {
+func (s *service) savePasswordHistory(username, hashedPassword string) {
 	now := time.Now()
 	h := PasswordHistory{
 		Username:   &username,

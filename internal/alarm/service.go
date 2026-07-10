@@ -8,14 +8,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains the business logic for alarm management.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for alarm management.
+type Service interface {
+	ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
+	GetAlarm(id int64) (*Alarm, error)
+	ClearAlarm(id int64) error
+	BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error)
+	CreateAlarm(a *Alarm) error
+	CheckAlarmSuppression(alarm *Alarm) (bool, string)
+	ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error)
+	ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error)
+	CreateAlarmTemplate(t *AlarmTemplate) error
+	UpdateAlarmTemplate(t *AlarmTemplate) error
+	ListAlarmFilters(licenseId int) ([]AlarmFilter, error)
+	CreateAlarmFilter(f *AlarmFilter) error
+	UpdateAlarmFilter(f *AlarmFilter) error
+	DeleteAlarmFilter(id int) error
+}
+
+// service contains the business logic for alarm management.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------------------------------------------------------------------------
@@ -24,7 +42,7 @@ func NewService(db *gorm.DB) *Service {
 
 // ListAlarms returns a paginated alarm list. The page number (1-based) is
 // converted to an offset before querying.
-func (s *Service) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
+func (s *service) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -36,25 +54,25 @@ func (s *Service) ListAlarms(licenseId int, severity string, alarmType int, page
 }
 
 // GetAlarm returns a single alarm by ID.
-func (s *Service) GetAlarm(id int64) (*Alarm, error) {
+func (s *service) GetAlarm(id int64) (*Alarm, error) {
 	return s.repo.FindAlarmByID(id)
 }
 
 // ClearAlarm marks an alarm as cleared with the current timestamp.
-func (s *Service) ClearAlarm(id int64) error {
+func (s *service) ClearAlarm(id int64) error {
 	return s.repo.ClearAlarm(id, time.Now())
 }
 
 // BatchClearAlarms clears multiple alarms in a single transaction. It returns
 // the count of cleared alarms and any IDs that were not found in the database.
-func (s *Service) BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error) {
+func (s *service) BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error) {
 	return s.repo.BatchClearAlarms(alarmIds, clearUser, time.Now())
 }
 
 // CreateAlarm inserts a new alarm after checking alarm suppression rules. If
 // the alarm matches an active filter it is still created but marked as
 // suppressed so the creation is not silently lost.
-func (s *Service) CreateAlarm(a *Alarm) error {
+func (s *service) CreateAlarm(a *Alarm) error {
 	// Check suppression before inserting.
 	suppressed, reason := s.CheckAlarmSuppression(a)
 	if suppressed {
@@ -81,7 +99,7 @@ func (s *Service) CreateAlarm(a *Alarm) error {
 //  3. Alarm identifier: if the filter is not set to match all alarms, the
 //     alarm's alarm_id must appear in the filter's alarm list
 //     (alarm_filter_has_alarm).
-func (s *Service) CheckAlarmSuppression(alarm *Alarm) (bool, string) {
+func (s *service) CheckAlarmSuppression(alarm *Alarm) (bool, string) {
 	licenseId := 0
 	if alarm.LicenseId != nil {
 		licenseId = *alarm.LicenseId
@@ -218,7 +236,7 @@ func trimSpace(s string) string {
 // ---------------------------------------------------------------------------
 
 // ListAlarmLibrary returns all alarm library entries for the given tenancy.
-func (s *Service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
+func (s *service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 	return s.repo.FindAlarmLibrary(tenancyId)
 }
 
@@ -227,17 +245,17 @@ func (s *Service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 // ---------------------------------------------------------------------------
 
 // ListAlarmTemplates returns all alarm templates for the given tenancy.
-func (s *Service) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
+func (s *service) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
 	return s.repo.FindAlarmTemplates(tenancyId)
 }
 
 // CreateAlarmTemplate persists a new alarm template.
-func (s *Service) CreateAlarmTemplate(t *AlarmTemplate) error {
+func (s *service) CreateAlarmTemplate(t *AlarmTemplate) error {
 	return s.repo.CreateAlarmTemplate(t)
 }
 
 // UpdateAlarmTemplate persists changes to an existing alarm template.
-func (s *Service) UpdateAlarmTemplate(t *AlarmTemplate) error {
+func (s *service) UpdateAlarmTemplate(t *AlarmTemplate) error {
 	return s.repo.UpdateAlarmTemplate(t)
 }
 
@@ -246,21 +264,21 @@ func (s *Service) UpdateAlarmTemplate(t *AlarmTemplate) error {
 // ---------------------------------------------------------------------------
 
 // ListAlarmFilters returns all alarm filters for the given license.
-func (s *Service) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+func (s *service) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 	return s.repo.FindAlarmFilters(licenseId)
 }
 
 // CreateAlarmFilter persists a new alarm filter.
-func (s *Service) CreateAlarmFilter(f *AlarmFilter) error {
+func (s *service) CreateAlarmFilter(f *AlarmFilter) error {
 	return s.repo.CreateAlarmFilter(f)
 }
 
 // UpdateAlarmFilter persists changes to an existing alarm filter.
-func (s *Service) UpdateAlarmFilter(f *AlarmFilter) error {
+func (s *service) UpdateAlarmFilter(f *AlarmFilter) error {
 	return s.repo.UpdateAlarmFilter(f)
 }
 
 // DeleteAlarmFilter removes an alarm filter by ID.
-func (s *Service) DeleteAlarmFilter(id int) error {
+func (s *service) DeleteAlarmFilter(id int) error {
 	return s.repo.DeleteAlarmFilter(id)
 }

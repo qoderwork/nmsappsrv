@@ -59,13 +59,13 @@ var defaultRule = SecurityRule{
 
 // Service contains security rule business logic.
 type Service struct {
-	db *gorm.DB
-	mu sync.Mutex
+	repo *Repository
+	mu   sync.Mutex
 }
 
 // NewService creates a new security rule service.
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{repo: NewRepository(db)}
 }
 
 // GetRule reads the security rule config, filling defaults for missing fields.
@@ -156,9 +156,9 @@ func (s *Service) GetPasswordStrategy() (*PasswordStrategyResponse, error) {
 // ---------- repository helpers ----------
 
 func (s *Service) loadConfig() (*SecurityRule, error) {
-	var sc SystemConfig
 	key := "security_rule"
-	if err := s.db.Where("id = ?", key).First(&sc).Error; err != nil {
+	sc, err := s.repo.FindConfigByKey(key)
+	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -182,16 +182,15 @@ func (s *Service) saveConfig(cfg *SecurityRule) error {
 	val := string(data)
 	key := "security_rule"
 
-	var sc SystemConfig
-	err = s.db.Where("id = ?", key).First(&sc).Error
+	sc, err := s.repo.FindConfigByKey(key)
 	if err == gorm.ErrRecordNotFound {
-		return s.db.Create(&SystemConfig{Id: key, Config: &val}).Error
+		return s.repo.CreateConfig(&SystemConfig{Id: key, Config: &val})
 	}
 	if err != nil {
 		return err
 	}
 	sc.Config = &val
-	return s.db.Save(&sc).Error
+	return s.repo.SaveConfig(sc)
 }
 
 func (s *Service) fillDefaults(cfg *SecurityRule) {

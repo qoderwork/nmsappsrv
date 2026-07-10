@@ -17,13 +17,13 @@ import (
 
 // Service provides health check operations
 type Service struct {
-	db      *gorm.DB
+	repo    *Repository
 	haCache sync.Map
 }
 
 // NewService creates a new Service
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{repo: NewRepository(db)}
 }
 
 // HealthCheck returns basic health status
@@ -33,20 +33,9 @@ func (s *Service) HealthCheck() HealthStatus {
 
 // GetMysqlInfo returns MySQL health metrics
 func (s *Service) GetMysqlInfo() (*MysqlInfo, error) {
-	rows, err := s.db.Raw("SHOW GLOBAL STATUS").Rows()
+	metrics, err := s.repo.GetMysqlGlobalStatus()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get mysql status: %w", err)
-	}
-	defer rows.Close()
-
-	metrics := make(map[string]string)
-	for rows.Next() {
-		var name, value string
-		if err := rows.Scan(&name, &value); err != nil {
-			logger.Errorf("failed to scan mysql status: %v", err)
-			continue
-		}
-		metrics[name] = value
+		return nil, err
 	}
 
 	return &MysqlInfo{

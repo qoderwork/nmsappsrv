@@ -15,7 +15,6 @@ import (
 
 // HeartbeatService implements the SAS/CBSD heartbeat protocol logic.
 type HeartbeatService struct {
-	db   *gorm.DB
 	cfg  *config.Config
 	repo *Repository
 }
@@ -23,7 +22,6 @@ type HeartbeatService struct {
 // NewHeartbeatService creates a HeartbeatService.
 func NewHeartbeatService(db *gorm.DB, cfg *config.Config) *HeartbeatService {
 	return &HeartbeatService{
-		db:   db,
 		cfg:  cfg,
 		repo: NewRepository(db),
 	}
@@ -102,25 +100,11 @@ func (s *HeartbeatService) ListHeartbeatStatus(query string, page, pageSize int)
 		pageSize = 20
 	}
 
-	// Query CBSD devices (spectrum-managed devices)
-	type cbsdRow struct {
-		SerialNumber string
-		DeviceName   string
-	}
-	var rows []cbsdRow
-	q := s.db.Table("cbsd_infos").Select("serial_number, device_name")
-	if query != "" {
-		like := fmt.Sprintf("%%%s%%", query)
-		q = q.Where("serial_number LIKE ? OR device_name LIKE ?", like, like)
-	}
-	var total int64
-	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to count cbsd devices: %w", err)
-	}
-
+	// Query CBSD devices via repository
 	offset := (page - 1) * pageSize
-	if err := q.Offset(offset).Limit(pageSize).Find(&rows).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to query cbsd devices: %w", err)
+	rows, total, err := s.repo.FindCBSDDevices(query, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	// Build status list with Redis last-seen data

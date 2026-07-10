@@ -6,8 +6,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for device entities.
-type Repository struct {
+// Repository defines the data-access contract for device entities.
+type Repository interface {
+	FindByID(id int64) (*CpeElement, error)
+	FindPage(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error)
+	FindBySerialNumber(sn string) (*CpeElement, error)
+	Create(elem *CpeElement) error
+	Update(elem *CpeElement) error
+	SoftDelete(id int64) error
+	FindGroups(licenseId int) ([]DeviceGroup, error)
+	CreateGroup(g *DeviceGroup) error
+	UpdateGroup(g *DeviceGroup) error
+	DeleteGroup(id string) error
+	AddElementToGroup(groupId string, elementId int64) error
+	RemoveElementFromGroup(groupId string, elementId int64) error
+	FindBySerialNumbers(serials []string) map[string]*CpeElement
+	CountAllNonDeleted() int64
+	CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64
+	FindDefaultGroups(licenseId int) ([]DeviceGroup, error)
+	AddElementsToGroup(groupId string, elementIds []int64) error
+}
+
+// repository handles database operations for device entities.
+type repository struct {
 	db *gorm.DB
 }
 
@@ -15,8 +36,8 @@ type Repository struct {
 // Dependency injection is used because pkg/database already imports
 // internal/device for model registration, so importing it back would
 // create a circular dependency.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // ---------------------------------------------------------------------------
@@ -24,7 +45,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // FindByID returns a non-deleted CpeElement by its primary key.
-func (r *Repository) FindByID(id int64) (*CpeElement, error) {
+func (r *repository) FindByID(id int64) (*CpeElement, error) {
 	var elem CpeElement
 	if err := r.db.Where("ne_neid = ? AND deleted = ?", id, false).First(&elem).Error; err != nil {
 		return nil, err
@@ -36,7 +57,7 @@ func (r *Repository) FindByID(id int64) (*CpeElement, error) {
 // license. When keyword is non-empty it filters on device_name and
 // serial_number (case-insensitive LIKE). The total count is returned so the
 // caller can build pagination metadata.
-func (r *Repository) FindPage(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
+func (r *repository) FindPage(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
 	var elems []CpeElement
 	var total int64
 
@@ -59,7 +80,7 @@ func (r *Repository) FindPage(licenseId int, keyword string, offset, limit int) 
 }
 
 // FindBySerialNumber looks up a non-deleted device by its serial number.
-func (r *Repository) FindBySerialNumber(sn string) (*CpeElement, error) {
+func (r *repository) FindBySerialNumber(sn string) (*CpeElement, error) {
 	var elem CpeElement
 	if err := r.db.Where("serial_number = ? AND deleted = ?", sn, false).First(&elem).Error; err != nil {
 		return nil, err
@@ -68,17 +89,17 @@ func (r *Repository) FindBySerialNumber(sn string) (*CpeElement, error) {
 }
 
 // Create inserts a new CpeElement row.
-func (r *Repository) Create(elem *CpeElement) error {
+func (r *repository) Create(elem *CpeElement) error {
 	return r.db.Create(elem).Error
 }
 
 // Update saves all fields of an existing CpeElement.
-func (r *Repository) Update(elem *CpeElement) error {
+func (r *repository) Update(elem *CpeElement) error {
 	return r.db.Save(elem).Error
 }
 
 // SoftDelete marks a device as deleted without removing the row.
-func (r *Repository) SoftDelete(id int64) error {
+func (r *repository) SoftDelete(id int64) error {
 	return r.db.Model(&CpeElement{}).Where("ne_neid = ?", id).Update("deleted", true).Error
 }
 
@@ -87,7 +108,7 @@ func (r *Repository) SoftDelete(id int64) error {
 // ---------------------------------------------------------------------------
 
 // FindGroups returns all device groups for the given license.
-func (r *Repository) FindGroups(licenseId int) ([]DeviceGroup, error) {
+func (r *repository) FindGroups(licenseId int) ([]DeviceGroup, error) {
 	var groups []DeviceGroup
 	if err := r.db.Where("license_id = ?", licenseId).Find(&groups).Error; err != nil {
 		return nil, err
@@ -96,17 +117,17 @@ func (r *Repository) FindGroups(licenseId int) ([]DeviceGroup, error) {
 }
 
 // CreateGroup inserts a new device group.
-func (r *Repository) CreateGroup(g *DeviceGroup) error {
+func (r *repository) CreateGroup(g *DeviceGroup) error {
 	return r.db.Create(g).Error
 }
 
 // UpdateGroup saves changes to an existing device group.
-func (r *Repository) UpdateGroup(g *DeviceGroup) error {
+func (r *repository) UpdateGroup(g *DeviceGroup) error {
 	return r.db.Save(g).Error
 }
 
 // DeleteGroup removes a device group and its element associations.
-func (r *Repository) DeleteGroup(id string) error {
+func (r *repository) DeleteGroup(id string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("group_id = ?", id).Delete(&GroupHasElement{}).Error; err != nil {
 			return err
@@ -120,13 +141,13 @@ func (r *Repository) DeleteGroup(id string) error {
 // ---------------------------------------------------------------------------
 
 // AddElementToGroup creates a many-to-many link between a group and a device.
-func (r *Repository) AddElementToGroup(groupId string, elementId int64) error {
+func (r *repository) AddElementToGroup(groupId string, elementId int64) error {
 	rel := GroupHasElement{GroupId: groupId, ElementId: elementId}
 	return r.db.Create(&rel).Error
 }
 
 // RemoveElementFromGroup deletes the many-to-many link.
-func (r *Repository) RemoveElementFromGroup(groupId string, elementId int64) error {
+func (r *repository) RemoveElementFromGroup(groupId string, elementId int64) error {
 	return r.db.Where("group_id = ? AND element_id = ?", groupId, elementId).Delete(&GroupHasElement{}).Error
 }
 
@@ -136,7 +157,7 @@ func (r *Repository) RemoveElementFromGroup(groupId string, elementId int64) err
 
 // FindBySerialNumbers returns a map of serial_number → CpeElement for all
 // non-deleted devices matching the given serial numbers.
-func (r *Repository) FindBySerialNumbers(serials []string) map[string]*CpeElement {
+func (r *repository) FindBySerialNumbers(serials []string) map[string]*CpeElement {
 	if len(serials) == 0 {
 		return nil
 	}
@@ -153,7 +174,7 @@ func (r *Repository) FindBySerialNumbers(serials []string) map[string]*CpeElemen
 
 // CountAllNonDeleted returns the total number of non-deleted devices across
 // the entire platform (used for platform-level license checking).
-func (r *Repository) CountAllNonDeleted() int64 {
+func (r *repository) CountAllNonDeleted() int64 {
 	var count int64
 	r.db.Model(&CpeElement{}).Where("deleted = ?", false).Count(&count)
 	return count
@@ -162,7 +183,7 @@ func (r *Repository) CountAllNonDeleted() int64 {
 // CountNonDeletedByDeviceType counts non-deleted devices of a specific type.
 // If licenseId > 0, it filters by license_id as well.
 // If generation is non-empty, it also filters by generation.
-func (r *Repository) CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64 {
+func (r *repository) CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64 {
 	var count int64
 	q := r.db.Model(&CpeElement{}).Where("deleted = ?", false)
 	if deviceType != "" {
@@ -180,7 +201,7 @@ func (r *Repository) CountNonDeletedByDeviceType(deviceType string, licenseId in
 
 // FindDefaultGroups returns device groups marked as default for the given
 // license scope. If licenseId is 0, it finds platform-level defaults.
-func (r *Repository) FindDefaultGroups(licenseId int) ([]DeviceGroup, error) {
+func (r *repository) FindDefaultGroups(licenseId int) ([]DeviceGroup, error) {
 	var groups []DeviceGroup
 	q := r.db.Where("default_group = ?", true)
 	if licenseId > 0 {
@@ -195,7 +216,7 @@ func (r *Repository) FindDefaultGroups(licenseId int) ([]DeviceGroup, error) {
 }
 
 // AddElementsToGroup batch-creates group-element associations.
-func (r *Repository) AddElementsToGroup(groupId string, elementIds []int64) error {
+func (r *repository) AddElementsToGroup(groupId string, elementIds []int64) error {
 	if len(elementIds) == 0 {
 		return nil
 	}

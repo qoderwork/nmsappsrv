@@ -58,12 +58,12 @@ type ThresholdViolation struct {
 type ThresholdChecker struct {
 	db       *gorm.DB
 	rdb      *goredis.Client
-	alarmSvc *alarm.Service
+	alarmSvc alarm.Service
 	stopCh   chan struct{}
 }
 
 // NewThresholdChecker creates a ThresholdChecker.
-func NewThresholdChecker(db *gorm.DB, rdb *goredis.Client, alarmSvc *alarm.Service) *ThresholdChecker {
+func NewThresholdChecker(db *gorm.DB, rdb *goredis.Client, alarmSvc alarm.Service) *ThresholdChecker {
 	return &ThresholdChecker{
 		db:       db,
 		rdb:      rdb,

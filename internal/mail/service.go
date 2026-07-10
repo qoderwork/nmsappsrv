@@ -23,7 +23,7 @@ import (
 
 // Service contains mail business logic.
 type Service struct {
-	db     *gorm.DB
+	repo   *Repository
 	aesKey []byte // 32-byte AES-256 key
 }
 
@@ -37,7 +37,7 @@ func NewService(db *gorm.DB, aesKeyHex string) *Service {
 			copy(key, decoded)
 		}
 	}
-	return &Service{db: db, aesKey: key}
+	return &Service{repo: NewRepository(db), aesKey: key}
 }
 
 // ---------- public methods ----------
@@ -121,8 +121,7 @@ func (s *Service) SendEmailCode(username, grantType string) error {
 		email = username
 	} else {
 		// Look up user email from DB
-		var userEmail string
-		s.db.Table("user").Where("username = ?", username).Pluck("email", &userEmail)
+		userEmail, _ := s.repo.FindUserEmailByUsername(username)
 		email = userEmail
 	}
 	if email == "" || !isValidEmail(email) {
@@ -199,9 +198,9 @@ func (s *Service) GetSuperUserEmail() (string, error) {
 // ---------- repository helpers ----------
 
 func (s *Service) loadConfig() (*MailConfig, error) {
-	var sc SystemConfig
 	key := "mail"
-	if err := s.db.Where("id = ?", key).First(&sc).Error; err != nil {
+	sc, err := s.repo.FindConfigByKey(key)
+	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return &MailConfig{}, nil
 		}
@@ -225,16 +224,15 @@ func (s *Service) saveConfig(cfg *MailConfig) error {
 	val := string(data)
 	key := "mail"
 
-	var sc SystemConfig
-	err = s.db.Where("id = ?", key).First(&sc).Error
+	sc, err := s.repo.FindConfigByKey(key)
 	if err == gorm.ErrRecordNotFound {
-		return s.db.Create(&SystemConfig{Id: key, Config: &val}).Error
+		return s.repo.CreateConfig(&SystemConfig{Id: key, Config: &val})
 	}
 	if err != nil {
 		return err
 	}
 	sc.Config = &val
-	return s.db.Save(&sc).Error
+	return s.repo.SaveConfig(sc)
 }
 
 // ---------- AES-GCM encryption ----------

@@ -8,14 +8,39 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for user entities.
-type Repository struct {
+// Repository defines the data-access contract for user-related entities.
+type Repository interface {
+	FindUserByUsername(username string) (*SysUser, error)
+	FindUserByID(id int) (*SysUser, error)
+	FindUsers(licenseId int, offset, limit int) ([]SysUser, int64, error)
+	CreateUser(u *SysUser) error
+	UpdateUser(u *SysUser) error
+	DeleteUser(id int) error
+	UpdateUserFields(id int, fields map[string]interface{}) error
+	FindRoles(licenseId int) ([]Role, error)
+	CreateRole(role *Role) error
+	UpdateRole(role *Role) error
+	DeleteRole(id string) error
+	FindPermissionsByRoleId(roleId string) ([]RoleHasPermission, error)
+	SavePermissions(roleId string, permissionIds []string) error
+	FindUserRoles(userId int) ([]UserHasRole, error)
+	SaveUserRoles(userId int, roleIds []string) error
+	CreateLoginLog(log *LoginLog) error
+	CreatePasswordHistory(h *PasswordHistory) error
+	FindRecentPasswords(username string, limit int) ([]PasswordHistory, error)
+	CountUsersByLicenseId(licenseId int) (int64, error)
+	FindUsersByCreatorId(creatorId int) ([]SysUser, error)
+	UpdateLastLoginTime(username string, t time.Time) error
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // ---------------------------------------------------------------------------
@@ -23,7 +48,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // FindUserByUsername returns a user by username.
-func (r *Repository) FindUserByUsername(username string) (*SysUser, error) {
+func (r *repository) FindUserByUsername(username string) (*SysUser, error) {
 	var u SysUser
 	if err := r.db.Where("username = ?", username).First(&u).Error; err != nil {
 		return nil, err
@@ -32,7 +57,7 @@ func (r *Repository) FindUserByUsername(username string) (*SysUser, error) {
 }
 
 // FindUserByID returns a user by primary key.
-func (r *Repository) FindUserByID(id int) (*SysUser, error) {
+func (r *repository) FindUserByID(id int) (*SysUser, error) {
 	var u SysUser
 	if err := r.db.Where("id = ?", id).First(&u).Error; err != nil {
 		return nil, err
@@ -41,7 +66,7 @@ func (r *Repository) FindUserByID(id int) (*SysUser, error) {
 }
 
 // FindUsers returns a paginated list of users for the given license.
-func (r *Repository) FindUsers(licenseId int, offset, limit int) ([]SysUser, int64, error) {
+func (r *repository) FindUsers(licenseId int, offset, limit int) ([]SysUser, int64, error) {
 	var users []SysUser
 	var total int64
 
@@ -59,22 +84,22 @@ func (r *Repository) FindUsers(licenseId int, offset, limit int) ([]SysUser, int
 }
 
 // CreateUser inserts a new user row.
-func (r *Repository) CreateUser(u *SysUser) error {
+func (r *repository) CreateUser(u *SysUser) error {
 	return r.db.Create(u).Error
 }
 
 // UpdateUser saves all fields of an existing user.
-func (r *Repository) UpdateUser(u *SysUser) error {
+func (r *repository) UpdateUser(u *SysUser) error {
 	return r.db.Save(u).Error
 }
 
 // DeleteUser removes a user by ID.
-func (r *Repository) DeleteUser(id int) error {
+func (r *repository) DeleteUser(id int) error {
 	return r.db.Where("id = ?", id).Delete(&SysUser{}).Error
 }
 
 // UpdateUserFields updates specific fields of a user.
-func (r *Repository) UpdateUserFields(id int, fields map[string]interface{}) error {
+func (r *repository) UpdateUserFields(id int, fields map[string]interface{}) error {
 	return r.db.Model(&SysUser{}).Where("id = ?", id).Updates(fields).Error
 }
 
@@ -83,7 +108,7 @@ func (r *Repository) UpdateUserFields(id int, fields map[string]interface{}) err
 // ---------------------------------------------------------------------------
 
 // FindRoles returns all roles for the given license.
-func (r *Repository) FindRoles(licenseId int) ([]Role, error) {
+func (r *repository) FindRoles(licenseId int) ([]Role, error) {
 	var roles []Role
 	if err := r.db.Where("license_id = ?", licenseId).Find(&roles).Error; err != nil {
 		return nil, err
@@ -92,17 +117,17 @@ func (r *Repository) FindRoles(licenseId int) ([]Role, error) {
 }
 
 // CreateRole inserts a new role.
-func (r *Repository) CreateRole(role *Role) error {
+func (r *repository) CreateRole(role *Role) error {
 	return r.db.Create(role).Error
 }
 
 // UpdateRole saves changes to an existing role.
-func (r *Repository) UpdateRole(role *Role) error {
+func (r *repository) UpdateRole(role *Role) error {
 	return r.db.Save(role).Error
 }
 
 // DeleteRole removes a role by ID (string UUID).
-func (r *Repository) DeleteRole(id string) error {
+func (r *repository) DeleteRole(id string) error {
 	return r.db.Where("id = ?", id).Delete(&Role{}).Error
 }
 
@@ -111,7 +136,7 @@ func (r *Repository) DeleteRole(id string) error {
 // ---------------------------------------------------------------------------
 
 // FindPermissionsByRoleId returns all permission associations for a role.
-func (r *Repository) FindPermissionsByRoleId(roleId string) ([]RoleHasPermission, error) {
+func (r *repository) FindPermissionsByRoleId(roleId string) ([]RoleHasPermission, error) {
 	var perms []RoleHasPermission
 	if err := r.db.Where("role_id = ?", roleId).Find(&perms).Error; err != nil {
 		return nil, err
@@ -121,7 +146,7 @@ func (r *Repository) FindPermissionsByRoleId(roleId string) ([]RoleHasPermission
 
 // SavePermissions replaces all permission associations for a role. It deletes
 // existing rows and inserts the new set inside a transaction.
-func (r *Repository) SavePermissions(roleId string, permissionIds []string) error {
+func (r *repository) SavePermissions(roleId string, permissionIds []string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("role_id = ?", roleId).Delete(&RoleHasPermission{}).Error; err != nil {
 			return err
@@ -141,7 +166,7 @@ func (r *Repository) SavePermissions(roleId string, permissionIds []string) erro
 // ---------------------------------------------------------------------------
 
 // FindUserRoles returns all role associations for a user.
-func (r *Repository) FindUserRoles(userId int) ([]UserHasRole, error) {
+func (r *repository) FindUserRoles(userId int) ([]UserHasRole, error) {
 	var roles []UserHasRole
 	if err := r.db.Where("user_id = ?", userId).Find(&roles).Error; err != nil {
 		return nil, err
@@ -150,7 +175,7 @@ func (r *Repository) FindUserRoles(userId int) ([]UserHasRole, error) {
 }
 
 // SaveUserRoles replaces all role associations for a user.
-func (r *Repository) SaveUserRoles(userId int, roleIds []string) error {
+func (r *repository) SaveUserRoles(userId int, roleIds []string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userId).Delete(&UserHasRole{}).Error; err != nil {
 			return err
@@ -170,7 +195,7 @@ func (r *Repository) SaveUserRoles(userId int, roleIds []string) error {
 // ---------------------------------------------------------------------------
 
 // CreateLoginLog inserts a new login log entry.
-func (r *Repository) CreateLoginLog(log *LoginLog) error {
+func (r *repository) CreateLoginLog(log *LoginLog) error {
 	return r.db.Create(log).Error
 }
 
@@ -179,12 +204,12 @@ func (r *Repository) CreateLoginLog(log *LoginLog) error {
 // ---------------------------------------------------------------------------
 
 // CreatePasswordHistory inserts a password history record.
-func (r *Repository) CreatePasswordHistory(h *PasswordHistory) error {
+func (r *repository) CreatePasswordHistory(h *PasswordHistory) error {
 	return r.db.Create(h).Error
 }
 
 // FindRecentPasswords returns the most recent N password hashes for a user.
-func (r *Repository) FindRecentPasswords(username string, limit int) ([]PasswordHistory, error) {
+func (r *repository) FindRecentPasswords(username string, limit int) ([]PasswordHistory, error) {
 	var history []PasswordHistory
 	if err := r.db.Where("username = ?", username).Order("create_time DESC").Limit(limit).Find(&history).Error; err != nil {
 		return nil, err
@@ -197,7 +222,7 @@ func (r *Repository) FindRecentPasswords(username string, limit int) ([]Password
 // ---------------------------------------------------------------------------
 
 // CountUsersByLicenseId returns the number of users for a license.
-func (r *Repository) CountUsersByLicenseId(licenseId int) (int64, error) {
+func (r *repository) CountUsersByLicenseId(licenseId int) (int64, error) {
 	var count int64
 	if err := r.db.Model(&SysUser{}).Where("license_id = ?", licenseId).Count(&count).Error; err != nil {
 		return 0, err
@@ -206,7 +231,7 @@ func (r *Repository) CountUsersByLicenseId(licenseId int) (int64, error) {
 }
 
 // FindUsersByCreatorId returns users created by a specific user.
-func (r *Repository) FindUsersByCreatorId(creatorId int) ([]SysUser, error) {
+func (r *repository) FindUsersByCreatorId(creatorId int) ([]SysUser, error) {
 	var users []SysUser
 	if err := r.db.Where("create_user_id = ?", creatorId).Find(&users).Error; err != nil {
 		return nil, err
@@ -215,7 +240,7 @@ func (r *Repository) FindUsersByCreatorId(creatorId int) ([]SysUser, error) {
 }
 
 // UpdateLastLoginTime sets the last_login_time for a user.
-func (r *Repository) UpdateLastLoginTime(username string, t time.Time) error {
+func (r *repository) UpdateLastLoginTime(username string, t time.Time) error {
 	return r.db.Model(&SysUser{}).Where("username = ?", username).
 		Update("last_login_time", t).Error
 }

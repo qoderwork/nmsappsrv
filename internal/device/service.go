@@ -20,17 +20,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains the business logic for device management.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for device management.
+type Service interface {
+	GetDevice(id int64) (*CpeElement, error)
+	ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
+	CreateDevice(elem *CpeElement) error
+	UpdateDevice(elem *CpeElement) error
+	DeleteDevice(id int64) error
+	ListGroups(licenseId int) ([]DeviceGroup, error)
+	CreateGroup(g *DeviceGroup) error
+	UpdateGroup(g *DeviceGroup) error
+	DeleteGroup(id string) error
+	ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error)
+}
+
+// service contains the business logic for device management.
+type service struct {
+	repo Repository
+	db   *gorm.DB
 }
 
 // NewService creates a Service backed by a fresh Repository.
 // The *gorm.DB is forwarded via dependency injection to avoid a circular
 // import with pkg/database (which already imports internal/device for
 // model registration in AutoMigrateAll).
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db), db: db}
 }
 
 // ---------------------------------------------------------------------------
@@ -38,13 +53,13 @@ func NewService(db *gorm.DB) *Service {
 // ---------------------------------------------------------------------------
 
 // GetDevice returns a single device by ID.
-func (s *Service) GetDevice(id int64) (*CpeElement, error) {
+func (s *service) GetDevice(id int64) (*CpeElement, error) {
 	return s.repo.FindByID(id)
 }
 
 // ListDevices returns a paginated device list. The page number (1-based) is
 // converted to an offset before querying.
-func (s *Service) ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
+func (s *service) ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -56,7 +71,7 @@ func (s *Service) ListDevices(licenseId int, keyword string, page, pageSize int)
 }
 
 // CreateDevice applies sensible defaults and persists a new device.
-func (s *Service) CreateDevice(elem *CpeElement) error {
+func (s *service) CreateDevice(elem *CpeElement) error {
 	elem.LoadedBasicInfo = false
 	elem.IsInitialized = false
 	elem.Deleted = false
@@ -64,12 +79,12 @@ func (s *Service) CreateDevice(elem *CpeElement) error {
 }
 
 // UpdateDevice persists changes to an existing device.
-func (s *Service) UpdateDevice(elem *CpeElement) error {
+func (s *service) UpdateDevice(elem *CpeElement) error {
 	return s.repo.Update(elem)
 }
 
 // DeleteDevice performs a soft-delete (sets deleted = true).
-func (s *Service) DeleteDevice(id int64) error {
+func (s *service) DeleteDevice(id int64) error {
 	return s.repo.SoftDelete(id)
 }
 
@@ -78,13 +93,13 @@ func (s *Service) DeleteDevice(id int64) error {
 // ---------------------------------------------------------------------------
 
 // ListGroups returns all groups for the given license.
-func (s *Service) ListGroups(licenseId int) ([]DeviceGroup, error) {
+func (s *service) ListGroups(licenseId int) ([]DeviceGroup, error) {
 	return s.repo.FindGroups(licenseId)
 }
 
 // CreateGroup generates a random 32-char hex ID when none is supplied, then
 // persists the group.
-func (s *Service) CreateGroup(g *DeviceGroup) error {
+func (s *service) CreateGroup(g *DeviceGroup) error {
 	if g.Id == "" {
 		g.Id = generateHexID()
 	}
@@ -92,12 +107,12 @@ func (s *Service) CreateGroup(g *DeviceGroup) error {
 }
 
 // UpdateGroup persists changes to an existing group.
-func (s *Service) UpdateGroup(g *DeviceGroup) error {
+func (s *service) UpdateGroup(g *DeviceGroup) error {
 	return s.repo.UpdateGroup(g)
 }
 
 // DeleteGroup removes a group and its element associations.
-func (s *Service) DeleteGroup(id string) error {
+func (s *service) DeleteGroup(id string) error {
 	return s.repo.DeleteGroup(id)
 }
 
@@ -174,7 +189,7 @@ func ParseImportExcel(r io.Reader) ([]ImportDeviceRow, error) {
 
 // ImportDevices processes the import rows with Add/Modify/Delete operations.
 // It uses a Redis distributed lock to prevent race conditions.
-func (s *Service) ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error) {
+func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("no device data to import")
 	}
@@ -360,7 +375,7 @@ func (s *Service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 
 // checkDeviceQuota verifies that adding `count` more devices won't exceed the license quota.
 // Returns an error if the quota would be exceeded.
-func (s *Service) checkDeviceQuota(licenseId int, deviceType string, count int) error {
+func (s *service) checkDeviceQuota(licenseId int, deviceType string, count int) error {
 	if licenseId <= 0 || count <= 0 {
 		return nil
 	}
@@ -376,7 +391,7 @@ func (s *Service) checkDeviceQuota(licenseId int, deviceType string, count int) 
 
 	// Read quota from license table
 	var quota int
-	err := s.repo.db.Table("license").Where("id = ?", licenseId).Scan(&quota).Error
+	err := s.db.Table("license").Where("id = ?", licenseId).Scan(&quota).Error
 	// If we can't read quota, skip check
 	if err != nil || quota <= 0 {
 		return nil
@@ -384,7 +399,7 @@ func (s *Service) checkDeviceQuota(licenseId int, deviceType string, count int) 
 
 	// Count existing devices of this type for this license
 	var existing int64
-	query := s.repo.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	query := s.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
 	switch deviceType {
 	case "enb":
 		query = query.Where("device_type = ?", "enb")
@@ -407,7 +422,7 @@ func (s *Service) checkDeviceQuota(licenseId int, deviceType string, count int) 
 
 // encryptLocation encrypts installation location data using AES-GCM.
 // Returns the original value if encryption key is not configured.
-func (s *Service) encryptLocation(location string) string {
+func (s *service) encryptLocation(location string) string {
 	key := s.getLocationEncryptionKey()
 	if len(key) == 0 {
 		return location
@@ -432,7 +447,7 @@ func (s *Service) encryptLocation(location string) string {
 }
 
 // decryptLocation decrypts AES-GCM encrypted location data.
-func (s *Service) decryptLocation(encrypted string) string {
+func (s *service) decryptLocation(encrypted string) string {
 	key := s.getLocationEncryptionKey()
 	if len(key) == 0 {
 		return encrypted
@@ -463,9 +478,9 @@ func (s *Service) decryptLocation(encrypted string) string {
 
 // getLocationEncryptionKey reads the AES key from system_config.
 // Returns empty slice if not configured.
-func (s *Service) getLocationEncryptionKey() []byte {
+func (s *service) getLocationEncryptionKey() []byte {
 	var configValue string
-	if err := s.repo.db.Table("system_config").Where("config_key = ?", "location_encryption_key").Limit(1).Scan(&configValue).Error; err == nil && configValue != "" {
+	if err := s.db.Table("system_config").Where("config_key = ?", "location_encryption_key").Limit(1).Scan(&configValue).Error; err == nil && configValue != "" {
 		// Use SHA-256 to ensure 32-byte key
 		hash := sha256.Sum256([]byte(configValue))
 		return hash[:]

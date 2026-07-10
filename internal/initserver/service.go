@@ -13,13 +13,13 @@ import (
 
 // Service contains init-server business logic.
 type Service struct {
-	db *gorm.DB
-	mu sync.Mutex
+	repo *Repository
+	mu   sync.Mutex
 }
 
 // NewService creates a new init-server service.
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{repo: NewRepository(db)}
 }
 
 // GetConfig reads the init-server config from system_config.
@@ -205,9 +205,9 @@ func boolToSoap(v string) string {
 
 // loadConfig reads InitServerConfig from system_config table (key="initserver").
 func (s *Service) loadConfig() (*InitServerConfig, error) {
-	var sc SystemConfig
 	key := "initserver"
-	if err := s.db.Where("id = ?", key).First(&sc).Error; err != nil {
+	sc, err := s.repo.FindConfigByKey(key)
+	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return &InitServerConfig{}, nil
 		}
@@ -233,14 +233,13 @@ func (s *Service) saveConfig(cfg *InitServerConfig) error {
 	val := string(data)
 	key := "initserver"
 
-	var sc SystemConfig
-	err = s.db.Where("id = ?", key).First(&sc).Error
+	sc, err := s.repo.FindConfigByKey(key)
 	if err == gorm.ErrRecordNotFound {
-		return s.db.Create(&SystemConfig{Id: key, Config: &val}).Error
+		return s.repo.CreateConfig(&SystemConfig{Id: key, Config: &val})
 	}
 	if err != nil {
 		return err
 	}
 	sc.Config = &val
-	return s.db.Save(&sc).Error
+	return s.repo.SaveConfig(sc)
 }
