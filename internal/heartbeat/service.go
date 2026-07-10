@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/config"
+	"nmsappsrv/pkg/constants"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -35,7 +36,7 @@ func (s *HeartbeatService) ProcessHeartbeat(deviceSN string, payload map[string]
 
 	// Update last-seen timestamp in Redis (key expires after 3x interval)
 	ttl := time.Duration(s.cfg.Heartbeat.IntervalSeconds*3) * time.Second
-	redisKey := fmt.Sprintf("heartbeat:last:%s", deviceSN)
+	redisKey := constants.RedisKeyHeartbeat + deviceSN
 	if err := redis.Set(ctx, redisKey, now.Format(time.RFC3339), ttl); err != nil {
 		logger.Errorf("heartbeat: failed to update redis for %s: %v", deviceSN, err)
 	}
@@ -116,7 +117,7 @@ func (s *HeartbeatService) ListHeartbeatStatus(query string, page, pageSize int)
 			Status:     "unknown",
 		}
 
-		redisKey := fmt.Sprintf("heartbeat:last:%s", row.SerialNumber)
+		redisKey := constants.RedisKeyHeartbeat + row.SerialNumber
 		val, err := redis.Get(ctx, redisKey)
 		if err == nil && val != "" {
 			t, err := time.Parse(time.RFC3339, val)

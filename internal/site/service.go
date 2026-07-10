@@ -116,7 +116,7 @@ func (s *Service) CreateSite(site *SiteInfo, licenseId int) error {
 	now := time.Now()
 	site.CreationTime = &now
 
-	return s.repo.CreateSite(site)
+	return s.repo.Create(site)
 }
 
 // UpdateSite updates an existing site with duplicate name check.
@@ -126,7 +126,7 @@ func (s *Service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
 	}
 
 	// Load existing
-	existing, err := s.repo.FindSiteByID(id)
+	existing, err := s.repo.FindByID(id)
 	if err != nil {
 		return errors.New("site not found")
 	}
@@ -146,7 +146,7 @@ func (s *Service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
 	existing.Latitude = site.Latitude
 	existing.Longitude = site.Longitude
 
-	return s.repo.UpdateSite(existing)
+	return s.repo.Save(existing)
 }
 
 // DeleteSite deletes a site and nullifies device references.
@@ -157,7 +157,7 @@ func (s *Service) DeleteSite(id string) error {
 	}
 
 	// Then delete the site
-	return s.repo.DeleteSite(id)
+	return s.repo.DeleteByID(id)
 }
 
 // resolveAreaPath walks up the area parent chain to build a display path like "Region/District/Zone".

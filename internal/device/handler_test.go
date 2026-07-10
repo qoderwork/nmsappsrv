@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+
+	"nmsappsrv/pkg/apperror"
 )
 
 // ---------------------------------------------------------------------------
@@ -192,7 +194,7 @@ func TestHandler_ListDevices_WithKeyword(t *testing.T) {
 func TestHandler_ListDevices_ServiceError(t *testing.T) {
 	mockSvc := &mockService{
 		listDevicesFn: func(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
-			return nil, 0, errors.New("db error")
+			return nil, 0, apperror.Wrap(errors.New("db error"), "LIST_DEVICES_FAILED", 500, "failed to list devices")
 		},
 	}
 	h := &Handler{svc: mockSvc}
@@ -252,7 +254,7 @@ func TestHandler_GetDevice_InvalidID(t *testing.T) {
 func TestHandler_GetDevice_NotFound(t *testing.T) {
 	mockSvc := &mockService{
 		getDeviceFn: func(id int64) (*CpeElement, error) {
-			return nil, errors.New("record not found")
+			return nil, apperror.ErrDeviceNotFound
 		},
 	}
 	h := &Handler{svc: mockSvc}

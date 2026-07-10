@@ -20,17 +20,17 @@ func NewService(db *gorm.DB) *Service {
 
 // GetLicense returns a single license by ID.
 func (s *Service) GetLicense(id int) (*License, error) {
-	return s.repo.FindLicenseByID(id)
+	return s.repo.FindByID(id)
 }
 
 // ListLicenses returns all licenses.
 func (s *Service) ListLicenses() ([]License, error) {
-	return s.repo.FindAllLicenses()
+	return s.repo.FindAll(s.repo.DB)
 }
 
 // UpdateLicense persists changes to an existing license.
 func (s *Service) UpdateLicense(l *License) error {
-	return s.repo.UpdateLicense(l)
+	return s.repo.Save(l)
 }
 
 // ---------------------------------------------------------------------------

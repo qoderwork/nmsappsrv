@@ -45,7 +45,7 @@ func (h *Handler) Login(c *gin.Context) {
 	if err != nil {
 		// Record failed login attempt.
 		_ = h.svc.RecordLogin(req.Username, c.ClientIP(), 0, 0)
-		utils.Error(c, http.StatusUnauthorized, "invalid username or password")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	data, total, err := h.svc.ListUsers(licenseId, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list users")
+		utils.HandleError(c, err)
 		return
 	}
 	// Convert to DTOs to exclude sensitive fields (password, salt)
@@ -124,7 +124,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	u.CreateUserId = &creatorId
 
 	if err := h.svc.CreateUser(&u); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to create user")
+		utils.HandleError(c, err)
 		return
 	}
 	// Return DTO to exclude sensitive fields (password, salt)
@@ -148,7 +148,7 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 	u.Id = id
 
 	if err := h.svc.UpdateUser(&u); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to update user")
+		utils.HandleError(c, err)
 		return
 	}
 	// Return DTO to exclude sensitive fields (password, salt)
@@ -165,7 +165,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteUser(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to delete user")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -186,7 +186,7 @@ func (h *Handler) KickOutUser(c *gin.Context) {
 	}
 
 	if err := h.svc.KickOutUser(req.UserId); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to kick out user")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -203,7 +203,7 @@ func (h *Handler) UnlockUser(c *gin.Context) {
 	}
 
 	if err := h.svc.UnlockUser(req.UserId); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to unlock user")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -219,7 +219,7 @@ func (h *Handler) ModifyPassword(c *gin.Context) {
 
 	username := middleware.GetUsername(c)
 	if err := h.svc.ModifyPassword(username, req.OldPassword, req.NewPassword); err != nil {
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -236,7 +236,7 @@ func (h *Handler) EnableUser(c *gin.Context) {
 	}
 
 	if err := h.svc.EnableUser(req.UserId); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to enable user")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -253,7 +253,7 @@ func (h *Handler) DisableUser(c *gin.Context) {
 	}
 
 	if err := h.svc.DisableUser(req.UserId); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to disable user")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -270,7 +270,7 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 	adminId := middleware.GetUserId(c)
 	resetKey, err := h.svc.ResetPassword(adminId, req.UserId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to reset password")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, gin.H{"resetKey": resetKey})
@@ -285,7 +285,7 @@ func (h *Handler) ResetPasswordByLink(c *gin.Context) {
 	}
 
 	if err := h.svc.ResetPasswordByLink(req.Username, req.Key, req.NewPassword); err != nil {
-		utils.Error(c, http.StatusBadRequest, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -300,7 +300,7 @@ func (h *Handler) SetTenancyForUser(c *gin.Context) {
 	}
 
 	if err := h.svc.SetTenancyForUser(req.UserId, req.LicenseId); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to set tenancy")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -318,7 +318,7 @@ func (h *Handler) GetLoginFailedTimes(c *gin.Context) {
 
 	data, err := h.svc.GetLoginFailedTimes(req.UserId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to get login failed times")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -330,7 +330,7 @@ func (h *Handler) NeedChangePassword(c *gin.Context) {
 
 	data, err := h.svc.NeedChangePassword(userId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to check password")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -346,7 +346,7 @@ func (h *Handler) ListRoles(c *gin.Context) {
 
 	data, err := h.svc.ListRoles(licenseId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list roles")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -361,7 +361,7 @@ func (h *Handler) CreateRole(c *gin.Context) {
 	}
 
 	if err := h.svc.CreateRole(&r); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to create role")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, &r)
@@ -383,7 +383,7 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 	r.Id = id
 
 	if err := h.svc.UpdateRole(&r); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to update role")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, &r)
@@ -398,7 +398,7 @@ func (h *Handler) DeleteRole(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteRole(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to delete role")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -423,7 +423,7 @@ func (h *Handler) GetRolePermissions(c *gin.Context) {
 
 	data, err := h.svc.GetRolePermissions(id)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to get role permissions")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -444,7 +444,7 @@ func (h *Handler) UpdateRolePermissions(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateRolePermissions(id, req.PermissionIds); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to update role permissions")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)

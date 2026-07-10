@@ -36,7 +36,7 @@ func (h *Handler) ListAlarms(c *gin.Context) {
 
 	data, total, err := h.svc.ListAlarms(licenseId, severity, alarmType, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list alarms")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Paginated(c, data, total, page, pageSize)
@@ -52,7 +52,7 @@ func (h *Handler) GetAlarm(c *gin.Context) {
 
 	alarm, err := h.svc.GetAlarm(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "alarm not found")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, alarm)
@@ -67,7 +67,7 @@ func (h *Handler) ClearAlarm(c *gin.Context) {
 	}
 
 	if err := h.svc.ClearAlarm(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to clear alarm")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -89,7 +89,7 @@ func (h *Handler) BatchClearAlarms(c *gin.Context) {
 
 	cleared, notFound, err := h.svc.BatchClearAlarms(req.AlarmIds, req.ClearUser)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to batch clear alarms")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.OK(c, map[string]interface{}{
@@ -108,7 +108,7 @@ func (h *Handler) ListAlarmLibrary(c *gin.Context) {
 
 	data, err := h.svc.ListAlarmLibrary(tenancyId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list alarm library")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -124,7 +124,7 @@ func (h *Handler) ListAlarmTemplates(c *gin.Context) {
 
 	data, err := h.svc.ListAlarmTemplates(tenancyId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list alarm templates")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -139,7 +139,7 @@ func (h *Handler) CreateAlarmTemplate(c *gin.Context) {
 	}
 
 	if err := h.svc.CreateAlarmTemplate(&t); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to create alarm template")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, &t)
@@ -161,7 +161,7 @@ func (h *Handler) UpdateAlarmTemplate(c *gin.Context) {
 	t.Id = id
 
 	if err := h.svc.UpdateAlarmTemplate(&t); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to update alarm template")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, &t)
@@ -177,7 +177,7 @@ func (h *Handler) ListAlarmFilters(c *gin.Context) {
 
 	data, err := h.svc.ListAlarmFilters(licenseId)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list alarm filters")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -192,7 +192,7 @@ func (h *Handler) CreateAlarmFilter(c *gin.Context) {
 	}
 
 	if err := h.svc.CreateAlarmFilter(&f); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to create alarm filter")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, &f)
@@ -214,7 +214,7 @@ func (h *Handler) UpdateAlarmFilter(c *gin.Context) {
 	f.Id = id
 
 	if err := h.svc.UpdateAlarmFilter(&f); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to update alarm filter")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, &f)
@@ -229,7 +229,7 @@ func (h *Handler) DeleteAlarmFilter(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteAlarmFilter(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to delete alarm filter")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)

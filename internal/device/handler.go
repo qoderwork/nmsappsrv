@@ -37,7 +37,7 @@ func (h *Handler) ListDevices(c *gin.Context) {
 
 	data, total, err := h.svc.ListDevices(licenseId, keyword, page, pageSize)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list devices")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Paginated(c, data, total, page, pageSize)
@@ -53,7 +53,7 @@ func (h *Handler) GetDevice(c *gin.Context) {
 
 	elem, err := h.svc.GetDevice(id)
 	if err != nil {
-		utils.Error(c, http.StatusNotFound, "device not found")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, elem)
@@ -68,7 +68,7 @@ func (h *Handler) CreateDevice(c *gin.Context) {
 	}
 
 	if err := h.svc.CreateDevice(&elem); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to create device")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, elem)
@@ -90,7 +90,7 @@ func (h *Handler) UpdateDevice(c *gin.Context) {
 	elem.NeNeid = id
 
 	if err := h.svc.UpdateDevice(&elem); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to update device")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, elem)
@@ -105,7 +105,7 @@ func (h *Handler) DeleteDevice(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteDevice(id); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to delete device")
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)

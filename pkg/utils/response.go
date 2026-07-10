@@ -1,9 +1,13 @@
 package utils
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"nmsappsrv/pkg/apperror"
+	"nmsappsrv/pkg/logger"
 )
 
 type Response struct {
@@ -50,4 +54,18 @@ func Paginated(c *gin.Context, data interface{}, total int64, page, pageSize int
 		Page:     page,
 		PageSize: pageSize,
 	})
+}
+
+// HandleError handles errors in a unified way. If the error is an AppError,
+// it extracts the status code and message. Otherwise, it logs the error and
+// returns a generic 500 response to avoid leaking internal details.
+func HandleError(c *gin.Context, err error) {
+	var appErr *apperror.AppError
+	if errors.As(err, &appErr) {
+		Error(c, appErr.StatusCode, appErr.Message)
+		return
+	}
+	// Unrecognized error — log full details, return generic message
+	logger.Errorf("unhandled error in %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
+	Error(c, http.StatusInternalServerError, "internal server error")
 }

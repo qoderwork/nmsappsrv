@@ -2,16 +2,22 @@ package site
 
 import (
 	"gorm.io/gorm"
+
+	"nmsappsrv/pkg/baserepo"
 )
 
 // Repository provides data access for site-related models.
 type Repository struct {
-	db *gorm.DB
+	*baserepo.BaseRepository[SiteInfo, string] // embedded generic CRUD for SiteInfo
+	db *gorm.DB                                // kept for custom / cross-model queries
 }
 
 // NewRepository creates a new site repository.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[SiteInfo, string](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------- SysArea ----------
@@ -54,21 +60,16 @@ func (r *Repository) FindChildAreas(parentId int) ([]SysArea, error) {
 
 // FindSites returns a paginated list of sites for the given license, optionally filtered by name.
 func (r *Repository) FindSites(licenseId int, search string, offset, limit int) ([]SiteInfo, int64, error) {
-	var sites []SiteInfo
-	var total int64
-
-	query := r.db.Model(&SiteInfo{}).Where("license_id = ?", licenseId)
+	query := r.DB.Model(&SiteInfo{}).Where("license_id = ?", licenseId)
 	if search != "" {
 		query = query.Where("site_name LIKE ?", "%"+search+"%")
 	}
 
-	if err := query.Count(&total).Error; err != nil {
+	result, err := r.FindPage(query, "id DESC", offset, limit)
+	if err != nil {
 		return nil, 0, err
 	}
-	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&sites).Error; err != nil {
-		return nil, 0, err
-	}
-	return sites, total, nil
+	return result.Items, result.Total, nil
 }
 
 // FindAllSites returns all sites for the given license (for dropdown).
@@ -82,16 +83,6 @@ func (r *Repository) FindAllSites(licenseId int) ([]SiteBasicInfo, error) {
 	return items, err
 }
 
-// FindSiteByID returns a site by its ID.
-func (r *Repository) FindSiteByID(id string) (*SiteInfo, error) {
-	var site SiteInfo
-	err := r.db.Where("id = ?", id).First(&site).Error
-	if err != nil {
-		return nil, err
-	}
-	return &site, nil
-}
-
 // FindSiteByNameAndLicense returns a site with the given name and license (for duplicate check).
 func (r *Repository) FindSiteByNameAndLicense(name string, licenseId int) (*SiteInfo, error) {
 	var site SiteInfo
@@ -100,21 +91,6 @@ func (r *Repository) FindSiteByNameAndLicense(name string, licenseId int) (*Site
 		return nil, err
 	}
 	return &site, nil
-}
-
-// CreateSite inserts a new site.
-func (r *Repository) CreateSite(site *SiteInfo) error {
-	return r.db.Create(site).Error
-}
-
-// UpdateSite saves changes to an existing site.
-func (r *Repository) UpdateSite(site *SiteInfo) error {
-	return r.db.Save(site).Error
-}
-
-// DeleteSite removes a site by ID.
-func (r *Repository) DeleteSite(id string) error {
-	return r.db.Where("id = ?", id).Delete(&SiteInfo{}).Error
 }
 
 // NullifyDeviceSiteId sets site_id = NULL on all devices referencing this site.

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/redis"
 
 	goredis "github.com/go-redis/redis/v8"
@@ -304,7 +305,7 @@ func TestHandler_Login(t *testing.T) {
 		var recordedResult int
 		svc := &mockService{
 			loginFn: func(username, password string) (*SysUser, error) {
-				return nil, assert.AnError
+				return nil, apperror.ErrInvalidCredentials
 			},
 			recordLoginFn: func(username, ip string, licId int, result int) error {
 				recordedResult = result

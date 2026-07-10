@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -54,7 +56,14 @@ func NewService(db *gorm.DB) Service {
 
 // GetDevice returns a single device by ID.
 func (s *service) GetDevice(id int64) (*CpeElement, error) {
-	return s.repo.FindByID(id)
+	elem, err := s.repo.FindByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrDeviceNotFound
+		}
+		return nil, apperror.Wrap(err, "GET_DEVICE_FAILED", 500, "failed to get device")
+	}
+	return elem, nil
 }
 
 // ListDevices returns a paginated device list. The page number (1-based) is
@@ -67,7 +76,11 @@ func (s *service) ListDevices(licenseId int, keyword string, page, pageSize int)
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindPage(licenseId, keyword, offset, pageSize)
+	elems, total, err := s.repo.FindPage(licenseId, keyword, offset, pageSize)
+	if err != nil {
+		return nil, 0, apperror.Wrap(err, "LIST_DEVICES_FAILED", 500, "failed to list devices")
+	}
+	return elems, total, nil
 }
 
 // CreateDevice applies sensible defaults and persists a new device.
@@ -75,17 +88,32 @@ func (s *service) CreateDevice(elem *CpeElement) error {
 	elem.LoadedBasicInfo = false
 	elem.IsInitialized = false
 	elem.Deleted = false
-	return s.repo.Create(elem)
+	if err := s.repo.Create(elem); err != nil {
+		return apperror.Wrap(err, "CREATE_DEVICE_FAILED", 500, "failed to create device")
+	}
+	return nil
 }
 
 // UpdateDevice persists changes to an existing device.
 func (s *service) UpdateDevice(elem *CpeElement) error {
-	return s.repo.Update(elem)
+	if err := s.repo.Update(elem); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.ErrDeviceNotFound
+		}
+		return apperror.Wrap(err, "UPDATE_DEVICE_FAILED", 500, "failed to update device")
+	}
+	return nil
 }
 
 // DeleteDevice performs a soft-delete (sets deleted = true).
 func (s *service) DeleteDevice(id int64) error {
-	return s.repo.SoftDelete(id)
+	if err := s.repo.SoftDelete(id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.ErrDeviceNotFound
+		}
+		return apperror.Wrap(err, "DELETE_DEVICE_FAILED", 500, "failed to delete device")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

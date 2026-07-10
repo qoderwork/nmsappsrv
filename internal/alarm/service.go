@@ -1,8 +1,10 @@
 package alarm
 
 import (
+	"errors"
 	"time"
 
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
@@ -50,23 +52,41 @@ func (s *service) ListAlarms(licenseId int, severity string, alarmType int, page
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindAlarms(licenseId, severity, alarmType, offset, pageSize)
+	data, total, err := s.repo.FindAlarms(licenseId, severity, alarmType, offset, pageSize)
+	if err != nil {
+		return nil, 0, apperror.Wrap(err, "LIST_ALARMS_FAILED", 500, "failed to list alarms")
+	}
+	return data, total, nil
 }
 
 // GetAlarm returns a single alarm by ID.
 func (s *service) GetAlarm(id int64) (*Alarm, error) {
-	return s.repo.FindAlarmByID(id)
+	alarm, err := s.repo.FindAlarmByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrAlarmNotFound
+		}
+		return nil, apperror.Wrap(err, "GET_ALARM_FAILED", 500, "failed to get alarm")
+	}
+	return alarm, nil
 }
 
 // ClearAlarm marks an alarm as cleared with the current timestamp.
 func (s *service) ClearAlarm(id int64) error {
-	return s.repo.ClearAlarm(id, time.Now())
+	if err := s.repo.ClearAlarm(id, time.Now()); err != nil {
+		return apperror.Wrap(err, "CLEAR_ALARM_FAILED", 500, "failed to clear alarm")
+	}
+	return nil
 }
 
 // BatchClearAlarms clears multiple alarms in a single transaction. It returns
 // the count of cleared alarms and any IDs that were not found in the database.
 func (s *service) BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error) {
-	return s.repo.BatchClearAlarms(alarmIds, clearUser, time.Now())
+	cleared, notFound, err := s.repo.BatchClearAlarms(alarmIds, clearUser, time.Now())
+	if err != nil {
+		return 0, nil, apperror.Wrap(err, "BATCH_CLEAR_ALARMS_FAILED", 500, "failed to batch clear alarms")
+	}
+	return cleared, notFound, nil
 }
 
 // CreateAlarm inserts a new alarm after checking alarm suppression rules. If
@@ -82,7 +102,10 @@ func (s *service) CreateAlarm(a *Alarm) error {
 		logger.Infof("Alarm suppressed: reason=%s, source=%v, identifier=%v",
 			reason, a.AlarmSource, a.AlarmIdentifier)
 	}
-	return s.repo.CreateAlarm(a)
+	if err := s.repo.CreateAlarm(a); err != nil {
+		return apperror.Wrap(err, "CREATE_ALARM_FAILED", 500, "failed to create alarm")
+	}
+	return nil
 }
 
 // CheckAlarmSuppression checks whether the given alarm matches any active
@@ -237,7 +260,11 @@ func trimSpace(s string) string {
 
 // ListAlarmLibrary returns all alarm library entries for the given tenancy.
 func (s *service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
-	return s.repo.FindAlarmLibrary(tenancyId)
+	data, err := s.repo.FindAlarmLibrary(tenancyId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_ALARM_LIBRARY_FAILED", 500, "failed to list alarm library")
+	}
+	return data, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -246,17 +273,27 @@ func (s *service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 
 // ListAlarmTemplates returns all alarm templates for the given tenancy.
 func (s *service) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
-	return s.repo.FindAlarmTemplates(tenancyId)
+	data, err := s.repo.FindAlarmTemplates(tenancyId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_ALARM_TEMPLATES_FAILED", 500, "failed to list alarm templates")
+	}
+	return data, nil
 }
 
 // CreateAlarmTemplate persists a new alarm template.
 func (s *service) CreateAlarmTemplate(t *AlarmTemplate) error {
-	return s.repo.CreateAlarmTemplate(t)
+	if err := s.repo.CreateAlarmTemplate(t); err != nil {
+		return apperror.Wrap(err, "CREATE_ALARM_TEMPLATE_FAILED", 500, "failed to create alarm template")
+	}
+	return nil
 }
 
 // UpdateAlarmTemplate persists changes to an existing alarm template.
 func (s *service) UpdateAlarmTemplate(t *AlarmTemplate) error {
-	return s.repo.UpdateAlarmTemplate(t)
+	if err := s.repo.UpdateAlarmTemplate(t); err != nil {
+		return apperror.Wrap(err, "UPDATE_ALARM_TEMPLATE_FAILED", 500, "failed to update alarm template")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -265,20 +302,33 @@ func (s *service) UpdateAlarmTemplate(t *AlarmTemplate) error {
 
 // ListAlarmFilters returns all alarm filters for the given license.
 func (s *service) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
-	return s.repo.FindAlarmFilters(licenseId)
+	data, err := s.repo.FindAlarmFilters(licenseId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_ALARM_FILTERS_FAILED", 500, "failed to list alarm filters")
+	}
+	return data, nil
 }
 
 // CreateAlarmFilter persists a new alarm filter.
 func (s *service) CreateAlarmFilter(f *AlarmFilter) error {
-	return s.repo.CreateAlarmFilter(f)
+	if err := s.repo.CreateAlarmFilter(f); err != nil {
+		return apperror.Wrap(err, "CREATE_ALARM_FILTER_FAILED", 500, "failed to create alarm filter")
+	}
+	return nil
 }
 
 // UpdateAlarmFilter persists changes to an existing alarm filter.
 func (s *service) UpdateAlarmFilter(f *AlarmFilter) error {
-	return s.repo.UpdateAlarmFilter(f)
+	if err := s.repo.UpdateAlarmFilter(f); err != nil {
+		return apperror.Wrap(err, "UPDATE_ALARM_FILTER_FAILED", 500, "failed to update alarm filter")
+	}
+	return nil
 }
 
 // DeleteAlarmFilter removes an alarm filter by ID.
 func (s *service) DeleteAlarmFilter(id int) error {
-	return s.repo.DeleteAlarmFilter(id)
+	if err := s.repo.DeleteAlarmFilter(id); err != nil {
+		return apperror.Wrap(err, "DELETE_ALARM_FILTER_FAILED", 500, "failed to delete alarm filter")
+	}
+	return nil
 }

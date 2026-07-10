@@ -1,20 +1,31 @@
 package cbsd
 
 import (
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
 // Repository handles database operations for CBSD entities.
+// It embeds BaseRepository[CbsdInfo, string] for standard CRUD on CbsdInfo,
+// and retains module-specific methods for custom queries and other entity types.
 type Repository struct {
+	*baserepo.BaseRepository[CbsdInfo, string]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[CbsdInfo, string](db, "id"),
+		db:             db,
+	}
 }
+
+// ---------------------------------------------------------------------------
+// CbsdInfo – module-specific queries
+// ---------------------------------------------------------------------------
 
 // FindCbsdInfos returns a paginated list of CBSD info records for the given license.
 func (r *Repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo, int64, error) {
@@ -43,20 +54,9 @@ func (r *Repository) FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, erro
 	return &info, nil
 }
 
-// CreateCbsdInfo inserts a new CBSD info record.
-func (r *Repository) CreateCbsdInfo(info *CbsdInfo) error {
-	return r.db.Create(info).Error
-}
-
-// UpdateCbsdInfo saves changes to an existing CBSD info record.
-func (r *Repository) UpdateCbsdInfo(info *CbsdInfo) error {
-	return r.db.Save(info).Error
-}
-
-// DeleteCbsdInfo removes a CBSD info by its primary key.
-func (r *Repository) DeleteCbsdInfo(id string) error {
-	return r.db.Where("id = ?", id).Delete(&CbsdInfo{}).Error
-}
+// ---------------------------------------------------------------------------
+// CbrsLog – different entity type, kept as module-specific methods
+// ---------------------------------------------------------------------------
 
 // FindCbrsLogs returns a paginated list of CBRS logs filtered by cbsd_id and log_type.
 func (r *Repository) FindCbrsLogs(cbsdId string, logType string, offset, limit int) ([]CbrsLog, int64, error) {
@@ -86,6 +86,10 @@ func (r *Repository) FindCbrsLogs(cbsdId string, logType string, offset, limit i
 func (r *Repository) CreateCbrsLog(log *CbrsLog) error {
 	return r.db.Create(log).Error
 }
+
+// ---------------------------------------------------------------------------
+// CBSDCertFileSendTask – different entity type, kept as module-specific methods
+// ---------------------------------------------------------------------------
 
 // CreateCertFileSendTask inserts a new cert file send task.
 func (r *Repository) CreateCertFileSendTask(t *CBSDCertFileSendTask) error {

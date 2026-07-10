@@ -10,6 +10,7 @@ import (
 	"nmsappsrv/internal/alarm"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/mq"
+	"nmsappsrv/pkg/constants"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -89,7 +90,7 @@ func (w *OfflineWorker) checkAllDevices() {
 		sn := *dev.SerialNumber
 
 		// Check the TR069 online key (written by event_processor on each Inform)
-		onlineKey := fmt.Sprintf("device:online:%s", sn)
+		onlineKey := constants.RedisKeyDeviceOnline + sn
 		isOnline := redis.Exists(ctx, onlineKey)
 
 		if isOnline {

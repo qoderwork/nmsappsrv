@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"nmsappsrv/pkg/constants"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -66,7 +67,7 @@ func GenerateToken(userId int, username string, licenseId int, roleNames []strin
 
 	// Store in Redis: SECURITY_JWT_LOGIN:{username} = token with 60min TTL
 	ctx := context.Background()
-	loginKey := "security:jwt:login:" + username
+	loginKey := constants.RedisKeyJWTLogin + username
 	if err := redis.Set(ctx, loginKey, tokenString, 60*time.Minute); err != nil {
 		logger.Warnf("GenerateToken: failed to store login key for %s: %v", username, err)
 	}
@@ -114,7 +115,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Check JWT blacklist
 		ctx := context.Background()
-		blackKey := "security:jwt:black:" + tokenString
+		blackKey := constants.RedisKeyJWTBlack + tokenString
 		if redis.Exists(ctx, blackKey) {
 			logger.Warnf("JWT blacklisted for user %s", claims.Username)
 			utils.Error(c, http.StatusUnauthorized, "token has been invalidated")
@@ -123,7 +124,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Check login key: only the most recently issued JWT is valid
-		loginKey := "security:jwt:login:" + claims.Username
+		loginKey := constants.RedisKeyJWTLogin + claims.Username
 		storedToken, err := redis.Get(ctx, loginKey)
 		if err != nil || storedToken == "" {
 			// No login key means user has been logged out

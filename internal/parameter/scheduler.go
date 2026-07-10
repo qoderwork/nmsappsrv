@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/tr069/soap"
+	"nmsappsrv/pkg/constants"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -172,7 +173,7 @@ func (s *Scheduler) executeCollection(cfg *scheduleConfig) {
 		}
 
 		// Check if device is online
-		onlineKey := fmt.Sprintf("device:online:%s", deviceInfo.SerialNumber)
+		onlineKey := constants.RedisKeyDeviceOnline + deviceInfo.SerialNumber
 		onlineVal, _ := redis.Get(ctx, onlineKey)
 		if onlineVal != "1" {
 			continue

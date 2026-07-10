@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
+
+	"nmsappsrv/pkg/apperror"
 )
 
 // ---------------------------------------------------------------------------
@@ -188,7 +191,7 @@ func TestService_GetAlarm(t *testing.T) {
 func TestService_GetAlarm_NotFound(t *testing.T) {
 	repo := &mockRepository{
 		findAlarmByIDFn: func(id int64) (*Alarm, error) {
-			return nil, errors.New("record not found")
+			return nil, gorm.ErrRecordNotFound
 		},
 	}
 
@@ -197,6 +200,7 @@ func TestService_GetAlarm_NotFound(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
+	assert.ErrorIs(t, err, apperror.ErrAlarmNotFound)
 }
 
 func TestService_ClearAlarm(t *testing.T) {

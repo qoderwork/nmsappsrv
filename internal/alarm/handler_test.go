@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/utils"
 )
 
@@ -198,7 +199,7 @@ func TestHandler_GetAlarm_Success(t *testing.T) {
 func TestHandler_GetAlarm_NotFound(t *testing.T) {
 	svc := &mockService{
 		getAlarmFn: func(id int64) (*Alarm, error) {
-			return nil, errors.New("record not found")
+			return nil, apperror.ErrAlarmNotFound
 		},
 	}
 
@@ -260,7 +261,7 @@ func TestHandler_ClearAlarm_Success(t *testing.T) {
 func TestHandler_ClearAlarm_ServiceError(t *testing.T) {
 	svc := &mockService{
 		clearAlarmFn: func(id int64) error {
-			return errors.New("db connection lost")
+			return apperror.Wrap(errors.New("db connection lost"), "CLEAR_ALARM_FAILED", 500, "failed to clear alarm")
 		},
 	}
 

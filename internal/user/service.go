@@ -2,13 +2,13 @@ package user
 
 import (
 	"context"
-	"errors"
 	"time"
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -60,15 +60,15 @@ func NewService(db *gorm.DB) Service {
 func (s *service) Login(username, password string) (*SysUser, error) {
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, apperror.ErrInvalidCredentials
 	}
 
 	if u.Password == nil {
-		return nil, errors.New("invalid username or password")
+		return nil, apperror.ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(*u.Password), []byte(password)); err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, apperror.ErrInvalidCredentials
 	}
 
 	return u, nil
@@ -105,7 +105,10 @@ func (s *service) RecordLogin(username, ip string, licenseId int, result int) er
 		Result:    &result,
 		LicenseId: &licenseId,
 	}
-	return s.repo.CreateLoginLog(&log)
+	if err := s.repo.CreateLoginLog(&log); err != nil {
+		return apperror.Wrap(err, "RECORD_LOGIN_FAILED", 500, "failed to record login")
+	}
+	return nil
 }
 
 // RecordLogout creates a logout log entry.
@@ -122,7 +125,10 @@ func (s *service) RecordLogout(username, ip string, licenseId int) error {
 		Type:      &logType,
 		Info:      &info,
 	}
-	return s.repo.CreateLoginLog(&log)
+	if err := s.repo.CreateLoginLog(&log); err != nil {
+		return apperror.Wrap(err, "RECORD_LOGOUT_FAILED", 500, "failed to record logout")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +144,11 @@ func (s *service) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindUsers(licenseId, offset, pageSize)
+	users, total, err := s.repo.FindUsers(licenseId, offset, pageSize)
+	if err != nil {
+		return nil, 0, apperror.Wrap(err, "LIST_USERS_FAILED", 500, "failed to list users")
+	}
+	return users, total, nil
 }
 
 // CreateUser hashes the password and persists a new user.
@@ -146,7 +156,7 @@ func (s *service) CreateUser(u *SysUser) error {
 	if u.Password != nil && *u.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return err
+			return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 		}
 		hashed := string(hash)
 		u.Password = &hashed
@@ -160,7 +170,10 @@ func (s *service) CreateUser(u *SysUser) error {
 		zero := 0
 		u.LoginErrorTimes = &zero
 	}
-	return s.repo.CreateUser(u)
+	if err := s.repo.CreateUser(u); err != nil {
+		return apperror.Wrap(err, "CREATE_USER_FAILED", 500, "failed to create user")
+	}
+	return nil
 }
 
 // UpdateUser persists changes to an existing user. If the password field has
@@ -169,25 +182,31 @@ func (s *service) UpdateUser(u *SysUser) error {
 	if u.Password != nil && *u.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return err
+			return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 		}
 		hashed := string(hash)
 		u.Password = &hashed
 	}
-	return s.repo.UpdateUser(u)
+	if err := s.repo.UpdateUser(u); err != nil {
+		return apperror.Wrap(err, "UPDATE_USER_FAILED", 500, "failed to update user")
+	}
+	return nil
 }
 
 // DeleteUser removes a user by ID and invalidates their session.
 func (s *service) DeleteUser(id int) error {
 	u, err := s.repo.FindUserByID(id)
 	if err != nil {
-		return err
+		return apperror.ErrUserNotFound
 	}
 	// Invalidate session before deleting
 	if u.Username != nil {
 		s.invalidateUser(*u.Username)
 	}
-	return s.repo.DeleteUser(id)
+	if err := s.repo.DeleteUser(id); err != nil {
+		return apperror.Wrap(err, "DELETE_USER_FAILED", 500, "failed to delete user")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -198,10 +217,10 @@ func (s *service) DeleteUser(id int) error {
 func (s *service) KickOutUser(userId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
-		return err
+		return apperror.ErrUserNotFound
 	}
 	if u.Username == nil {
-		return errors.New("user has no username")
+		return apperror.ErrUserNotFound.WithMessage("user has no username")
 	}
 	s.invalidateUser(*u.Username)
 	return nil
@@ -210,26 +229,29 @@ func (s *service) KickOutUser(userId int) error {
 // UnlockUser unlocks a locked user by resetting error counters.
 func (s *service) UnlockUser(userId int) error {
 	now := time.Now()
-	return s.repo.UpdateUserFields(userId, map[string]interface{}{
+	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"last_login_time":   now,
 		"last_lock_time":    nil,
 		"login_error_times": 0,
-	})
+	}); err != nil {
+		return apperror.Wrap(err, "UNLOCK_USER_FAILED", 500, "failed to unlock user")
+	}
+	return nil
 }
 
 // ModifyPassword changes a user's password after validating the old one.
 func (s *service) ModifyPassword(username, oldPassword, newPassword string) error {
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
-		return errors.New("user not found")
+		return apperror.ErrUserNotFound
 	}
 
 	// Validate old password
 	if u.Password == nil {
-		return errors.New("invalid old password")
+		return apperror.ErrInvalidCredentials.WithMessage("invalid old password")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(*u.Password), []byte(oldPassword)); err != nil {
-		return errors.New("invalid old password")
+		return apperror.ErrInvalidCredentials.WithMessage("invalid old password")
 	}
 
 	// Validate new password strength
@@ -245,7 +267,7 @@ func (s *service) ModifyPassword(username, oldPassword, newPassword string) erro
 	// Hash and save new password
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 	}
 	hashed := string(hash)
 
@@ -254,7 +276,7 @@ func (s *service) ModifyPassword(username, oldPassword, newPassword string) erro
 		"password":             hashed,
 		"password_modify_time": now,
 	}); err != nil {
-		return err
+		return apperror.Wrap(err, "MODIFY_PASSWORD_FAILED", 500, "failed to modify password")
 	}
 
 	// Save to password history
@@ -269,23 +291,26 @@ func (s *service) ModifyPassword(username, oldPassword, newPassword string) erro
 // EnableUser enables a user account.
 func (s *service) EnableUser(userId int) error {
 	enable := true
-	return s.repo.UpdateUserFields(userId, map[string]interface{}{
+	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"enable": enable,
-	})
+	}); err != nil {
+		return apperror.Wrap(err, "ENABLE_USER_FAILED", 500, "failed to enable user")
+	}
+	return nil
 }
 
 // DisableUser disables a user account and invalidates their session.
 func (s *service) DisableUser(userId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
-		return err
+		return apperror.ErrUserNotFound
 	}
 
 	enable := false
 	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"enable": enable,
 	}); err != nil {
-		return err
+		return apperror.Wrap(err, "DISABLE_USER_FAILED", 500, "failed to disable user")
 	}
 
 	// Force logout
@@ -300,10 +325,10 @@ func (s *service) DisableUser(userId int) error {
 func (s *service) ResetPassword(adminId, userId int) (string, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
-		return "", err
+		return "", apperror.ErrUserNotFound
 	}
 	if u.Username == nil {
-		return "", errors.New("user has no username")
+		return "", apperror.ErrUserNotFound.WithMessage("user has no username")
 	}
 
 	// Generate a random reset key
@@ -313,7 +338,7 @@ func (s *service) ResetPassword(adminId, userId int) (string, error) {
 	ctx := context.Background()
 	redisKey := RedisKeyPwdReset + resetKey
 	if err := redis.Set(ctx, redisKey, *u.Username, 5*time.Minute); err != nil {
-		return "", err
+		return "", apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to store reset key")
 	}
 
 	// Reset login error times and update last login time
@@ -337,10 +362,10 @@ func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 	// Validate the reset key
 	storedUsername, err := redis.Get(ctx, redisKey)
 	if err != nil {
-		return errors.New("invalid or expired reset link")
+		return apperror.ErrInvalidInput.WithMessage("invalid or expired reset link")
 	}
 	if storedUsername != username {
-		return errors.New("reset link does not match user")
+		return apperror.ErrInvalidInput.WithMessage("reset link does not match user")
 	}
 
 	// Delete the key (one-time use)
@@ -359,21 +384,21 @@ func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 	// Hash and save
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 	}
 	hashed := string(hash)
 
 	now := time.Now()
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
-		return err
+		return apperror.ErrUserNotFound
 	}
 	if err := s.repo.UpdateUserFields(u.Id, map[string]interface{}{
 		"password":             hashed,
 		"password_modify_time": now,
 		"last_login_time":      now,
 	}); err != nil {
-		return err
+		return apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to reset password")
 	}
 
 	s.savePasswordHistory(username, hashed)
@@ -385,13 +410,13 @@ func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 func (s *service) SetTenancyForUser(userId, licenseId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
-		return err
+		return apperror.ErrUserNotFound
 	}
 
 	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"license_id": licenseId,
 	}); err != nil {
-		return err
+		return apperror.Wrap(err, "SET_TENANCY_FAILED", 500, "failed to set tenancy")
 	}
 
 	// Force re-login with new tenancy
@@ -405,7 +430,7 @@ func (s *service) SetTenancyForUser(userId, licenseId int) error {
 func (s *service) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
-		return nil, err
+		return nil, apperror.ErrUserNotFound
 	}
 
 	maxFailed := DefaultMaxLoginFailedTimes
@@ -429,7 +454,7 @@ func (s *service) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, er
 func (s *service) NeedChangePassword(userId int) (*NeedChangePasswordResponse, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
-		return nil, err
+		return nil, apperror.ErrUserNotFound
 	}
 
 	// Admin users don't need to change
@@ -457,22 +482,35 @@ func (s *service) NeedChangePassword(userId int) (*NeedChangePasswordResponse, e
 
 // ListRoles returns all roles for the given license.
 func (s *service) ListRoles(licenseId int) ([]Role, error) {
-	return s.repo.FindRoles(licenseId)
+	roles, err := s.repo.FindRoles(licenseId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_ROLES_FAILED", 500, "failed to list roles")
+	}
+	return roles, nil
 }
 
 // CreateRole persists a new role.
 func (s *service) CreateRole(r *Role) error {
-	return s.repo.CreateRole(r)
+	if err := s.repo.CreateRole(r); err != nil {
+		return apperror.Wrap(err, "CREATE_ROLE_FAILED", 500, "failed to create role")
+	}
+	return nil
 }
 
 // UpdateRole persists changes to an existing role.
 func (s *service) UpdateRole(r *Role) error {
-	return s.repo.UpdateRole(r)
+	if err := s.repo.UpdateRole(r); err != nil {
+		return apperror.Wrap(err, "UPDATE_ROLE_FAILED", 500, "failed to update role")
+	}
+	return nil
 }
 
 // DeleteRole removes a role by ID (string UUID).
 func (s *service) DeleteRole(id string) error {
-	return s.repo.DeleteRole(id)
+	if err := s.repo.DeleteRole(id); err != nil {
+		return apperror.Wrap(err, "DELETE_ROLE_FAILED", 500, "failed to delete role")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -481,12 +519,19 @@ func (s *service) DeleteRole(id string) error {
 
 // GetRolePermissions returns all permission associations for a role.
 func (s *service) GetRolePermissions(roleId string) ([]RoleHasPermission, error) {
-	return s.repo.FindPermissionsByRoleId(roleId)
+	perms, err := s.repo.FindPermissionsByRoleId(roleId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_ROLE_PERMISSIONS_FAILED", 500, "failed to get role permissions")
+	}
+	return perms, nil
 }
 
 // UpdateRolePermissions replaces the permission set for a role.
 func (s *service) UpdateRolePermissions(roleId string, permissionIds []string) error {
-	return s.repo.SavePermissions(roleId, permissionIds)
+	if err := s.repo.SavePermissions(roleId, permissionIds); err != nil {
+		return apperror.Wrap(err, "UPDATE_ROLE_PERMISSIONS_FAILED", 500, "failed to update role permissions")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -497,7 +542,7 @@ func (s *service) UpdateRolePermissions(roleId string, permissionIds []string) e
 func (s *service) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
 	userRoles, err := s.repo.FindUserRoles(userId)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_ROLE_NAMES_FAILED", 500, "failed to get user roles")
 	}
 	if len(userRoles) == 0 {
 		return nil, nil
@@ -505,7 +550,7 @@ func (s *service) GetRoleNamesForUser(userId int, licenseId int) ([]string, erro
 
 	allRoles, err := s.repo.FindRoles(licenseId)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_ROLE_NAMES_FAILED", 500, "failed to get roles")
 	}
 
 	// Build lookup map: role ID → role name
@@ -549,7 +594,7 @@ func (s *service) checkPasswordHistory(username, newPassword string, limit int) 
 	for _, h := range history {
 		if h.Password != nil {
 			if err := bcrypt.CompareHashAndPassword([]byte(*h.Password), []byte(newPassword)); err == nil {
-				return errors.New("new password cannot be the same as a recent password")
+				return apperror.ErrInvalidInput.WithMessage("new password cannot be the same as a recent password")
 			}
 		}
 	}
@@ -572,7 +617,7 @@ func (s *service) savePasswordHistory(username, hashedPassword string) {
 // validatePasswordStrength checks password complexity requirements.
 func validatePasswordStrength(password, username string) error {
 	if len(password) < 8 {
-		return errors.New("password must be at least 8 characters")
+		return apperror.ErrInvalidInput.WithMessage("password must be at least 8 characters")
 	}
 
 	var hasUpper, hasLower, hasDigit, hasSpecial bool
@@ -590,7 +635,7 @@ func validatePasswordStrength(password, username string) error {
 	}
 
 	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
-		return errors.New("password must contain uppercase, lowercase, digit, and special character")
+		return apperror.ErrInvalidInput.WithMessage("password must contain uppercase, lowercase, digit, and special character")
 	}
 
 	// Password cannot contain username
@@ -598,14 +643,14 @@ func validatePasswordStrength(password, username string) error {
 		lowerPwd := toLower(password)
 		lowerUser := toLower(username)
 		if contains(lowerPwd, lowerUser) {
-			return errors.New("password cannot contain username")
+			return apperror.ErrInvalidInput.WithMessage("password cannot contain username")
 		}
 	}
 
 	// No more than 2 consecutive same characters
 	for i := 0; i < len(password)-2; i++ {
 		if password[i] == password[i+1] && password[i+1] == password[i+2] {
-			return errors.New("password cannot have more than 2 consecutive same characters")
+			return apperror.ErrInvalidInput.WithMessage("password cannot have more than 2 consecutive same characters")
 		}
 	}
 

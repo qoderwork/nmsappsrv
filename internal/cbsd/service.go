@@ -33,17 +33,17 @@ func (s *Service) GetCbsdInfo(sn string, licenseId int) (*CbsdInfo, error) {
 
 // RegisterCbsd persists a new CBSD registration.
 func (s *Service) RegisterCbsd(info *CbsdInfo) error {
-	return s.repo.CreateCbsdInfo(info)
+	return s.repo.Create(info)
 }
 
 // UpdateCbsdInfo persists changes to an existing CBSD info.
 func (s *Service) UpdateCbsdInfo(info *CbsdInfo) error {
-	return s.repo.UpdateCbsdInfo(info)
+	return s.repo.Save(info)
 }
 
 // DeregisterCbsd removes a CBSD info by ID.
 func (s *Service) DeregisterCbsd(id string) error {
-	return s.repo.DeleteCbsdInfo(id)
+	return s.repo.DeleteByID(id)
 }
 
 // ListCbrsLogs returns a paginated list of CBRS logs.
