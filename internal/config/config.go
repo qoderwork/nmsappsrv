@@ -12,6 +12,7 @@ type Config struct {
 	Server        ServerConfig        `mapstructure:"server"`
 	DB            DatabaseConfig      `mapstructure:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"`
+	JWT           JWTConfig           `mapstructure:"jwt"`
 	Logger        LoggerConfig        `mapstructure:"logger"`
 	TR069         TR069Config         `mapstructure:"tr069"`
 	SNMP          SNMPConfig          `mapstructure:"snmp"`
@@ -31,9 +32,10 @@ type HAConfig struct {
 }
 
 type ServerConfig struct {
-	Name string `mapstructure:"name"`
-	Port int    `mapstructure:"port"`
-	Mode string `mapstructure:"mode"`
+	Name               string   `mapstructure:"name"`
+	Port               int      `mapstructure:"port"`
+	Mode               string   `mapstructure:"mode"`
+	CORSAllowedOrigins []string `mapstructure:"cors_allowed_origins"`
 }
 
 type DatabaseConfig struct {
@@ -56,6 +58,12 @@ type RedisConfig struct {
 	PoolSize int    `mapstructure:"pool_size"`
 }
 
+// JWTConfig holds the JWT signing key. The secret must be >=32 bytes.
+// In production, inject via environment variable NMS_JWT_SECRET.
+type JWTConfig struct {
+	Secret string `mapstructure:"secret"`
+}
+
 type LoggerConfig struct {
 	Filename      string `mapstructure:"filename"`
 	Level         string `mapstructure:"level"`
@@ -67,15 +75,15 @@ type LoggerConfig struct {
 }
 
 type TR069Config struct {
-	ACSUrl                    string `mapstructure:"acs_url"`
-	InformInterval            int    `mapstructure:"inform_interval"`
-	ConnectionTimeout         int    `mapstructure:"connection_timeout"`
-	UDPConnectionRequestPort  int    `mapstructure:"udp_connection_request_port"`
-	FileServerIp              string `mapstructure:"file_server_ip"`
-	EnableAskReboot           bool   `mapstructure:"enable_ask_reboot" yaml:"enable_ask_reboot"`
-	EnableXMLSignature        bool   `mapstructure:"enable_xml_signature" yaml:"enable_xml_signature"`
-	PrivateKeyPath            string `mapstructure:"private_key_path" yaml:"private_key_path"`
-	CertificatePath           string `mapstructure:"certificate_path" yaml:"certificate_path"`
+	ACSUrl                   string `mapstructure:"acs_url"`
+	InformInterval           int    `mapstructure:"inform_interval"`
+	ConnectionTimeout        int    `mapstructure:"connection_timeout"`
+	UDPConnectionRequestPort int    `mapstructure:"udp_connection_request_port"`
+	FileServerIp             string `mapstructure:"file_server_ip"`
+	EnableAskReboot          bool   `mapstructure:"enable_ask_reboot" yaml:"enable_ask_reboot"`
+	EnableXMLSignature       bool   `mapstructure:"enable_xml_signature" yaml:"enable_xml_signature"`
+	PrivateKeyPath           string `mapstructure:"private_key_path" yaml:"private_key_path"`
+	CertificatePath          string `mapstructure:"certificate_path" yaml:"certificate_path"`
 }
 
 type SNMPConfig struct {

@@ -139,17 +139,18 @@ func (s *Service) ImportConfigFile(elementId int64, fileName string, fileData []
 		OpenStationFile: &openStationFile,
 		DeviceUpload:    true,
 	}
-	if err := db.Create(&cul).Error; err != nil {
-		return nil, fmt.Errorf("create config upload log: %w", err)
-	}
-
-	// Update the device's current config file reference.
-	if err := db.Model(&device.CpeElement{}).Where("ne_neid = ?", elementId).
-		Updates(map[string]interface{}{
-			"config_file":            filePath,
-			"config_file_upload_time": now,
-		}).Error; err != nil {
-		return nil, fmt.Errorf("update device config file: %w", err)
+	// Atomic: create config upload log + update device config file reference
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&cul).Error; err != nil {
+			return fmt.Errorf("create config upload log: %w", err)
+		}
+		return tx.Model(&device.CpeElement{}).Where("ne_neid = ?", elementId).
+			Updates(map[string]interface{}{
+				"config_file":            filePath,
+				"config_file_upload_time": now,
+			}).Error
+	}); err != nil {
+		return nil, err
 	}
 
 	return &ImportConfigFileResult{
@@ -267,12 +268,13 @@ func (s *Service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username strin
 		DeviceGroupIds:     strPtr(string(deviceGroupJSON)),
 	}
 
-	if err := db.Create(&task).Error; err != nil {
-		return fmt.Errorf("create backup task: %w", err)
-	}
-
-	// Create per-device log entries.
-	if err := s.createBSDeviceLogs(task.Id, req.ElementIds, taskType); err != nil {
+	// Atomic: create task + per-device log entries
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&task).Error; err != nil {
+			return fmt.Errorf("create backup task: %w", err)
+		}
+		return s.createBSDeviceLogs(tx, task.Id, req.ElementIds, taskType)
+	}); err != nil {
 		return err
 	}
 
@@ -327,12 +329,13 @@ func (s *Service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username str
 		DeviceGroupIds:     strPtr(string(deviceGroupJSON)),
 	}
 
-	if err := db.Create(&task).Error; err != nil {
-		return fmt.Errorf("create restore task: %w", err)
-	}
-
-	// Create per-device log entries.
-	if err := s.createBSDeviceLogs(task.Id, req.ElementIds, taskType); err != nil {
+	// Atomic: create task + per-device log entries
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&task).Error; err != nil {
+			return fmt.Errorf("create restore task: %w", err)
+		}
+		return s.createBSDeviceLogs(tx, task.Id, req.ElementIds, taskType)
+	}); err != nil {
 		return err
 	}
 
@@ -521,8 +524,7 @@ func (s *Service) GetConfigFilePath(logId string) (string, error) {
 
 // createBSDeviceLogs inserts a RestoreAndBackUpDeviceLog row for every device
 // that belongs to the given task.
-func (s *Service) createBSDeviceLogs(taskId int, elementIds []int64, taskType string) error {
-	db := s.repo.db
+func (s *Service) createBSDeviceLogs(db *gorm.DB, taskId int, elementIds []int64, taskType string) error {
 
 	for _, eid := range elementIds {
 		log := RestoreAndBackUpDeviceLog{

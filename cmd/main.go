@@ -124,6 +124,9 @@ func main() {
 	}); err != nil {
 		logger.Fatalf("redis init failed: %v", err)
 	}
+	// 4a. Init JWT secret from config (must be >=32 bytes)
+	middleware.SetJWTSecret(cfg.JWT.Secret)
+
 
 	// 5. 设置Gin
 	if cfg.Server.Mode == "release" {
@@ -136,7 +139,7 @@ func main() {
 
 	// 全局中间件
 	router.Use(gin.Recovery())
-	router.Use(middleware.CORSMiddleware())
+	router.Use(middleware.CORSMiddleware(cfg.Server.CORSAllowedOrigins))
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.TenancyMiddleware())
 

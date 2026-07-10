@@ -14,8 +14,20 @@ import (
 	"nmsappsrv/pkg/utils"
 )
 
-// JWTSecret is the signing key for JWT tokens. Override at startup if needed.
-var JWTSecret = []byte("nmsappsrv-secret-key")
+// JWTSecret is the signing key for JWT tokens. Must be set via SetJWTSecret
+// at startup from configuration. Must be >=32 bytes.
+var JWTSecret []byte
+
+// SetJWTSecret sets the JWT signing key from configuration.
+// The secret must be at least 32 bytes; otherwise the function panics
+// to prevent running with a weak key.
+func SetJWTSecret(secret string) {
+	if len(secret) < 32 {
+		logger.Fatalf("JWT secret must be at least 32 bytes, got %d bytes", len(secret))
+	}
+	JWTSecret = []byte(secret)
+	logger.Info("JWT secret loaded from configuration")
+}
 
 // Claims defines the payload carried inside each JWT.
 // Aligned with Java: includes roleNames and ssoType fields.
@@ -182,6 +194,7 @@ func GetLicenseId(c *gin.Context) int {
 }
 
 // GetRoleNames extracts the authenticated user's role names from the gin context.
+// Returns an empty string if the value is missing or has an unexpected type.
 func GetRoleNames(c *gin.Context) []string {
 	v, ok := c.Get("role_names")
 	if !ok {
@@ -195,6 +208,7 @@ func GetRoleNames(c *gin.Context) []string {
 }
 
 // GetSsoType extracts the authenticated user's SSO type from the gin context.
+// Returns an empty string if the value is missing or has an unexpected type.
 func GetSsoType(c *gin.Context) string {
 	v, ok := c.Get("sso_type")
 	if !ok {

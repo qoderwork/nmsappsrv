@@ -718,20 +718,24 @@ func (ep *EventProcessor) handleStartupResult(ctx context.Context, sn string, pa
 
 	now := time.Now()
 	if status == "1" {
-		// Success
-		ep.db.Model(&ztpLog).Updates(map[string]interface{}{
-			"progress":  6,
-			"done":      true,
-			"end_time":  &now,
-			"info":      info,
-		})
-
-		// Create ZTP retry log
-		ep.db.Create(&misc.ZTPRetryLog{
-			ElementId:  &cpe.NeNeid,
-			RetryTime:  &now,
-			Info:       stringPtr("ZTP completed successfully"),
-		})
+		// Success â atomic: update ZTP log + create retry log
+		if err := ep.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&ztpLog).Updates(map[string]interface{}{
+				"progress":  6,
+				"done":      true,
+				"end_time":  &now,
+				"info":      info,
+			}).Error; err != nil {
+				return err
+			}
+			return tx.Create(&misc.ZTPRetryLog{
+				ElementId:  &cpe.NeNeid,
+				RetryTime:  &now,
+				Info:       stringPtr("ZTP completed successfully"),
+			}).Error
+		}); err != nil {
+			logger.Errorf("device %s: ZTP success transaction failed: %v", sn, err)
+		}
 
 		// Trigger parameter and alarm sync
 		utils.SafeGo("ZTPSync-"+sn, func() {
@@ -760,11 +764,13 @@ func (ep *EventProcessor) handleStartupResult(ctx context.Context, sn string, pa
 			})
 		}
 
-		// Create fault retry log
-		ep.db.Create(&misc.ZTPRetryLog{
-			ElementId:  &cpe.NeNeid,
-			RetryTime:  &now,
-			Info:       stringPtr(fmt.Sprintf("ZTP failed: %s", info)),
+		// Create fault retry log (atomic with the update above)
+		ep.db.Transaction(func(tx *gorm.DB) error {
+			return tx.Create(&misc.ZTPRetryLog{
+				ElementId:  &cpe.NeNeid,
+				RetryTime:  &now,
+				Info:       stringPtr(fmt.Sprintf("ZTP failed: %s", info)),
+			}).Error
 		})
 
 		logger.Warnf("device %s: ZTP startup failed: %s", sn, info)
@@ -955,25 +961,33 @@ func (ep *EventProcessor) autoAssignToDefaultGroups(elementId int64, licenseId *
 	if err != nil {
 		logger.Warnf("failed to find platform default groups: %v", err)
 	}
-	for _, g := range groups {
-		rel := device.GroupHasElement{GroupId: g.Id, ElementId: elementId}
-		if err := ep.db.Where("group_id = ? AND element_id = ?", g.Id, elementId).First(&rel).Error; err != nil {
-			ep.db.Create(&rel)
-		}
-	}
 
 	// Find tenant-level default groups if applicable
+	var tenantGroups []device.DeviceGroup
 	if licenseId != nil && *licenseId > 0 {
-		tenantGroups, err := ep.findDefaultGroupsHelper(*licenseId)
+		tenantGroups, err = ep.findDefaultGroupsHelper(*licenseId)
 		if err != nil {
 			logger.Warnf("failed to find tenant default groups: %v", err)
 		}
-		for _, g := range tenantGroups {
+	}
+
+	// Atomic: assign all default groups in a single transaction
+	allGroups := append(groups, tenantGroups...)
+	if len(allGroups) == 0 {
+		return
+	}
+	if err := ep.db.Transaction(func(tx *gorm.DB) error {
+		for _, g := range allGroups {
 			rel := device.GroupHasElement{GroupId: g.Id, ElementId: elementId}
-			if err := ep.db.Where("group_id = ? AND element_id = ?", g.Id, elementId).First(&rel).Error; err != nil {
-				ep.db.Create(&rel)
+			if err := tx.Where("group_id = ? AND element_id = ?", g.Id, elementId).First(&rel).Error; err != nil {
+				if err := tx.Create(&rel).Error; err != nil {
+					return fmt.Errorf("failed to assign group %s to device %d: %w", g.Id, elementId, err)
+				}
 			}
 		}
+		return nil
+	}); err != nil {
+		logger.Errorf("autoAssignToDefaultGroups failed for device %d: %v", elementId, err)
 	}
 }
 
@@ -1730,8 +1744,15 @@ func (ep *EventProcessor) triggerDeviceInit(sn string, neId int64, deviceType st
 		Status:           intPtr(1), // pending
 		CommandTrackData: stringPtr(string(trackData)),
 	}
-	if err := ep.db.Create(&eventLog).Error; err != nil {
-		logger.Errorf("failed to create init event_log for device %d: %v", neId, err)
+	// Atomic: create event_log + mark device as initialized
+	if err := ep.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&eventLog).Error; err != nil {
+			return fmt.Errorf("failed to create init event_log: %w", err)
+		}
+		return tx.Model(&device.CpeElement{}).Where("ne_neid = ?", neId).Update("is_initialized", true).Error
+	}); err != nil {
+		logger.Errorf("device %d: init transaction failed: %v", neId, err)
+		return
 	}
 
 	// Cache track data in Redis for quick lookup during response processing
@@ -1755,9 +1776,6 @@ func (ep *EventProcessor) triggerDeviceInit(sn string, neId int64, deviceType st
 	}
 
 	logger.Infof("device init GPN sent for SN=%s, root=%s.", sn, rootNode)
-
-	// Mark device as initialized to prevent repeated init triggers on subsequent Informs
-	ep.db.Model(&device.CpeElement{}).Where("ne_neid = ?", neId).Update("is_initialized", true)
 }
 
 // checkAndPresetParameters checks if preset parameters are configured for a newly

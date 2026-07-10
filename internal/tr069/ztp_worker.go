@@ -161,47 +161,60 @@ func (w *ZTPWorker) handleProvision(msg *ZTPMessage) {
 		return
 	}
 
-	// 4. Create ZTP log entry
-	ztpLog := &misc.ZTPLog{
-		ElementId: intPtr64(msg.ElementId),
-		Progress:  intPtr(0), // 0 = started
-		Done:      boolPtr(false),
-		StartTime: &now,
-		HasFault:  boolPtr(false),
-	}
-	if err := w.db.Create(ztpLog).Error; err != nil {
-		logger.Errorf("ZTP worker: failed to create ztp_log for device %d: %v", msg.ElementId, err)
-	}
-
-	// 5. Create event_log for tracking
+	// 4-6. Create ZTP log + event_log + link them (atomic transaction)
+	var ztpLog *misc.ZTPLog
+	var eventLogEntry eventlog.EventLog
 	operationId := fmt.Sprintf("ztp_%d_%d", msg.ElementId, now.Unix())
-	eventLogEntry := eventlog.EventLog{
-		EventType:        stringPtr("ZTP_PROVISION"),
-		OperationTime:    &now,
-		CommandIssueTime: &now,
-		ElementId:        intPtr64(msg.ElementId),
-		Status:           intPtr(1), // pending
+
+	if err := w.db.Transaction(func(tx *gorm.DB) error {
+		// 4. Create ZTP log entry
+		ztpLog = &misc.ZTPLog{
+			ElementId: intPtr64(msg.ElementId),
+			Progress:  intPtr(0), // 0 = started
+			Done:      boolPtr(false),
+			StartTime: &now,
+			HasFault:  boolPtr(false),
+		}
+		if err := tx.Create(ztpLog).Error; err != nil {
+			return fmt.Errorf("failed to create ztp_log for device %d: %w", msg.ElementId, err)
+		}
+
+		// 5. Create event_log for tracking
+		eventLogEntry = eventlog.EventLog{
+			EventType:        stringPtr("ZTP_PROVISION"),
+			OperationTime:    &now,
+			CommandIssueTime: &now,
+			ElementId:        intPtr64(msg.ElementId),
+			Status:           intPtr(1), // pending
+		}
+
+		trackData := map[string]interface{}{
+			"operation_id":   operationId,
+			"serial_number":  sn,
+			"operation_type": "ZTP_PROVISION",
+			"ztp_log_id":     ztpLog.Id,
+			"issue_time":     now.Format(time.RFC3339),
+		}
+		if trackJson, err := json.Marshal(trackData); err == nil {
+			eventLogEntry.CommandTrackData = stringPtr(string(trackJson))
+		}
+
+		if err := tx.Create(&eventLogEntry).Error; err != nil {
+			return fmt.Errorf("failed to create event_log for device %d: %w", msg.ElementId, err)
+		}
+
+		// 6. Update ZTP log with event_log_id
+		if err := tx.Model(ztpLog).Update("event_log_id", eventLogEntry.Id).Error; err != nil {
+			return fmt.Errorf("failed to update ztp_log event_log_id for device %d: %w", msg.ElementId, err)
+		}
+
+		return nil
+	}); err != nil {
+		logger.Errorf("ZTP worker: transaction failed: %v", err)
+		return
 	}
 
-	trackData := map[string]interface{}{
-		"operation_id":   operationId,
-		"serial_number":  sn,
-		"operation_type": "ZTP_PROVISION",
-		"ztp_log_id":     ztpLog.Id,
-		"issue_time":     now.Format(time.RFC3339),
-	}
-	if trackJson, err := json.Marshal(trackData); err == nil {
-		eventLogEntry.CommandTrackData = stringPtr(string(trackJson))
-	}
-
-	if err := w.db.Create(&eventLogEntry).Error; err != nil {
-		logger.Errorf("ZTP worker: failed to create event_log for device %d: %v", msg.ElementId, err)
-	}
-
-	// Update ZTP log with event_log_id
-	w.db.Model(ztpLog).Update("event_log_id", eventLogEntry.Id)
-
-	// 6. Build SPV parameters from ztp_parameters and ZTP settings
+	// 7. Build SPV parameters from ztp_parameters and ZTP settings
 	spvParams := w.buildZTPParameterValues(ztpParams, ztpSetting)
 
 	if len(spvParams) == 0 {
@@ -212,7 +225,7 @@ func (w *ZTPWorker) handleProvision(msg *ZTPMessage) {
 		return
 	}
 
-	// 7. Send SPV to device via OperationSender
+	// 8. Send SPV to device via OperationSender
 	paramKey := fmt.Sprintf("ztp_%d", msg.ElementId)
 	if err := w.opSender.SendSetParameterValues(sn, spvParams, paramKey, operationId); err != nil {
 		logger.Errorf("ZTP worker: failed to send SPV for device %d (SN=%s): %v", msg.ElementId, sn, err)
@@ -222,7 +235,7 @@ func (w *ZTPWorker) handleProvision(msg *ZTPMessage) {
 		return
 	}
 
-	// 8. Update ZTP log progress (SPV sent successfully, waiting for response)
+	// 9. Update ZTP log progress (SPV sent successfully, waiting for response)
 	w.db.Model(ztpLog).Updates(map[string]interface{}{
 		"progress": 3, // 3 = SPV sent, waiting for response
 		"info":     "SPV sent, waiting for device response",
