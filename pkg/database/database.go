@@ -10,8 +10,6 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-var DB *gorm.DB
-
 type Config struct {
 	Host         string
 	Port         int
@@ -53,7 +51,7 @@ func EnsureDatabase(cfg Config) error {
 	return nil
 }
 
-func Init(cfg Config) error {
+func Init(cfg Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=UTC",
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName, cfg.Charset)
 
@@ -67,17 +65,16 @@ func Init(cfg Config) error {
 		logLevel = gormlogger.Error
 	}
 
-	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(logLevel),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to connect database: %w", err)
+		return nil, fmt.Errorf("failed to connect database: %w", err)
 	}
 
-	sqlDB, err := DB.DB()
+	sqlDB, err := db.DB()
 	if err != nil {
-		return fmt.Errorf("failed to get sql.DB: %w", err)
+		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
@@ -85,10 +82,10 @@ func Init(cfg Config) error {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	logger.Info("database connected successfully")
-	return nil
+	return db, nil
 }
 
 // AutoMigrate 自动创建/更新表结构
-func AutoMigrate(models ...interface{}) error {
-	return DB.AutoMigrate(models...)
+func AutoMigrate(db *gorm.DB, models ...interface{}) error {
+	return db.AutoMigrate(models...)
 }

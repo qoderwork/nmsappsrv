@@ -26,10 +26,11 @@ import (
 	"nmsappsrv/internal/upgrade"
 	"nmsappsrv/internal/user"
 	"nmsappsrv/pkg/logger"
+	"gorm.io/gorm"
 )
 
 // AutoMigrateAll 自动创建/更新所有表结构 (替代Flyway)
-func AutoMigrateAll() error {
+func AutoMigrateAll(db *gorm.DB) error {
 	models := []interface{}{
 		// device (8)
 		&device.CpeElement{},
@@ -205,7 +206,7 @@ func AutoMigrateAll() error {
 	}
 
 	logger.Infof("auto migrating %d model tables...", len(models))
-	if err := DB.AutoMigrate(models...); err != nil {
+	if err := db.AutoMigrate(models...); err != nil {
 		return err
 	}
 	logger.Info("all tables migrated successfully")

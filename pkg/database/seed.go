@@ -22,21 +22,21 @@ const (
 
 // SeedInitialData creates default tenant, admin user, and admin role if they don't exist.
 // This is idempotent — safe to call on every startup.
-func SeedInitialData() error {
+func SeedInitialData(db *gorm.DB) error {
 	// 1. Ensure default license/tenant
-	lic, err := ensureDefaultLicense()
+	lic, err := ensureDefaultLicense(db)
 	if err != nil {
 		return fmt.Errorf("ensure default license: %w", err)
 	}
 
 	// 2. Ensure admin role
-	role, err := ensureAdminRole(lic.Id)
+	role, err := ensureAdminRole(db, lic.Id)
 	if err != nil {
 		return fmt.Errorf("ensure admin role: %w", err)
 	}
 
 	// 3. Ensure admin user
-	err = ensureAdminUser(lic.Id, role.Id)
+	err = ensureAdminUser(db, lic.Id, role.Id)
 	if err != nil {
 		return fmt.Errorf("ensure admin user: %w", err)
 	}
@@ -45,12 +45,12 @@ func SeedInitialData() error {
 	return nil
 }
 
-func ensureDefaultLicense() (*license.License, error) {
+func ensureDefaultLicense(db *gorm.DB) (*license.License, error) {
 	var count int64
-	DB.Model(&license.License{}).Count(&count)
+	db.Model(&license.License{}).Count(&count)
 	if count > 0 {
 		var lic license.License
-		if err := DB.First(&lic).Error; err != nil {
+		if err := db.First(&lic).Error; err != nil {
 			return nil, err
 		}
 		return &lic, nil
@@ -70,17 +70,17 @@ func ensureDefaultLicense() (*license.License, error) {
 		CpeQuantity: intPtr(9999),
 		UserQuantity: 9999,
 	}
-	if err := DB.Create(&lic).Error; err != nil {
+	if err := db.Create(&lic).Error; err != nil {
 		return nil, err
 	}
 	logger.Info("default license created")
 	return &lic, nil
 }
 
-func ensureAdminRole(licenseId int) (*user.Role, error) {
+func ensureAdminRole(db *gorm.DB, licenseId int) (*user.Role, error) {
 	roleName := "Admin"
 	var role user.Role
-	err := DB.Where("role_name = ? AND license_id = ?", roleName, licenseId).First(&role).Error
+	err := db.Where("role_name = ? AND license_id = ?", roleName, licenseId).First(&role).Error
 	if err == nil {
 		return &role, nil
 	}
@@ -95,16 +95,16 @@ func ensureAdminRole(licenseId int) (*user.Role, error) {
 		Description: &desc,
 		LicenseId:   &licenseId,
 	}
-	if err := DB.Create(&role).Error; err != nil {
+	if err := db.Create(&role).Error; err != nil {
 		return nil, err
 	}
 	logger.Info("admin role created")
 	return &role, nil
 }
 
-func ensureAdminUser(licenseId int, roleId string) error {
+func ensureAdminUser(db *gorm.DB, licenseId int, roleId string) error {
 	var count int64
-	DB.Model(&user.SysUser{}).Where("username = ?", DefaultAdminUsername).Count(&count)
+	db.Model(&user.SysUser{}).Where("username = ?", DefaultAdminUsername).Count(&count)
 	if count > 0 {
 		return nil
 	}
@@ -129,7 +129,7 @@ func ensureAdminUser(licenseId int, roleId string) error {
 		LoginErrorTimes:    intPtr(0),
 		PasswordModifyTime: &now,
 	}
-	if err := DB.Create(&usr).Error; err != nil {
+	if err := db.Create(&usr).Error; err != nil {
 		return err
 	}
 
@@ -138,7 +138,7 @@ func ensureAdminUser(licenseId int, roleId string) error {
 		UserId: usr.Id,
 		RoleId: roleId,
 	}
-	if err := DB.Create(&link).Error; err != nil {
+	if err := db.Create(&link).Error; err != nil {
 		return err
 	}
 

@@ -99,18 +99,19 @@ func main() {
 	}
 
 	// 2b. 连接数据库
-	if err := database.Init(dbCfg); err != nil {
+	db, err := database.Init(dbCfg)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "database init failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	// 3. AutoMigrate 所有表
-	if err := database.AutoMigrateAll(); err != nil {
+	if err := database.AutoMigrateAll(db); err != nil {
 		logger.Fatalf("auto migrate failed: %v", err)
 	}
 
 	// 3a. 初始化默认数据（租户、admin用户、admin角色）
-	if err := database.SeedInitialData(); err != nil {
+	if err := database.SeedInitialData(db); err != nil {
 		logger.Warnf("seed initial data failed: %v", err)
 	}
 
@@ -149,7 +150,6 @@ func main() {
 	})
 
 	// ========== 初始化所有模块Handler ==========
-	db := database.DB
 	deviceH := device.NewHandler(db)
 	alarmH := alarm.NewHandler(db)
 	userH := user.NewHandler(db)
@@ -226,7 +226,7 @@ func main() {
 
 	// OnStop hooks: infrastructure cleanup (LIFO — runs after all tasks stop)
 	mgr.OnStop(func(ctx context.Context) error {
-		if sqlDB, err := database.DB.DB(); err == nil {
+		if sqlDB, err := db.DB(); err == nil {
 			sqlDB.Close()
 		}
 		return nil
@@ -764,7 +764,7 @@ func main() {
 	router.POST("/init-server", initserverH.HandleInitServer)
 
 	// SNMP trap receiver (UDP listener) — starts immediately, error checked inline
-	trapReceiver := snmp.NewTrapReceiver(database.DB, cfg.SNMP.TrapListenPort)
+	trapReceiver := snmp.NewTrapReceiver(db, cfg.SNMP.TrapListenPort)
 	if err := trapReceiver.Start(); err != nil {
 		logger.Errorf("snmp trap receiver start failed: %v", err)
 	}
@@ -773,17 +773,17 @@ func main() {
 	// Startup order = registration order; shutdown is automatic LIFO.
 
 	// SNMP queue worker (polls Redis for outbound traps)
-	snmpWorker := snmp.NewWorker(database.DB)
+	snmpWorker := snmp.NewWorker(db)
 	mgr.Add(workerTask("snmp-worker", snmpWorker.Start, snmpWorker.Stop))
 
 	// SNMP periodic poller (polls SNMP devices at configured intervals)
-	snmpPoller := snmp.NewSNMPPoller(database.DB)
+	snmpPoller := snmp.NewSNMPPoller(db)
 	mgr.Add(workerTask("snmp-poller", snmpPoller.Start, snmpPoller.Stop))
 
 	// HA VIP monitor (detects VIP changes and notifies SNMP subsystem)
 	if cfg.HA.Enabled {
-		vipMonitor := ha.NewVIPMonitor(database.DB, redis.RDB, cfg)
-		vipSubscriber := snmp.NewVIPSubscriber(database.DB)
+		vipMonitor := ha.NewVIPMonitor(db, redis.RDB, cfg)
+		vipSubscriber := snmp.NewVIPSubscriber(db)
 		mgr.Add(workerTask("vip-monitor", vipMonitor.Start, vipMonitor.Stop))
 		mgr.Add(workerTask("vip-subscriber", vipSubscriber.Start, vipSubscriber.Stop))
 	}

@@ -1,0 +1,315 @@
+package alarm
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+
+	"nmsappsrv/pkg/utils"
+)
+
+// ---------------------------------------------------------------------------
+// mockService implements Service with configurable function fields.
+// ---------------------------------------------------------------------------
+
+type mockService struct {
+	listAlarmsFn            func(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
+	getAlarmFn              func(id int64) (*Alarm, error)
+	clearAlarmFn            func(id int64) error
+	batchClearAlarmsFn      func(alarmIds []int64, clearUser string) (int64, []int64, error)
+	createAlarmFn           func(a *Alarm) error
+	checkAlarmSuppressionFn func(alarm *Alarm) (bool, string)
+	listAlarmLibraryFn      func(tenancyId int) ([]AlarmLibrary, error)
+	listAlarmTemplatesFn    func(tenancyId int) ([]AlarmTemplate, error)
+	createAlarmTemplateFn   func(t *AlarmTemplate) error
+	updateAlarmTemplateFn   func(t *AlarmTemplate) error
+	listAlarmFiltersFn      func(licenseId int) ([]AlarmFilter, error)
+	createAlarmFilterFn     func(f *AlarmFilter) error
+	updateAlarmFilterFn     func(f *AlarmFilter) error
+	deleteAlarmFilterFn     func(id int) error
+}
+
+func (m *mockService) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
+	if m.listAlarmsFn != nil {
+		return m.listAlarmsFn(licenseId, severity, alarmType, page, pageSize)
+	}
+	panic("mockService.ListAlarms not implemented")
+}
+
+func (m *mockService) GetAlarm(id int64) (*Alarm, error) {
+	if m.getAlarmFn != nil {
+		return m.getAlarmFn(id)
+	}
+	panic("mockService.GetAlarm not implemented")
+}
+
+func (m *mockService) ClearAlarm(id int64) error {
+	if m.clearAlarmFn != nil {
+		return m.clearAlarmFn(id)
+	}
+	panic("mockService.ClearAlarm not implemented")
+}
+
+func (m *mockService) BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error) {
+	if m.batchClearAlarmsFn != nil {
+		return m.batchClearAlarmsFn(alarmIds, clearUser)
+	}
+	panic("mockService.BatchClearAlarms not implemented")
+}
+
+func (m *mockService) CreateAlarm(a *Alarm) error {
+	if m.createAlarmFn != nil {
+		return m.createAlarmFn(a)
+	}
+	panic("mockService.CreateAlarm not implemented")
+}
+
+func (m *mockService) CheckAlarmSuppression(alarm *Alarm) (bool, string) {
+	if m.checkAlarmSuppressionFn != nil {
+		return m.checkAlarmSuppressionFn(alarm)
+	}
+	panic("mockService.CheckAlarmSuppression not implemented")
+}
+
+func (m *mockService) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
+	if m.listAlarmLibraryFn != nil {
+		return m.listAlarmLibraryFn(tenancyId)
+	}
+	panic("mockService.ListAlarmLibrary not implemented")
+}
+
+func (m *mockService) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
+	if m.listAlarmTemplatesFn != nil {
+		return m.listAlarmTemplatesFn(tenancyId)
+	}
+	panic("mockService.ListAlarmTemplates not implemented")
+}
+
+func (m *mockService) CreateAlarmTemplate(t *AlarmTemplate) error {
+	if m.createAlarmTemplateFn != nil {
+		return m.createAlarmTemplateFn(t)
+	}
+	panic("mockService.CreateAlarmTemplate not implemented")
+}
+
+func (m *mockService) UpdateAlarmTemplate(t *AlarmTemplate) error {
+	if m.updateAlarmTemplateFn != nil {
+		return m.updateAlarmTemplateFn(t)
+	}
+	panic("mockService.UpdateAlarmTemplate not implemented")
+}
+
+func (m *mockService) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+	if m.listAlarmFiltersFn != nil {
+		return m.listAlarmFiltersFn(licenseId)
+	}
+	panic("mockService.ListAlarmFilters not implemented")
+}
+
+func (m *mockService) CreateAlarmFilter(f *AlarmFilter) error {
+	if m.createAlarmFilterFn != nil {
+		return m.createAlarmFilterFn(f)
+	}
+	panic("mockService.CreateAlarmFilter not implemented")
+}
+
+func (m *mockService) UpdateAlarmFilter(f *AlarmFilter) error {
+	if m.updateAlarmFilterFn != nil {
+		return m.updateAlarmFilterFn(f)
+	}
+	panic("mockService.UpdateAlarmFilter not implemented")
+}
+
+func (m *mockService) DeleteAlarmFilter(id int) error {
+	if m.deleteAlarmFilterFn != nil {
+		return m.deleteAlarmFilterFn(id)
+	}
+	panic("mockService.DeleteAlarmFilter not implemented")
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
+// newTestRouter creates a gin engine with alarm routes wired to the given handler.
+func newTestRouter(h *Handler) *gin.Engine {
+	r := gin.New()
+	r.GET("/alarms/:id", h.GetAlarm)
+	r.PUT("/alarms/:id/clear", h.ClearAlarm)
+	r.GET("/alarms", h.ListAlarms)
+	r.PUT("/alarms/batch-clear", h.BatchClearAlarms)
+	return r
+}
+
+// parseResponse decodes the JSON body into a utils.Response.
+func parseResponse(w *httptest.ResponseRecorder) utils.Response {
+	var resp utils.Response
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return resp
+}
+
+// ---------------------------------------------------------------------------
+// Handler tests
+// ---------------------------------------------------------------------------
+
+func TestHandler_GetAlarm_Success(t *testing.T) {
+	severity := "CRITICAL"
+	source := "BS-001"
+	expected := &Alarm{Id: 42, Severity: &severity, AlarmSource: &source}
+
+	svc := &mockService{
+		getAlarmFn: func(id int64) (*Alarm, error) {
+			assert.Equal(t, int64(42), id)
+			return expected, nil
+		},
+	}
+
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/alarms/42", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	resp := parseResponse(w)
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "Success", resp.Message)
+	assert.NotNil(t, resp.Data)
+
+	// Verify the alarm data in the response.
+	dataMap, ok := resp.Data.(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, float64(42), dataMap["id"])
+	assert.Equal(t, "CRITICAL", dataMap["severity"])
+}
+
+func TestHandler_GetAlarm_NotFound(t *testing.T) {
+	svc := &mockService{
+		getAlarmFn: func(id int64) (*Alarm, error) {
+			return nil, errors.New("record not found")
+		},
+	}
+
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/alarms/999", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	resp := parseResponse(w)
+	assert.Equal(t, http.StatusNotFound, resp.Code)
+	assert.Equal(t, "alarm not found", resp.Message)
+}
+
+func TestHandler_GetAlarm_InvalidID(t *testing.T) {
+	svc := &mockService{}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/alarms/not-a-number", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	resp := parseResponse(w)
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Equal(t, "invalid alarm id", resp.Message)
+}
+
+func TestHandler_ClearAlarm_Success(t *testing.T) {
+	var capturedID int64
+
+	svc := &mockService{
+		clearAlarmFn: func(id int64) error {
+			capturedID = id
+			return nil
+		},
+	}
+
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPut, "/alarms/7/clear", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, int64(7), capturedID)
+
+	resp := parseResponse(w)
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "Success", resp.Message)
+}
+
+func TestHandler_ClearAlarm_ServiceError(t *testing.T) {
+	svc := &mockService{
+		clearAlarmFn: func(id int64) error {
+			return errors.New("db connection lost")
+		},
+	}
+
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPut, "/alarms/1/clear", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	resp := parseResponse(w)
+	assert.Equal(t, http.StatusInternalServerError, resp.Code)
+	assert.Equal(t, "failed to clear alarm", resp.Message)
+}
+
+func TestHandler_ClearAlarm_InvalidID(t *testing.T) {
+	svc := &mockService{}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPut, "/alarms/abc/clear", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	resp := parseResponse(w)
+	assert.Equal(t, "invalid alarm id", resp.Message)
+}
+
+func TestHandler_BatchClearAlarms_Success(t *testing.T) {
+	svc := &mockService{
+		batchClearAlarmsFn: func(alarmIds []int64, clearUser string) (int64, []int64, error) {
+			assert.Equal(t, []int64{1, 2, 3}, alarmIds)
+			assert.Equal(t, "admin", clearUser)
+			return 2, []int64{3}, nil
+		},
+	}
+
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	body := `{"alarmIds":[1,2,3],"clearUser":"admin"}`
+	req := httptest.NewRequest(http.MethodPut, "/alarms/batch-clear", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
