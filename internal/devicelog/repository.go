@@ -1,38 +1,29 @@
 package devicelog
 
 import (
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
+// Repository provides data access for device log entities.
+// It embeds BaseRepository[NeLog, int64] for standard CRUD on NeLog,
+// and retains module-specific methods for custom queries.
 type Repository struct {
+	*baserepo.BaseRepository[NeLog, int64]
 	db *gorm.DB
 }
 
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
-}
-
-func (r *Repository) Create(log *NeLog) error {
-	return r.db.Create(log).Error
-}
-
-func (r *Repository) Delete(id int64) error {
-	return r.db.Delete(&NeLog{}, id).Error
+	return &Repository{
+		BaseRepository: baserepo.New[NeLog, int64](db, "id"),
+		db:             db,
+	}
 }
 
 func (r *Repository) DeleteByElementId(elementId int64) error {
 	return r.db.Where("element_id = ?", elementId).Delete(&NeLog{}).Error
-}
-
-func (r *Repository) FindById(id int64) (*NeLog, error) {
-	var log NeLog
-	err := r.db.First(&log, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &log, nil
 }
 
 func (r *Repository) FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error) {

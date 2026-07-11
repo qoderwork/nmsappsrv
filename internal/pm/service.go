@@ -32,7 +32,7 @@ func (s *Service) ListKPIs(tenancyId int) ([]PerformanceKpi, error) {
 }
 
 func (s *Service) GetKPI(id string) (*PerformanceKpi, error) {
-	item, err := s.repo.FindKPIByID(id)
+	item, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_KPI_FAILED", 404, "KPI not found")
 	}
@@ -40,21 +40,21 @@ func (s *Service) GetKPI(id string) (*PerformanceKpi, error) {
 }
 
 func (s *Service) CreateKPI(k *PerformanceKpi) error {
-	if err := s.repo.CreateKPI(k); err != nil {
+	if err := s.repo.Create(k); err != nil {
 		return apperror.Wrap(err, "CREATE_KPI_FAILED", 500, "failed to create KPI")
 	}
 	return nil
 }
 
 func (s *Service) UpdateKPI(k *PerformanceKpi) error {
-	if err := s.repo.UpdateKPI(k); err != nil {
+	if err := s.repo.Save(k); err != nil {
 		return apperror.Wrap(err, "UPDATE_KPI_FAILED", 500, "failed to update KPI")
 	}
 	return nil
 }
 
 func (s *Service) DeleteKPI(id string) error {
-	if err := s.repo.DeleteKPI(id); err != nil {
+	if err := s.repo.DeleteByID(id); err != nil {
 		return apperror.Wrap(err, "DELETE_KPI_FAILED", 500, "failed to delete KPI")
 	}
 	return nil

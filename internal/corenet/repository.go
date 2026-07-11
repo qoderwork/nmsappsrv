@@ -3,19 +3,26 @@ package corenet
 import (
 	"time"
 
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
 // Repository handles database operations for core network entities.
+// It embeds BaseRepository[CoreNetwork, int] for standard CRUD on CoreNetwork,
+// and retains module-specific methods for custom queries and other entity types.
 type Repository struct {
+	*baserepo.BaseRepository[CoreNetwork, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[CoreNetwork, int](db, "id"),
+		db:             db,
+	}
 }
 
 // FindCoreNetworks returns all core networks for the given tenancy.
@@ -26,30 +33,6 @@ func (r *Repository) FindCoreNetworks(tenancyId int) ([]CoreNetwork, error) {
 		return nil, err
 	}
 	return networks, nil
-}
-
-// FindCoreNetworkByID returns a single core network by primary key.
-func (r *Repository) FindCoreNetworkByID(id int) (*CoreNetwork, error) {
-	var cn CoreNetwork
-	if err := r.db.Where("id = ?", id).First(&cn).Error; err != nil {
-		return nil, err
-	}
-	return &cn, nil
-}
-
-// CreateCoreNetwork inserts a new core network record.
-func (r *Repository) CreateCoreNetwork(cn *CoreNetwork) error {
-	return r.db.Create(cn).Error
-}
-
-// UpdateCoreNetwork saves changes to an existing core network.
-func (r *Repository) UpdateCoreNetwork(cn *CoreNetwork) error {
-	return r.db.Save(cn).Error
-}
-
-// DeleteCoreNetwork removes a core network by ID.
-func (r *Repository) DeleteCoreNetwork(id int) error {
-	return r.db.Where("id = ?", id).Delete(&CoreNetwork{}).Error
 }
 
 // FindCoreNetworkData returns the data record for the given core network.

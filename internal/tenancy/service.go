@@ -3,6 +3,7 @@ package tenancy
 import (
 	"fmt"
 
+	"gorm.io/gorm"
 	"nmsappsrv/pkg/apperror"
 )
 
@@ -65,7 +66,7 @@ func (s *Service) AddTenancy(req *AddTenancyRequest) (int, error) {
 	// Set licenseId = string(id)
 	idStr := fmt.Sprintf("%d", t.Id)
 	t.LicenseId = &idStr
-	if err := s.repo.Update(t); err != nil {
+	if err := s.repo.Save(t); err != nil {
 		return 0, err
 	}
 
@@ -89,10 +90,10 @@ func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error
 
 	existing, err := s.repo.FindByID(req.Id)
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperror.ErrNotFound.WithMessage("user license not found")
+		}
 		return nil, err
-	}
-	if existing == nil {
-		return nil, apperror.ErrNotFound.WithMessage("user license not found")
 	}
 
 	// Check name uniqueness
@@ -120,7 +121,7 @@ func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error
 		existing.LogoBase64 = strPtr(req.LogoBase64)
 	}
 
-	if err := s.repo.Update(existing); err != nil {
+	if err := s.repo.Save(existing); err != nil {
 		return nil, err
 	}
 	return existing, nil
@@ -176,10 +177,10 @@ func (s *Service) DeleteTenancy(id int) error {
 func (s *Service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
 	t, err := s.repo.FindByID(id)
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperror.ErrNotFound.WithMessage("user license not found")
+		}
 		return nil, err
-	}
-	if t == nil {
-		return nil, apperror.ErrNotFound.WithMessage("user license not found")
 	}
 
 	return &ViewTenancyResponse{

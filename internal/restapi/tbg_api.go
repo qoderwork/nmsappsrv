@@ -139,7 +139,7 @@ func (s *Service) ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error {
 			tbg.WanMacAddress = req.WanMacAddress
 		}
 
-		if err := s.repo.UpdateTBG(tbg); err != nil {
+		if err := s.repo.Save(tbg); err != nil {
 			logger.Errorf("Failed to update TBG %s: %v", req.SerialNumber, err)
 			return apperror.Wrap(err, "UPDATE_TBG_FAILED", 500, "failed to update TBG device " + req.SerialNumber)
 		}

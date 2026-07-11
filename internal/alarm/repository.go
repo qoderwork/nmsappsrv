@@ -3,49 +3,35 @@ package alarm
 import (
 	"time"
 
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
-// Repository defines the data-access contract for alarm entities.
-type Repository interface {
-	FindAlarms(licenseId int, severity string, alarmType int, offset, limit int) ([]Alarm, int64, error)
-	FindAlarmByID(id int64) (*Alarm, error)
-	CreateAlarm(a *Alarm) error
-	UpdateAlarm(a *Alarm) error
-	ClearAlarm(id int64, clearedTime time.Time) error
-	BatchClearAlarms(ids []int64, clearUser string, clearedTime time.Time) (int64, []int64, error)
-	FindActiveAlarmFilters(licenseId int) ([]AlarmFilter, error)
-	FindAlarmFilterDevices(filterId int) ([]int64, error)
-	FindAlarmFilterAlarms(filterId int) ([]string, error)
-	FindAlarmLibrary(tenancyId int) ([]AlarmLibrary, error)
-	FindAlarmTemplates(tenancyId int) ([]AlarmTemplate, error)
-	CreateAlarmTemplate(t *AlarmTemplate) error
-	UpdateAlarmTemplate(t *AlarmTemplate) error
-	FindAlarmFilters(licenseId int) ([]AlarmFilter, error)
-	CreateAlarmFilter(f *AlarmFilter) error
-	UpdateAlarmFilter(f *AlarmFilter) error
-	DeleteAlarmFilter(id int) error
-}
-
-// repository handles database operations for alarm entities.
-type repository struct {
+// Repository provides data access for alarm entities.
+// It embeds BaseRepository[Alarm, int64] for standard CRUD on Alarm,
+// and retains module-specific methods for custom queries and other entity types.
+type Repository struct {
+	*baserepo.BaseRepository[Alarm, int64]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) Repository {
-	return &repository{db: db}
+func NewRepository(db *gorm.DB) *Repository {
+	return &Repository{
+		BaseRepository: baserepo.New[Alarm, int64](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------------------------------------------------------------------------
-// Alarm CRUD
+// Alarm – module-specific queries
 // ---------------------------------------------------------------------------
 
 // FindAlarms returns a paginated list of alarms with optional severity and
 // alarm_type filters. The total count is returned for pagination metadata.
-func (r *repository) FindAlarms(licenseId int, severity string, alarmType int, offset, limit int) ([]Alarm, int64, error) {
+func (r *Repository) FindAlarms(licenseId int, severity string, alarmType int, offset, limit int) ([]Alarm, int64, error) {
 	var alarms []Alarm
 	var total int64
 
@@ -69,28 +55,9 @@ func (r *repository) FindAlarms(licenseId int, severity string, alarmType int, o
 	return alarms, total, nil
 }
 
-// FindAlarmByID returns a single alarm by its primary key.
-func (r *repository) FindAlarmByID(id int64) (*Alarm, error) {
-	var a Alarm
-	if err := r.db.Where("id = ?", id).First(&a).Error; err != nil {
-		return nil, err
-	}
-	return &a, nil
-}
-
-// CreateAlarm inserts a new alarm row.
-func (r *repository) CreateAlarm(a *Alarm) error {
-	return r.db.Create(a).Error
-}
-
-// UpdateAlarm saves all fields of an existing alarm.
-func (r *repository) UpdateAlarm(a *Alarm) error {
-	return r.db.Save(a).Error
-}
-
 // ClearAlarm marks an alarm as cleared by setting alarm_status to 0 and
 // recording the cleared_time.
-func (r *repository) ClearAlarm(id int64, clearedTime time.Time) error {
+func (r *Repository) ClearAlarm(id int64, clearedTime time.Time) error {
 	return r.db.Model(&Alarm{}).Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"alarm_status": 0,
@@ -100,7 +67,7 @@ func (r *repository) ClearAlarm(id int64, clearedTime time.Time) error {
 
 // BatchClearAlarms clears multiple alarms in a single transaction. It returns
 // the number of alarms actually cleared and the IDs that were not found.
-func (r *repository) BatchClearAlarms(ids []int64, clearUser string, clearedTime time.Time) (int64, []int64, error) {
+func (r *Repository) BatchClearAlarms(ids []int64, clearUser string, clearedTime time.Time) (int64, []int64, error) {
 	var clearedCount int64
 	var notFoundIds []int64
 
@@ -128,7 +95,7 @@ func (r *repository) BatchClearAlarms(ids []int64, clearUser string, clearedTime
 
 // FindActiveAlarmFilters returns all enabled alarm filters for the given
 // license. These are used to check whether a new alarm should be suppressed.
-func (r *repository) FindActiveAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+func (r *Repository) FindActiveAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 	var filters []AlarmFilter
 	enabled := true
 	if err := r.db.Where("license_id = ? AND enable = ?", licenseId, enabled).Find(&filters).Error; err != nil {
@@ -139,7 +106,7 @@ func (r *repository) FindActiveAlarmFilters(licenseId int) ([]AlarmFilter, error
 
 // FindAlarmFilterDevices returns the device IDs associated with a given filter
 // from the alarm_filter_has_device table.
-func (r *repository) FindAlarmFilterDevices(filterId int) ([]int64, error) {
+func (r *Repository) FindAlarmFilterDevices(filterId int) ([]int64, error) {
 	var devices []AlarmFilterHasDevice
 	if err := r.db.Where("alarm_filter_id = ?", filterId).Find(&devices).Error; err != nil {
 		return nil, err
@@ -155,7 +122,7 @@ func (r *repository) FindAlarmFilterDevices(filterId int) ([]int64, error) {
 
 // FindAlarmFilterAlarms returns the alarm identifiers associated with a given
 // filter from the alarm_filter_has_alarm table.
-func (r *repository) FindAlarmFilterAlarms(filterId int) ([]string, error) {
+func (r *Repository) FindAlarmFilterAlarms(filterId int) ([]string, error) {
 	var alarms []AlarmFilterHasAlarm
 	if err := r.db.Where("alarm_filter_id = ?", filterId).Find(&alarms).Error; err != nil {
 		return nil, err
@@ -174,7 +141,7 @@ func (r *repository) FindAlarmFilterAlarms(filterId int) ([]string, error) {
 // ---------------------------------------------------------------------------
 
 // FindAlarmLibrary returns all alarm library entries for the given tenancy.
-func (r *repository) FindAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
+func (r *Repository) FindAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 	var libs []AlarmLibrary
 	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&libs).Error; err != nil {
 		return nil, err
@@ -187,7 +154,7 @@ func (r *repository) FindAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 // ---------------------------------------------------------------------------
 
 // FindAlarmTemplates returns all alarm templates for the given tenancy.
-func (r *repository) FindAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
+func (r *Repository) FindAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
 	var templates []AlarmTemplate
 	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&templates).Error; err != nil {
 		return nil, err
@@ -196,12 +163,12 @@ func (r *repository) FindAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) 
 }
 
 // CreateAlarmTemplate inserts a new alarm template.
-func (r *repository) CreateAlarmTemplate(t *AlarmTemplate) error {
+func (r *Repository) CreateAlarmTemplate(t *AlarmTemplate) error {
 	return r.db.Create(t).Error
 }
 
 // UpdateAlarmTemplate saves changes to an existing alarm template.
-func (r *repository) UpdateAlarmTemplate(t *AlarmTemplate) error {
+func (r *Repository) UpdateAlarmTemplate(t *AlarmTemplate) error {
 	return r.db.Save(t).Error
 }
 
@@ -210,7 +177,7 @@ func (r *repository) UpdateAlarmTemplate(t *AlarmTemplate) error {
 // ---------------------------------------------------------------------------
 
 // FindAlarmFilters returns all alarm filters for the given license.
-func (r *repository) FindAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+func (r *Repository) FindAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 	var filters []AlarmFilter
 	if err := r.db.Where("license_id = ?", licenseId).Find(&filters).Error; err != nil {
 		return nil, err
@@ -219,16 +186,16 @@ func (r *repository) FindAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 }
 
 // CreateAlarmFilter inserts a new alarm filter.
-func (r *repository) CreateAlarmFilter(f *AlarmFilter) error {
+func (r *Repository) CreateAlarmFilter(f *AlarmFilter) error {
 	return r.db.Create(f).Error
 }
 
 // UpdateAlarmFilter saves changes to an existing alarm filter.
-func (r *repository) UpdateAlarmFilter(f *AlarmFilter) error {
+func (r *Repository) UpdateAlarmFilter(f *AlarmFilter) error {
 	return r.db.Save(f).Error
 }
 
 // DeleteAlarmFilter removes an alarm filter by ID.
-func (r *repository) DeleteAlarmFilter(id int) error {
+func (r *Repository) DeleteAlarmFilter(id int) error {
 	return r.db.Where("id = ?", id).Delete(&AlarmFilter{}).Error
 }

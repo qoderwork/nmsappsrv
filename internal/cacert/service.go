@@ -71,7 +71,7 @@ func (s *Service) ListAllCaFiles(ctx context.Context) ([]map[string]interface{},
 
 // GetCaFileByID returns a single CA file by ID
 func (s *Service) GetCaFileByID(ctx context.Context, id int) (*CaFile, error) {
-	return s.repo.GetCaFileByID(ctx, id)
+	return s.repo.FindByID(id)
 }
 
 // CreateCaFileRecord creates a CA file record after upload
@@ -85,7 +85,7 @@ func (s *Service) CreateCaFileRecord(ctx context.Context, fileName, url, descrip
 		CreateTime:  &now,
 		Description: &description,
 	}
-	return s.repo.CreateCaFile(ctx, file)
+	return s.repo.Create(file)
 }
 
 // GetCaFilePath returns the configured CA file storage path
@@ -103,7 +103,7 @@ func (s *Service) GetCaFilePath() string {
 // SaveCaTask creates a CA deployment task and dispatches TR-069 commands to devices
 func (s *Service) SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string) error {
 	// Validate CA file exists
-	caFile, err := s.repo.GetCaFileByID(ctx, caFileId)
+	caFile, err := s.repo.FindByID(caFileId)
 	if err != nil {
 		return apperror.ErrNotFound.WithMessage("CA file not found")
 	}

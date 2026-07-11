@@ -1,40 +1,32 @@
 package parammonitor
 
 import (
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
+// Repository provides data access for parameter monitoring entities.
+// It embeds BaseRepository[ParameterMonitorConfig, int] for standard CRUD on ParameterMonitorConfig,
+// and retains module-specific methods for associations, threshold rules, and cross-table queries.
 type Repository struct {
+	*baserepo.BaseRepository[ParameterMonitorConfig, int]
 	db *gorm.DB
 }
 
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
-}
-
-func (r *Repository) CreateConfig(config *ParameterMonitorConfig) error {
-	return r.db.Create(config).Error
-}
-
-func (r *Repository) UpdateConfig(config *ParameterMonitorConfig) error {
-	return r.db.Save(config).Error
-}
-
-func (r *Repository) DeleteConfig(id int) error {
-	return r.db.Delete(&ParameterMonitorConfig{}, id).Error
-}
-
-func (r *Repository) GetConfig(id int) (*ParameterMonitorConfig, error) {
-	var config ParameterMonitorConfig
-	err := r.db.First(&config, id).Error
-	if err != nil {
-		return nil, err
+	return &Repository{
+		BaseRepository: baserepo.New[ParameterMonitorConfig, int](db, "id"),
+		db:             db,
 	}
-	return &config, nil
 }
 
+// ---------------------------------------------------------------------------
+// ParameterMonitorConfig – module-specific queries (base provides Create/Save/FindByID/DeleteByID)
+// ---------------------------------------------------------------------------
+
+// ListConfigs returns paginated monitor configs for the given license.
 func (r *Repository) ListConfigs(licenseId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error) {
 	var configs []ParameterMonitorConfig
 	var total int64
@@ -51,6 +43,10 @@ func (r *Repository) ListConfigs(licenseId int, page, pageSize int) ([]Parameter
 
 	return configs, total, nil
 }
+
+// ---------------------------------------------------------------------------
+// MonitorConfigHasParameter – association table operations
+// ---------------------------------------------------------------------------
 
 func (r *Repository) SetConfigParameters(configId int, parameterIds []string) error {
 	// Delete old associations
@@ -115,7 +111,7 @@ func (r *Repository) GetParameterByIds(ids []string) (map[string]string, error) 
 }
 
 // ---------------------------------------------------------------------------
-// Threshold Rule CRUD
+// Threshold Rule CRUD (different entity type)
 // ---------------------------------------------------------------------------
 
 // CreateThresholdRule inserts a new threshold rule.

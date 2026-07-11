@@ -32,7 +32,7 @@ func newMockDB(t *testing.T) (sqlmock.Sqlmock, *gorm.DB) {
 	return mock, gormDB
 }
 
-func TestRepository_FindAlarmByID(t *testing.T) {
+func TestRepository_FindByID(t *testing.T) {
 	mock, db := newMockDB(t)
 	repo := NewRepository(db)
 
@@ -42,11 +42,11 @@ func TestRepository_FindAlarmByID(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"id", "severity", "event_time"}).
 		AddRow(1, severity, now)
 
-	mock.ExpectQuery(`SELECT \* FROM .alarm. WHERE id = \?`).
-		WithArgs(1, 1).
+	mock.ExpectQuery(`SELECT \* FROM .alarm. WHERE id = \? ORDER BY .alarm.\..id. LIMIT \?`).
+		WithArgs(int64(1), 1).
 		WillReturnRows(rows)
 
-	alarm, err := repo.FindAlarmByID(1)
+	alarm, err := repo.FindByID(int64(1))
 
 	assert.NoError(t, err)
 	require.NotNil(t, alarm)
@@ -56,22 +56,22 @@ func TestRepository_FindAlarmByID(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestRepository_FindAlarmByID_NotFound(t *testing.T) {
+func TestRepository_FindByID_NotFound(t *testing.T) {
 	mock, db := newMockDB(t)
 	repo := NewRepository(db)
 
-	mock.ExpectQuery(`SELECT \* FROM .alarm. WHERE id = \?`).
-		WithArgs(999, 1).
+	mock.ExpectQuery(`SELECT \* FROM .alarm. WHERE id = \? ORDER BY .alarm.\..id. LIMIT \?`).
+		WithArgs(int64(999), 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
-	alarm, err := repo.FindAlarmByID(999)
+	alarm, err := repo.FindByID(int64(999))
 
 	assert.Error(t, err)
 	assert.Nil(t, alarm)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestRepository_CreateAlarm(t *testing.T) {
+func TestRepository_Create(t *testing.T) {
 	mock, db := newMockDB(t)
 	repo := NewRepository(db)
 
@@ -88,7 +88,7 @@ func TestRepository_CreateAlarm(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(42, 1))
 	mock.ExpectCommit()
 
-	err := repo.CreateAlarm(a)
+	err := repo.Create(a)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(42), a.Id)

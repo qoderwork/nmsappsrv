@@ -7,18 +7,25 @@ import (
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
 
 // Repository provides data access for blacklist management.
+// It embeds BaseRepository[ElementBlackList, int] for standard CRUD,
+// and retains module-specific methods for custom queries.
 type Repository struct {
+	*baserepo.BaseRepository[ElementBlackList, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[ElementBlackList, int](db, "id"),
+		db:             db,
+	}
 }
 
 // FindBySNAndDeviceType returns an existing entry (duplicate check).
@@ -29,28 +36,6 @@ func (r *Repository) FindBySNAndDeviceType(licenseId int, sn, deviceType string)
 		return nil, err
 	}
 	return &entry, nil
-}
-
-// Create inserts a new blacklist entry.
-func (r *Repository) Create(entry *ElementBlackList) error {
-	return r.db.Create(entry).Error
-}
-
-// Delete removes a blacklist entry by ID.
-func (r *Repository) Delete(id int) error {
-	return r.db.Delete(&ElementBlackList{}, id).Error
-}
-
-// BatchDelete removes multiple blacklist entries by IDs.
-func (r *Repository) BatchDelete(ids []int) error {
-	return r.db.Where("id IN ?", ids).Delete(&ElementBlackList{}).Error
-}
-
-// FindByID returns a blacklist entry by primary key.
-func (r *Repository) FindByID(id int) (*ElementBlackList, error) {
-	var entry ElementBlackList
-	err := r.db.First(&entry, id).Error
-	return &entry, err
 }
 
 // List returns paginated blacklist entries.

@@ -1,20 +1,31 @@
 package mml
 
 import (
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
 // Repository handles database operations for MML entities.
+// It embeds BaseRepository[MmlExecuteResult, int] for standard CRUD on MmlExecuteResult,
+// and retains module-specific methods for other entity types and custom queries.
 type Repository struct {
+	*baserepo.BaseRepository[MmlExecuteResult, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[MmlExecuteResult, int](db, "id"),
+		db:             db,
+	}
 }
+
+// ---------------------------------------------------------------------------
+// MmlSet – module-specific queries (different entity type)
+// ---------------------------------------------------------------------------
 
 // FindMmlSets returns all MML sets for the given license.
 func (r *Repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
@@ -26,6 +37,10 @@ func (r *Repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
 	return sets, nil
 }
 
+// ---------------------------------------------------------------------------
+// MmlCommand – module-specific queries (different entity type)
+// ---------------------------------------------------------------------------
+
 // FindMmlCommands returns all commands belonging to the given MML set.
 func (r *Repository) FindMmlCommands(setId int) ([]MmlCommand, error) {
 	var cmds []MmlCommand
@@ -35,6 +50,10 @@ func (r *Repository) FindMmlCommands(setId int) ([]MmlCommand, error) {
 	}
 	return cmds, nil
 }
+
+// ---------------------------------------------------------------------------
+// MmlCommandParam – module-specific queries (different entity type)
+// ---------------------------------------------------------------------------
 
 // FindMmlCommandParams returns all parameters for the given command.
 func (r *Repository) FindMmlCommandParams(commandId int) ([]MmlCommandParam, error) {
@@ -46,15 +65,9 @@ func (r *Repository) FindMmlCommandParams(commandId int) ([]MmlCommandParam, err
 	return params, nil
 }
 
-// CreateMmlExecuteResult inserts a new MML execution result record.
-func (r *Repository) CreateMmlExecuteResult(result *MmlExecuteResult) error {
-	return r.db.Create(result).Error
-}
-
-// UpdateMmlExecuteResult saves changes to an existing MML execution result.
-func (r *Repository) UpdateMmlExecuteResult(result *MmlExecuteResult) error {
-	return r.db.Save(result).Error
-}
+// ---------------------------------------------------------------------------
+// MmlExecuteResult – module-specific queries (uses base CRUD for standard ops)
+// ---------------------------------------------------------------------------
 
 // FindMmlExecuteResults returns a paginated list of results for the given element.
 func (r *Repository) FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error) {
@@ -72,13 +85,4 @@ func (r *Repository) FindMmlExecuteResults(elementId int64, offset, limit int) (
 		return nil, 0, err
 	}
 	return results, total, nil
-}
-
-// FindMmlExecuteResultByID returns a single execution result by its primary key.
-func (r *Repository) FindMmlExecuteResultByID(id int) (*MmlExecuteResult, error) {
-	var result MmlExecuteResult
-	if err := r.db.Where("id = ?", id).First(&result).Error; err != nil {
-		return nil, err
-	}
-	return &result, nil
 }

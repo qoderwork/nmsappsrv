@@ -25,19 +25,19 @@ func (s *Service) ListMonitorTasks(licenseId int) ([]MonitorTask, error) {
 }
 
 func (s *Service) GetMonitorTask(id int) (*MonitorTask, error) {
-	return s.repo.FindMonitorTaskByID(id)
+	return s.repo.FindByID(id)
 }
 
 func (s *Service) CreateMonitorTask(t *MonitorTask) error {
-	return s.repo.CreateMonitorTask(t)
+	return s.repo.Create(t)
 }
 
 func (s *Service) UpdateMonitorTask(t *MonitorTask) error {
-	return s.repo.UpdateMonitorTask(t)
+	return s.repo.Save(t)
 }
 
 func (s *Service) DeleteMonitorTask(id int) error {
-	return s.repo.DeleteMonitorTask(id)
+	return s.repo.DeleteByID(id)
 }
 
 // ---------- MonitorData ----------

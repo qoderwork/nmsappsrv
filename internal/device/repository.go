@@ -1,6 +1,7 @@
 package device
 
 import (
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
@@ -28,7 +29,10 @@ type Repository interface {
 }
 
 // repository handles database operations for device entities.
+// The embedded BaseRepository provides promoted Create and SoftDelete methods
+// that satisfy the corresponding interface methods.
 type repository struct {
+	*baserepo.BaseRepository[CpeElement, int64]
 	db *gorm.DB
 }
 
@@ -37,7 +41,10 @@ type repository struct {
 // internal/device for model registration, so importing it back would
 // create a circular dependency.
 func NewRepository(db *gorm.DB) Repository {
-	return &repository{db: db}
+	return &repository{
+		BaseRepository: baserepo.New[CpeElement, int64](db, "ne_neid"),
+		db:             db,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -88,20 +95,17 @@ func (r *repository) FindBySerialNumber(sn string) (*CpeElement, error) {
 	return &elem, nil
 }
 
-// Create inserts a new CpeElement row.
-func (r *repository) Create(elem *CpeElement) error {
-	return r.db.Create(elem).Error
-}
+// Create is provided by the embedded BaseRepository[CpeElement, int64].
+// Its promoted method satisfies the Repository.Create interface method.
 
 // Update saves all fields of an existing CpeElement.
+// Delegates to BaseRepository.Save because the interface uses the name "Update".
 func (r *repository) Update(elem *CpeElement) error {
-	return r.db.Save(elem).Error
+	return r.BaseRepository.Save(elem)
 }
 
-// SoftDelete marks a device as deleted without removing the row.
-func (r *repository) SoftDelete(id int64) error {
-	return r.db.Model(&CpeElement{}).Where("ne_neid = ?", id).Update("deleted", true).Error
-}
+// SoftDelete is provided by the embedded BaseRepository[CpeElement, int64].
+// Its promoted method satisfies the Repository.SoftDelete interface method.
 
 // ---------------------------------------------------------------------------
 // DeviceGroup CRUD

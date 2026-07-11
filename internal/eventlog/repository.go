@@ -1,19 +1,26 @@
 package eventlog
 
 import (
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
 // Repository handles database operations for event-log entities.
+// It embeds BaseRepository[EventLog, int64] for standard CRUD on EventLog,
+// and retains module-specific methods for custom queries and other entity types.
 type Repository struct {
+	*baserepo.BaseRepository[EventLog, int64]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[EventLog, int64](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -40,25 +47,6 @@ func (r *Repository) FindEventLogs(elementId int64, eventType string, offset, li
 		return nil, 0, err
 	}
 	return logs, total, nil
-}
-
-// FindEventLogByID returns a single event log by its primary key.
-func (r *Repository) FindEventLogByID(id int64) (*EventLog, error) {
-	var log EventLog
-	if err := r.db.Where("id = ?", id).First(&log).Error; err != nil {
-		return nil, err
-	}
-	return &log, nil
-}
-
-// CreateEventLog inserts a new event log entry.
-func (r *Repository) CreateEventLog(log *EventLog) error {
-	return r.db.Create(log).Error
-}
-
-// UpdateEventLog saves changes to an existing event log entry.
-func (r *Repository) UpdateEventLog(log *EventLog) error {
-	return r.db.Save(log).Error
 }
 
 // ---------------------------------------------------------------------------

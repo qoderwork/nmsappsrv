@@ -57,7 +57,7 @@ func (s *HeartbeatService) ProcessHeartbeat(deviceSN string, payload map[string]
 		ResponseTime: 0,
 		GrantInfo:    grantInfo,
 	}
-	if err := s.repo.SaveHeartbeatRecord(record); err != nil {
+	if err := s.repo.Create(record); err != nil {
 		logger.Errorf("heartbeat: failed to save record for %s: %v", deviceSN, err)
 		return fmt.Errorf("failed to save heartbeat record: %w", err)
 	}

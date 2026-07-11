@@ -68,7 +68,7 @@ func (s *Service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, userna
 		}
 	}
 
-	if err := s.repo.CreateTask(task); err != nil {
+	if err := s.repo.Create(task); err != nil {
 		return 0, err
 	}
 
@@ -82,12 +82,12 @@ func (s *Service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, userna
 
 // DeleteRebootTask removes a reboot task.
 func (s *Service) DeleteRebootTask(id int) error {
-	return s.repo.DeleteTask(id)
+	return s.repo.DeleteByID(id)
 }
 
 // StartRebootTask manually starts a waiting task.
 func (s *Service) StartRebootTask(id int, username string) error {
-	task, err := s.repo.FindTaskByID(id)
+	task, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func (s *Service) StartRebootTask(id int, username string) error {
 	now := time.Now()
 	task.Status = 2
 	task.StartTime = &now
-	s.repo.UpdateTask(task)
+	s.repo.Save(task)
 
 	elementIds := ParseElementIds(task.ElementIds)
 	s.dispatchReboot(task, elementIds, username)
@@ -115,12 +115,12 @@ func (s *Service) StartRebootTask(id int, username string) error {
 
 // CancelRebootTask cancels a waiting task.
 func (s *Service) CancelRebootTask(id int) error {
-	task, err := s.repo.FindTaskByID(id)
+	task, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
 	}
 	task.Status = 4 // Cancelled
-	return s.repo.UpdateTask(task)
+	return s.repo.Save(task)
 }
 
 // ListTasks returns paginated reboot tasks.

@@ -23,22 +23,22 @@ func (s *Service) ListCoreNetworks(tenancyId int) ([]CoreNetwork, error) {
 
 // GetCoreNetwork returns a single core network by ID.
 func (s *Service) GetCoreNetwork(id int) (*CoreNetwork, error) {
-	return s.repo.FindCoreNetworkByID(id)
+	return s.repo.FindByID(id)
 }
 
 // CreateCoreNetwork persists a new core network.
 func (s *Service) CreateCoreNetwork(cn *CoreNetwork) error {
-	return s.repo.CreateCoreNetwork(cn)
+	return s.repo.Create(cn)
 }
 
 // UpdateCoreNetwork persists changes to an existing core network.
 func (s *Service) UpdateCoreNetwork(cn *CoreNetwork) error {
-	return s.repo.UpdateCoreNetwork(cn)
+	return s.repo.Save(cn)
 }
 
 // DeleteCoreNetwork removes a core network by ID.
 func (s *Service) DeleteCoreNetwork(id int) error {
-	return s.repo.DeleteCoreNetwork(id)
+	return s.repo.DeleteByID(id)
 }
 
 // GetCoreNetworkData returns the data record for a core network.

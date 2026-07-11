@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"nmsappsrv/pkg/apperror"
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -15,37 +16,26 @@ const (
 	backupRetentionConfigKey = "backup_and_restore_config"
 )
 
+// Repository provides data access for NMS backup entities.
+// It embeds BaseRepository[NMSBackupAndRevert, int] for standard CRUD on NMSBackupAndRevert (schedule definitions),
+// and retains module-specific methods for tasks, logs, and config operations.
 type Repository struct {
+	*baserepo.BaseRepository[NMSBackupAndRevert, int]
 	db *gorm.DB
 }
 
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
-}
-
-// --- Schedule definition operations (nms_backup_and_revert) ---
-
-func (r *Repository) CreateSchedule(schedule *NMSBackupAndRevert) error {
-	return r.db.Create(schedule).Error
-}
-
-func (r *Repository) GetScheduleById(id int) (*NMSBackupAndRevert, error) {
-	var schedule NMSBackupAndRevert
-	err := r.db.Where("id = ?", id).First(&schedule).Error
-	if err != nil {
-		return nil, err
+	return &Repository{
+		BaseRepository: baserepo.New[NMSBackupAndRevert, int](db, "id"),
+		db:             db,
 	}
-	return &schedule, nil
 }
 
-func (r *Repository) UpdateSchedule(schedule *NMSBackupAndRevert) error {
-	return r.db.Save(schedule).Error
-}
+// ---------------------------------------------------------------------------
+// NMSBackupAndRevert – module-specific queries (base provides Create/Save/FindByID/DeleteByID)
+// ---------------------------------------------------------------------------
 
-func (r *Repository) DeleteSchedule(id int) error {
-	return r.db.Where("id = ?", id).Delete(&NMSBackupAndRevert{}).Error
-}
-
+// ListSchedules returns paginated backup schedules for the given license.
 func (r *Repository) ListSchedules(licenseId int, page, pageSize int) ([]NMSBackupAndRevert, int64, error) {
 	var schedules []NMSBackupAndRevert
 	var total int64
@@ -66,7 +56,9 @@ func (r *Repository) FindScheduledSchedules() ([]NMSBackupAndRevert, error) {
 	return schedules, err
 }
 
-// --- Task operations (nms_backup_and_revert_task) ---
+// ---------------------------------------------------------------------------
+// NMSBackupAndRevertTask – different entity type, kept as module-specific methods
+// ---------------------------------------------------------------------------
 
 func (r *Repository) CreateTask(task *NMSBackupAndRevertTask) error {
 	return r.db.Create(task).Error
@@ -89,7 +81,9 @@ func (r *Repository) DeleteTask(id int) error {
 	return r.db.Where("id = ?", id).Delete(&NMSBackupAndRevertTask{}).Error
 }
 
-// --- Log operations (nms_backup_and_revert_log) ---
+// ---------------------------------------------------------------------------
+// NMSBackupAndRevertLog – different entity type, kept as module-specific methods
+// ---------------------------------------------------------------------------
 
 func (r *Repository) CreateLog(log *NMSBackupAndRevertLog) error {
 	return r.db.Create(log).Error
@@ -120,7 +114,9 @@ func (r *Repository) ListLogs(page, pageSize int) ([]NMSBackupAndRevertLog, int6
 	return logs, total, err
 }
 
-// --- Retention config operations (via system_config + Redis cache) ---
+// ---------------------------------------------------------------------------
+// Retention config operations (via system_config + Redis cache)
+// ---------------------------------------------------------------------------
 
 func (r *Repository) GetRetentionConfig() (*BackupRetentionConfig, error) {
 	ctx := context.Background()

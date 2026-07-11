@@ -108,7 +108,7 @@ func (bc *BackupScheduler) executeBackup(schedule *NMSBackupAndRevert) {
 	// Mark schedule as running
 	runningStatus := 1
 	schedule.BackupStatus = &runningStatus
-	if err := bc.repo.UpdateSchedule(schedule); err != nil {
+	if err := bc.repo.Save(schedule); err != nil {
 		logger.Errorf("nmsbackup: cron trigger — failed to update schedule %d status: %v", schedule.Id, err)
 		return
 	}
@@ -130,7 +130,7 @@ func (bc *BackupScheduler) executeBackup(schedule *NMSBackupAndRevert) {
 		logger.Errorf("nmsbackup: cron trigger — failed to create task for schedule %d: %v", schedule.Id, err)
 		failedStatus := 3
 		schedule.BackupStatus = &failedStatus
-		bc.repo.UpdateSchedule(schedule)
+		bc.repo.Save(schedule)
 		return
 	}
 
@@ -150,7 +150,7 @@ func (bc *BackupScheduler) executeBackup(schedule *NMSBackupAndRevert) {
 	schedule.BackupStatus = &completedStatus
 	schedule.BackupTimeCost = intPtr(duration)
 	schedule.FileName = strPtr(fileName)
-	bc.repo.UpdateSchedule(schedule)
+	bc.repo.Save(schedule)
 
 	// Create log record
 	logRecord := &NMSBackupAndRevertLog{

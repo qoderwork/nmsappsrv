@@ -5,43 +5,21 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"nmsappsrv/pkg/baserepo"
 )
 
 // Repository provides database operations for tenancy management
 type Repository struct {
+	*baserepo.BaseRepository[tenancyModel, int] // embedded generic CRUD for tenancyModel
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
-}
-
-// Create inserts a new tenancy record
-func (r *Repository) Create(t *tenancyModel) error {
-	return r.db.Create(t).Error
-}
-
-// Update updates an existing tenancy record
-func (r *Repository) Update(t *tenancyModel) error {
-	return r.db.Save(t).Error
-}
-
-// FindByID returns a tenancy by ID
-func (r *Repository) FindByID(id int) (*tenancyModel, error) {
-	var t tenancyModel
-	if err := r.db.Where("id = ?", id).First(&t).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		return nil, err
+	return &Repository{
+		BaseRepository: baserepo.New[tenancyModel, int](db, "id"),
+		db:             db,
 	}
-	return &t, nil
-}
-
-// DeleteByID deletes a tenancy by ID
-func (r *Repository) DeleteByID(id int) error {
-	return r.db.Delete(&tenancyModel{}, "id = ?", id).Error
 }
 
 // ExistsByName checks if a tenancy with the given name already exists
@@ -60,24 +38,18 @@ func (r *Repository) ExistsByNameExcluding(name string, excludeID int) (bool, er
 
 // List returns paginated tenancies with optional name filter
 func (r *Repository) List(nameFilter string, page, pageSize int) ([]tenancyModel, int64, error) {
-	var items []tenancyModel
-	var total int64
-
-	query := r.db.Model(&tenancyModel{})
+	query := r.DB.Model(&tenancyModel{})
 	if nameFilter != "" {
 		query = query.Where("license_name LIKE ?", fmt.Sprintf("%%%s%%", nameFilter))
 	}
 
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
 	offset := (page - 1) * pageSize
-	if err := query.Offset(offset).Limit(pageSize).Order("id ASC").Find(&items).Error; err != nil {
+	result, err := r.FindPage(query, "id ASC", offset, pageSize)
+	if err != nil {
 		return nil, 0, err
 	}
 
-	return items, total, nil
+	return result.Items, result.Total, nil
 }
 
 // strPtr returns a pointer to the given string

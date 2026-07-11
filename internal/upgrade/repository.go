@@ -3,6 +3,7 @@ package upgrade
 import (
 	"encoding/json"
 
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
@@ -10,12 +11,16 @@ import (
 
 // Repository handles database operations for upgrade entities.
 type Repository struct {
+	*baserepo.BaseRepository[UpgradeFile, int] // embedded generic CRUD for UpgradeFile
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[UpgradeFile, int](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -25,30 +30,13 @@ func NewRepository(db *gorm.DB) *Repository {
 // FindUpgradeFiles returns a paginated list of upgrade files for the given
 // tenancy together with the total count.
 func (r *Repository) FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error) {
-	var files []UpgradeFile
-	var total int64
-
-	query := r.db.Model(&UpgradeFile{}).Where("tenancy_id = ?", tenancyId)
-
-	if err := query.Count(&total).Error; err != nil {
-		logger.Errorf("FindUpgradeFiles count error: %v", err)
+	query := r.DB.Model(&UpgradeFile{}).Where("tenancy_id = ?", tenancyId)
+	result, err := r.FindPage(query, "upload_time DESC", offset, limit)
+	if err != nil {
+		logger.Errorf("FindUpgradeFiles error: %v", err)
 		return nil, 0, err
 	}
-	if err := query.Order("upload_time DESC").Offset(offset).Limit(limit).Find(&files).Error; err != nil {
-		logger.Errorf("FindUpgradeFiles query error: %v", err)
-		return nil, 0, err
-	}
-	return files, total, nil
-}
-
-// CreateUpgradeFile inserts a new upgrade file record.
-func (r *Repository) CreateUpgradeFile(f *UpgradeFile) error {
-	return r.db.Create(f).Error
-}
-
-// DeleteUpgradeFile removes an upgrade file by its primary key.
-func (r *Repository) DeleteUpgradeFile(id int) error {
-	return r.db.Where("id = ?", id).Delete(&UpgradeFile{}).Error
+	return result.Items, result.Total, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -210,15 +198,6 @@ func (r *Repository) FindRollbackTasks(tenancyId int, offset, limit int) ([]Roll
 // ---------------------------------------------------------------------------
 // Additional helpers for upgrade dispatch
 // ---------------------------------------------------------------------------
-
-// FindUpgradeFileByID returns a single upgrade file by its primary key.
-func (r *Repository) FindUpgradeFileByID(id int) (*UpgradeFile, error) {
-	var f UpgradeFile
-	if err := r.db.Where("id = ?", id).First(&f).Error; err != nil {
-		return nil, err
-	}
-	return &f, nil
-}
 
 // UpdateUpgradeLog saves changes to an existing upgrade log entry.
 func (r *Repository) UpdateUpgradeLog(log *UpgradeLog) error {

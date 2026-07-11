@@ -61,7 +61,7 @@ func (s *Service) DeleteDeviceFromBlackList(id int, username string) error {
 		return fmt.Errorf("blacklist entry not found")
 	}
 
-	if err := s.repo.Delete(id); err != nil {
+	if err := s.repo.DeleteByID(id); err != nil {
 		return err
 	}
 
@@ -94,7 +94,7 @@ func (s *Service) BatchDeleteDeviceFromBlackList(ids []int, username string) err
 		entries = append(entries, entry)
 	}
 
-	if err := s.repo.BatchDelete(ids); err != nil {
+	if err := s.repo.DeleteByIDs(ids); err != nil {
 		return err
 	}
 

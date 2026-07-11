@@ -115,7 +115,7 @@ func (s *Service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest)
 		UpdateTime: &now,
 	}
 
-	if err := s.repo.CreateConfig(&config); err != nil {
+	if err := s.repo.Create(&config); err != nil {
 		logger.Errorf("CreateConfig error: %v", err)
 		return apperror.Wrap(err, "CREATE_MONITOR_CONFIG_FAILED", 500, "failed to create monitor config")
 	}
@@ -130,7 +130,7 @@ func (s *Service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest)
 
 func (s *Service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
 	// Delete config
-	if err := s.repo.DeleteConfig(req.Id); err != nil {
+	if err := s.repo.DeleteByID(req.Id); err != nil {
 		logger.Errorf("DeleteConfig error: %v", err)
 		return apperror.Wrap(err, "DELETE_MONITOR_CONFIG_FAILED", 500, "failed to delete monitor config")
 	}
@@ -145,7 +145,7 @@ func (s *Service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
 }
 
 func (s *Service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConfigDetailVo, error) {
-	config, err := s.repo.GetConfig(req.Id)
+	config, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return nil, apperror.Wrap(err, "VIEW_MONITOR_CONFIG_FAILED", 500, "failed to view monitor config")
 	}
@@ -184,7 +184,7 @@ func (s *Service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConf
 }
 
 func (s *Service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
-	config, err := s.repo.GetConfig(req.Id)
+	config, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
@@ -208,7 +208,7 @@ func (s *Service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
 		config.Interval = req.Interval
 	}
 
-	if err := s.repo.UpdateConfig(config); err != nil {
+	if err := s.repo.Save(config); err != nil {
 		return apperror.Wrap(err, "UPDATE_MONITOR_CONFIG_FAILED", 500, "failed to update monitor config")
 	}
 
@@ -262,7 +262,7 @@ func (s *Service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigReque
 }
 
 func (s *Service) ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error {
-	config, err := s.repo.GetConfig(req.Id)
+	config, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
@@ -271,14 +271,14 @@ func (s *Service) ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error {
 	config.Enable = &req.Enable
 	config.UpdateTime = &now
 
-	if err := s.repo.UpdateConfig(config); err != nil {
+	if err := s.repo.Save(config); err != nil {
 		return apperror.Wrap(err, "TOGGLE_MONITOR_CONFIG_FAILED", 500, "failed to toggle monitor config")
 	}
 	return nil
 }
 
 func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]RealtimeMonitorDataVo, error) {
-	config, err := s.repo.GetConfig(req.ConfigId)
+	config, err := s.repo.FindByID(req.ConfigId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
@@ -358,7 +358,7 @@ func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]Rea
 }
 
 func (s *Service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
-	config, err := s.repo.GetConfig(req.ConfigId)
+	config, err := s.repo.FindByID(req.ConfigId)
 	if err != nil {
 		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}

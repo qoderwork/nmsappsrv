@@ -41,12 +41,12 @@ func (s *Service) ListUpgradeFiles(tenancyId int, page, pageSize int) ([]Upgrade
 
 // UploadUpgradeFile persists a new upgrade file record.
 func (s *Service) UploadUpgradeFile(f *UpgradeFile) error {
-	return s.repo.CreateUpgradeFile(f)
+	return s.repo.Create(f)
 }
 
 // DeleteUpgradeFile removes an upgrade file by ID.
 func (s *Service) DeleteUpgradeFile(id int) error {
-	return s.repo.DeleteUpgradeFile(id)
+	return s.repo.DeleteByID(id)
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ func (s *Service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page
 
 		// Lookup version from UpgradeFile
 		if t.UpgradeFileId != nil && *t.UpgradeFileId > 0 {
-			if f, err := s.repo.FindUpgradeFileByID(*t.UpgradeFileId); err == nil && f.Version != nil {
+			if f, err := s.repo.FindByID(*t.UpgradeFileId); err == nil && f.Version != nil {
 				vo.Version = *f.Version
 			}
 		}

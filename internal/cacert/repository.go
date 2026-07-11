@@ -5,16 +5,24 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"nmsappsrv/pkg/baserepo"
 )
 
-// Repository handles database operations for CA certificate module
+// Repository handles database operations for CA certificate module.
+// It embeds BaseRepository[CaFile, int] for standard CRUD on CaFile,
+// and retains module-specific methods for custom queries and other entity types.
 type Repository struct {
+	*baserepo.BaseRepository[CaFile, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[CaFile, int](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------- CaFile ----------
@@ -48,21 +56,6 @@ func (r *Repository) ListAllCaFiles(ctx context.Context) ([]CaFile, error) {
 		Order("create_time DESC").
 		Find(&files).Error
 	return files, err
-}
-
-// GetCaFileByID returns a single CA file by ID
-func (r *Repository) GetCaFileByID(ctx context.Context, id int) (*CaFile, error) {
-	var file CaFile
-	err := r.db.WithContext(ctx).First(&file, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &file, nil
-}
-
-// CreateCaFile inserts a new CA file record
-func (r *Repository) CreateCaFile(ctx context.Context, file *CaFile) error {
-	return r.db.WithContext(ctx).Create(file).Error
 }
 
 // ---------- CaTask ----------

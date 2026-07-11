@@ -33,7 +33,7 @@ func (s *Service) ListEventLogs(elementId int64, eventType string, page, pageSiz
 
 // GetEventLog returns a single event log by ID.
 func (s *Service) GetEventLog(id int64) (*EventLog, error) {
-	return s.repo.FindEventLogByID(id)
+	return s.repo.FindByID(id)
 }
 
 // ---------------------------------------------------------------------------

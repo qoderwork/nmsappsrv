@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/google/uuid"
@@ -11,13 +12,19 @@ import (
 )
 
 // Repository handles database operations for parameter entities.
+// It embeds BaseRepository[ParameterSet, string] for standard CRUD on ParameterSet,
+// and retains module-specific methods for other entity types and custom queries.
 type Repository struct {
+	*baserepo.BaseRepository[ParameterSet, string]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[ParameterSet, string](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +132,7 @@ func (r *Repository) FindParameterLogs(elementId int64, offset, limit int) ([]Pa
 }
 
 // ---------------------------------------------------------------------------
-// ParameterSet
+// ParameterSet – module-specific queries (base provides Create/Save/FindByID/DeleteByID)
 // ---------------------------------------------------------------------------
 
 // FindParameterSets returns all parameter sets for the given license.
@@ -137,23 +144,8 @@ func (r *Repository) FindParameterSets(licenseId int) ([]ParameterSet, error) {
 	return sets, nil
 }
 
-// CreateParameterSet inserts a new parameter set.
-func (r *Repository) CreateParameterSet(ps *ParameterSet) error {
-	return r.db.Create(ps).Error
-}
-
-// UpdateParameterSet saves changes to an existing parameter set.
-func (r *Repository) UpdateParameterSet(ps *ParameterSet) error {
-	return r.db.Save(ps).Error
-}
-
-// DeleteParameterSet removes a parameter set by its string ID.
-func (r *Repository) DeleteParameterSet(id string) error {
-	return r.db.Where("id = ?", id).Delete(&ParameterSet{}).Error
-}
-
 // ---------------------------------------------------------------------------
-// ParameterTemplate
+// ParameterTemplate (different entity type)
 // ---------------------------------------------------------------------------
 
 // FindParameterTemplates returns all parameter templates for the given tenancy.

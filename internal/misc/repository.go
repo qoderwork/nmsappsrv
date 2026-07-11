@@ -3,19 +3,26 @@ package misc
 import (
 	"time"
 
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
 // Repository handles database operations for miscellaneous entities.
+// The embedded BaseRepository provides generic CRUD for NorthReport,
+// the most CRUD-intensive model in this package.
 type Repository struct {
+	*baserepo.BaseRepository[NorthReport, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[NorthReport, int](db, "id"),
+		db:             db,
+	}
 }
 
 // FindBackupOrRestoreTasks returns a paginated list of backup/restore tasks.
@@ -103,18 +110,21 @@ func (r *Repository) FindNorthReports(licenseId int) ([]NorthReport, error) {
 }
 
 // CreateNorthReport inserts a new north report.
+// Delegates to BaseRepository.Create.
 func (r *Repository) CreateNorthReport(report *NorthReport) error {
-	return r.db.Create(report).Error
+	return r.BaseRepository.Create(report)
 }
 
 // UpdateNorthReport saves changes to an existing north report.
+// Delegates to BaseRepository.Save.
 func (r *Repository) UpdateNorthReport(report *NorthReport) error {
-	return r.db.Save(report).Error
+	return r.BaseRepository.Save(report)
 }
 
 // DeleteNorthReport removes a north report by ID.
+// Delegates to BaseRepository.DeleteByID.
 func (r *Repository) DeleteNorthReport(id int) error {
-	return r.db.Where("id = ?", id).Delete(&NorthReport{}).Error
+	return r.BaseRepository.DeleteByID(id)
 }
 
 // FindRadius returns all RADIUS configurations for the given tenancy.

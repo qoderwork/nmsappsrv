@@ -3,49 +3,41 @@ package pm
 import (
 	"time"
 
+	"nmsappsrv/pkg/baserepo"
+
 	"gorm.io/gorm"
 )
 
 // Repository provides data access for PM-related models.
+// It embeds BaseRepository[PerformanceKpi, string] for standard CRUD on PerformanceKpi,
+// and retains module-specific methods for other entity types and custom queries.
 type Repository struct {
+	*baserepo.BaseRepository[PerformanceKpi, string]
 	db *gorm.DB
 }
 
 // NewRepository creates a new PM repository.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[PerformanceKpi, string](db, "id"),
+		db:             db,
+	}
 }
 
-// ---------- PerformanceKpi ----------
+// ---------------------------------------------------------------------------
+// PerformanceKpi – module-specific queries (base provides Create/Save/FindByID/DeleteByID)
+// ---------------------------------------------------------------------------
 
+// FindKPIs returns all KPIs for the given tenancy.
 func (r *Repository) FindKPIs(tenancyId int) ([]PerformanceKpi, error) {
 	var items []PerformanceKpi
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
 }
 
-func (r *Repository) FindKPIByID(id string) (*PerformanceKpi, error) {
-	var item PerformanceKpi
-	err := r.db.Where("id = ?", id).First(&item).Error
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
-}
-
-func (r *Repository) CreateKPI(k *PerformanceKpi) error {
-	return r.db.Create(k).Error
-}
-
-func (r *Repository) UpdateKPI(k *PerformanceKpi) error {
-	return r.db.Save(k).Error
-}
-
-func (r *Repository) DeleteKPI(id string) error {
-	return r.db.Where("id = ?", id).Delete(&PerformanceKpi{}).Error
-}
-
-// ---------- PerformanceKpiSet ----------
+// ---------------------------------------------------------------------------
+// PerformanceKpiSet (different entity type)
+// ---------------------------------------------------------------------------
 
 func (r *Repository) FindKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
 	var items []PerformanceKpiSet
@@ -57,7 +49,9 @@ func (r *Repository) CreateKPISet(s *PerformanceKpiSet) error {
 	return r.db.Create(s).Error
 }
 
-// ---------- PerformanceKpiTemplate ----------
+// ---------------------------------------------------------------------------
+// PerformanceKpiTemplate (different entity type)
+// ---------------------------------------------------------------------------
 
 func (r *Repository) FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
 	var items []PerformanceKpiTemplate
@@ -77,7 +71,9 @@ func (r *Repository) DeleteKPITemplate(id int) error {
 	return r.db.Where("id = ?", id).Delete(&PerformanceKpiTemplate{}).Error
 }
 
-// ---------- PMFileLog ----------
+// ---------------------------------------------------------------------------
+// PMFileLog
+// ---------------------------------------------------------------------------
 
 func (r *Repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error) {
 	var items []PMFileLog
@@ -90,7 +86,9 @@ func (r *Repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileL
 	return items, total, err
 }
 
-// ---------- KpiAlarmTemplate ----------
+// ---------------------------------------------------------------------------
+// KpiAlarmTemplate (different entity type)
+// ---------------------------------------------------------------------------
 
 func (r *Repository) FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
 	var items []KpiAlarmTemplate
@@ -110,7 +108,9 @@ func (r *Repository) DeleteKPIAlarmTemplate(id int) error {
 	return r.db.Where("id = ?", id).Delete(&KpiAlarmTemplate{}).Error
 }
 
-// ---------- DashboardPmStatisticData ----------
+// ---------------------------------------------------------------------------
+// DashboardPmStatisticData
+// ---------------------------------------------------------------------------
 
 func (r *Repository) FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error) {
 	var items []DashboardPmStatisticData
@@ -118,7 +118,9 @@ func (r *Repository) FindDashboardData(tenancyId int, startTime, endTime time.Ti
 	return items, err
 }
 
-// ---------- PDCPTraffic ----------
+// ---------------------------------------------------------------------------
+// PDCPTraffic
+// ---------------------------------------------------------------------------
 
 func (r *Repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error) {
 	var items []PDCPTraffic
@@ -126,9 +128,11 @@ func (r *Repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time
 	return items, err
 }
 
-// ---------- Dashboard: cpe_element queries ----------
+// ---------------------------------------------------------------------------
+// Dashboard: cpe_element queries
+// ---------------------------------------------------------------------------
 
-// FindAllActiveElements 查询所有未删除的设备（ne_neid, device_type, generation, model_name）
+// FindAllActiveElements queries all non-deleted devices for the given license.
 func (r *Repository) FindAllActiveElements(licenseId int) ([]elementRow, error) {
 	var rows []elementRow
 	err := r.db.Table("cpe_element").
@@ -138,7 +142,7 @@ func (r *Repository) FindAllActiveElements(licenseId int) ([]elementRow, error) 
 	return rows, err
 }
 
-// FindAllActiveElementsAllTenants 查询所有未删除的设备（不限租户），用于全局统计
+// FindAllActiveElementsAllTenants queries all non-deleted devices (no tenancy filter).
 func (r *Repository) FindAllActiveElementsAllTenants() ([]elementRow, error) {
 	var rows []elementRow
 	err := r.db.Table("cpe_element").

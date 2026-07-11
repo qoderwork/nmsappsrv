@@ -143,7 +143,7 @@ func (w *UpgradeWorker) processMessage(ctx context.Context, msg *UpgradeMessage)
 
 // handleUpgrade sends a TR-069 Download request for the upgrade file.
 func (w *UpgradeWorker) handleUpgrade(ctx context.Context, msg *UpgradeMessage, sn string, logEntry *UpgradeLog) {
-	upFile, err := w.repo.FindUpgradeFileByID(msg.UpgradeFileId)
+	upFile, err := w.repo.FindByID(msg.UpgradeFileId)
 	if err != nil {
 		logger.Errorf("upgrade worker: find upgrade file %d: %v", msg.UpgradeFileId, err)
 		w.updateLogFailure(msg.LogUuid, fmt.Sprintf("upgrade file %d not found", msg.UpgradeFileId))
@@ -193,7 +193,7 @@ func (w *UpgradeWorker) handleUpgrade(ctx context.Context, msg *UpgradeMessage, 
 
 // handleRollback sends a TR-069 Download request with rollback-specific metadata.
 func (w *UpgradeWorker) handleRollback(ctx context.Context, msg *UpgradeMessage, sn string, logEntry *UpgradeLog) {
-	upFile, err := w.repo.FindUpgradeFileByID(msg.UpgradeFileId)
+	upFile, err := w.repo.FindByID(msg.UpgradeFileId)
 	if err != nil {
 		logger.Errorf("upgrade worker: find rollback file %d: %v", msg.UpgradeFileId, err)
 		w.updateLogFailure(msg.LogUuid, fmt.Sprintf("rollback file %d not found", msg.UpgradeFileId))

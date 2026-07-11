@@ -30,7 +30,7 @@ type Service interface {
 
 // service contains the business logic for alarm management.
 type service struct {
-	repo Repository
+	repo *Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
@@ -61,7 +61,7 @@ func (s *service) ListAlarms(licenseId int, severity string, alarmType int, page
 
 // GetAlarm returns a single alarm by ID.
 func (s *service) GetAlarm(id int64) (*Alarm, error) {
-	alarm, err := s.repo.FindAlarmByID(id)
+	alarm, err := s.repo.FindByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperror.ErrAlarmNotFound
@@ -102,7 +102,7 @@ func (s *service) CreateAlarm(a *Alarm) error {
 		logger.Infof("Alarm suppressed: reason=%s, source=%v, identifier=%v",
 			reason, a.AlarmSource, a.AlarmIdentifier)
 	}
-	if err := s.repo.CreateAlarm(a); err != nil {
+	if err := s.repo.Create(a); err != nil {
 		return apperror.Wrap(err, "CREATE_ALARM_FAILED", 500, "failed to create alarm")
 	}
 	return nil

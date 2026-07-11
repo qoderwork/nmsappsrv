@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 	"nmsappsrv/pkg/apperror"
+	"nmsappsrv/pkg/baserepo"
 )
 
 // systemConfigModel maps to the system_config table (shared with misc package).
@@ -18,12 +19,16 @@ func (systemConfigModel) TableName() string { return "system_config" }
 
 // SystemSettingsRepository provides database operations for system settings.
 type SystemSettingsRepository struct {
+	*baserepo.BaseRepository[SysParameter, int] // embedded generic CRUD for SysParameter
 	db *gorm.DB
 }
 
 // NewSystemSettingsRepository creates a new SystemSettingsRepository.
 func NewSystemSettingsRepository(db *gorm.DB) *SystemSettingsRepository {
-	return &SystemSettingsRepository{db: db}
+	return &SystemSettingsRepository{
+		BaseRepository: baserepo.New[SysParameter, int](db, "id"),
+		db:             db,
+	}
 }
 
 // GetSystemConfig reads a system_config entry by config_key.
@@ -84,10 +89,10 @@ func (r *SystemSettingsRepository) SaveSysParameter(key, value string) error {
 				Key:   &key,
 				Value: &value,
 			}
-			return r.db.Create(&param).Error
+			return r.Create(&param)
 		}
 		return apperror.Wrap(err, "QUERY_SYS_PARAMETER_FAILED", 500, "failed to query sys parameter")
 	}
 	param.Value = &value
-	return r.db.Save(&param).Error
+	return r.Save(&param)
 }

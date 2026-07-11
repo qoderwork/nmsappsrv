@@ -48,7 +48,7 @@ func (s *Service) ExecuteMml(elementId int64, command string, uid string, userna
 		OperationTime: &now,
 		SendTime:      &now,
 	}
-	if err := s.repo.CreateMmlExecuteResult(result); err != nil {
+	if err := s.repo.Create(result); err != nil {
 		return nil, err
 	}
 
@@ -82,5 +82,5 @@ func (s *Service) ListMmlResults(elementId int64, page, pageSize int) ([]MmlExec
 
 // GetMmlResult returns a single execution result by ID.
 func (s *Service) GetMmlResult(id int) (*MmlExecuteResult, error) {
-	return s.repo.FindMmlExecuteResultByID(id)
+	return s.repo.FindByID(id)
 }

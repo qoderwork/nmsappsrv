@@ -5,43 +5,30 @@ import (
 	"fmt"
 	"time"
 
+	"nmsappsrv/pkg/baserepo"
+
 	"gorm.io/gorm"
 )
 
 // Repository provides data access for reboot management.
+// It embeds BaseRepository[RebootTask, int] for standard CRUD on RebootTask,
+// and retains module-specific methods for complex join queries and cross-table operations.
 type Repository struct {
+	*baserepo.BaseRepository[RebootTask, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
-}
-
-// CreateTask inserts a reboot_task and returns its auto-generated ID.
-func (r *Repository) CreateTask(t *RebootTask) error {
-	return r.db.Create(t).Error
-}
-
-// FindTaskByID loads a reboot_task by primary key.
-func (r *Repository) FindTaskByID(id int) (*RebootTask, error) {
-	var t RebootTask
-	err := r.db.First(&t, id).Error
-	if err != nil {
-		return nil, err
+	return &Repository{
+		BaseRepository: baserepo.New[RebootTask, int](db, "id"),
+		db:             db,
 	}
-	return &t, nil
 }
 
-// DeleteTask removes a reboot_task by ID.
-func (r *Repository) DeleteTask(id int) error {
-	return r.db.Delete(&RebootTask{}, id).Error
-}
-
-// UpdateTask saves changes to a reboot_task.
-func (r *Repository) UpdateTask(t *RebootTask) error {
-	return r.db.Save(t).Error
-}
+// ---------------------------------------------------------------------------
+// RebootTask – module-specific queries (base provides Create/Save/FindByID/DeleteByID)
+// ---------------------------------------------------------------------------
 
 // TaskNameExists checks if a task name already exists for the given tenancy.
 func (r *Repository) TaskNameExists(tenancyId int, name string) bool {

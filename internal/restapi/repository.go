@@ -8,6 +8,7 @@ import (
 
 	"nmsappsrv/internal/alarm"
 	"nmsappsrv/internal/device"
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -15,11 +16,15 @@ import (
 )
 
 type Repository struct {
-	db *gorm.DB
+	*baserepo.BaseRepository[TBGDevice, int] // embedded generic CRUD for TBGDevice
+	db *gorm.DB                              // kept for custom / cross-model queries
 }
 
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[TBGDevice, int](db, "id"),
+		db:             db,
+	}
 }
 
 // ============================
@@ -302,14 +307,12 @@ func (r *Repository) GetRequestStatus(requestId string) (*RequestStatusVo, error
 // ============================
 
 func (r *Repository) ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, int64, error) {
-	var tbgs []TBGDevice
-	var total int64
-
-	query := r.db.Model(&TBGDevice{}).Where("license_id = ?", licenseId)
-	query.Count(&total)
-
-	err := query.Offset(offset).Limit(limit).Order("id ASC").Find(&tbgs).Error
-	return tbgs, total, err
+	query := r.DB.Model(&TBGDevice{}).Where("license_id = ?", licenseId)
+	result, err := r.FindPage(query, "id ASC", offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	return result.Items, result.Total, nil
 }
 
 func (r *Repository) GetTBGBySN(sn string) (*TBGDevice, error) {
@@ -332,10 +335,6 @@ func (r *Repository) GetTBGByWanMac(mac string) (*TBGDevice, error) {
 
 func (r *Repository) CreateTBGs(tbgs []TBGDevice) error {
 	return r.db.Create(&tbgs).Error
-}
-
-func (r *Repository) UpdateTBG(tbg *TBGDevice) error {
-	return r.db.Save(tbg).Error
 }
 
 func (r *Repository) DeleteTBGsBySNs(sns []string) error {

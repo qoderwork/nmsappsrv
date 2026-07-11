@@ -106,13 +106,13 @@ func (s *Service) DeleteAllLogFile(req *DeleteAllLogFileRequest) error {
 
 func (s *Service) DeleteLogFile(req *DeleteLogFileRequest) error {
 	// Get log record first
-	log, err := s.repo.FindById(req.LogId)
+	log, err := s.repo.FindByID(req.LogId)
 	if err != nil {
 		return err
 	}
 
 	// Delete record
-	if err := s.repo.Delete(req.LogId); err != nil {
+	if err := s.repo.DeleteByID(req.LogId); err != nil {
 		logger.Errorf("Delete NeLog error: %v", err)
 		return err
 	}
@@ -128,7 +128,7 @@ func (s *Service) DeleteLogFile(req *DeleteLogFileRequest) error {
 }
 
 func (s *Service) GetLogFile(logId int64) (string, error) {
-	log, err := s.repo.FindById(logId)
+	log, err := s.repo.FindByID(logId)
 	if err != nil {
 		return "", err
 	}

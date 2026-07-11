@@ -4,16 +4,24 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"nmsappsrv/pkg/baserepo"
 )
 
 // Repository provides data access for monitor-related models.
+// It embeds BaseRepository[MonitorTask, int] for standard CRUD on MonitorTask,
+// and retains module-specific methods for custom queries and other entity types.
 type Repository struct {
+	*baserepo.BaseRepository[MonitorTask, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a new monitor repository.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		BaseRepository: baserepo.New[MonitorTask, int](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------- MonitorTask ----------
@@ -22,27 +30,6 @@ func (r *Repository) FindMonitorTasks(licenseId int) ([]MonitorTask, error) {
 	var items []MonitorTask
 	err := r.db.Where("license_id = ?", licenseId).Find(&items).Error
 	return items, err
-}
-
-func (r *Repository) FindMonitorTaskByID(id int) (*MonitorTask, error) {
-	var item MonitorTask
-	err := r.db.Where("id = ?", id).First(&item).Error
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
-}
-
-func (r *Repository) CreateMonitorTask(t *MonitorTask) error {
-	return r.db.Create(t).Error
-}
-
-func (r *Repository) UpdateMonitorTask(t *MonitorTask) error {
-	return r.db.Save(t).Error
-}
-
-func (r *Repository) DeleteMonitorTask(id int) error {
-	return r.db.Where("id = ?", id).Delete(&MonitorTask{}).Error
 }
 
 // ---------- MonitorData ----------

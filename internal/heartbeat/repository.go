@@ -4,22 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"nmsappsrv/pkg/baserepo"
+
 	"gorm.io/gorm"
 )
 
 // Repository handles persistence for heartbeat records and configuration.
 type Repository struct {
+	*baserepo.BaseRepository[HeartbeatRecord, uint]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository backed by the given database connection.
 func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
-}
-
-// SaveHeartbeatRecord persists a heartbeat history record.
-func (r *Repository) SaveHeartbeatRecord(record *HeartbeatRecord) error {
-	return r.db.Create(record).Error
+	return &Repository{
+		BaseRepository: baserepo.New[HeartbeatRecord, uint](db, "id"),
+		db:             db,
+	}
 }
 
 // GetHeartbeatConfig reads the heartbeat configuration from the system_config table.

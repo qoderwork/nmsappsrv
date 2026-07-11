@@ -206,7 +206,7 @@ func boolToSoap(v string) string {
 // loadConfig reads InitServerConfig from system_config table (key="initserver").
 func (s *Service) loadConfig() (*InitServerConfig, error) {
 	key := "initserver"
-	sc, err := s.repo.FindConfigByKey(key)
+	sc, err := s.repo.FindByID(key)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return &InitServerConfig{}, nil
@@ -233,13 +233,13 @@ func (s *Service) saveConfig(cfg *InitServerConfig) error {
 	val := string(data)
 	key := "initserver"
 
-	sc, err := s.repo.FindConfigByKey(key)
+	sc, err := s.repo.FindByID(key)
 	if err == gorm.ErrRecordNotFound {
-		return s.repo.CreateConfig(&SystemConfig{Id: key, Config: &val})
+		return s.repo.Create(&SystemConfig{Id: key, Config: &val})
 	}
 	if err != nil {
 		return err
 	}
 	sc.Config = &val
-	return s.repo.SaveConfig(sc)
+	return s.repo.Save(sc)
 }

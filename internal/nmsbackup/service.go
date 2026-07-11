@@ -56,7 +56,7 @@ func (s *Service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 		schedule.XlogInterval = intPtr(req.XlogInterval)
 	}
 
-	if err := s.repo.CreateSchedule(schedule); err != nil {
+	if err := s.repo.Create(schedule); err != nil {
 		logger.Errorf("Failed to create backup schedule: %v", err)
 		return nil, apperror.ErrInternal.WithMessage("failed to create backup schedule")
 	}
@@ -105,7 +105,7 @@ func (s *Service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequ
 
 // ModifyBackupSchedule updates an existing backup schedule
 func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskRequest) error {
-	schedule, err := s.repo.GetScheduleById(req.Id)
+	schedule, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
@@ -136,7 +136,7 @@ func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskR
 		schedule.XlogInterval = req.XlogInterval
 	}
 
-	if err := s.repo.UpdateSchedule(schedule); err != nil {
+	if err := s.repo.Save(schedule); err != nil {
 		logger.Errorf("Failed to modify backup schedule %d: %v", req.Id, err)
 		return apperror.ErrInternal.WithMessage("failed to modify backup schedule")
 	}
@@ -149,7 +149,7 @@ func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskR
 func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error {
 	username := middleware.GetUsername(c)
 
-	schedule, err := s.repo.GetScheduleById(req.Id)
+	schedule, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
@@ -159,7 +159,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 	// Mark schedule as running
 	runningStatus := 1
 	schedule.BackupStatus = &runningStatus
-	if err := s.repo.UpdateSchedule(schedule); err != nil {
+	if err := s.repo.Save(schedule); err != nil {
 		return apperror.ErrInternal.WithMessage("failed to update schedule status")
 	}
 
@@ -179,7 +179,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 		logger.Errorf("Failed to create backup task record: %v", err)
 		failedStatus := 3
 		schedule.BackupStatus = &failedStatus
-		s.repo.UpdateSchedule(schedule)
+		s.repo.Save(schedule)
 		return apperror.ErrInternal.WithMessage("failed to create task record")
 	}
 
@@ -205,7 +205,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 	schedule.BackupStatus = &completedStatus
 	schedule.BackupTimeCost = intPtr(duration)
 	schedule.FileName = strPtr(fileName)
-	s.repo.UpdateSchedule(schedule)
+	s.repo.Save(schedule)
 
 	// Create log record
 	logRecord := &NMSBackupAndRevertLog{
@@ -227,7 +227,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 
 // DeleteBackupSchedule deletes a backup schedule
 func (s *Service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
-	if err := s.repo.DeleteSchedule(req.Id); err != nil {
+	if err := s.repo.DeleteByID(req.Id); err != nil {
 		logger.Errorf("Failed to delete backup schedule %d: %v", req.Id, err)
 		return apperror.ErrInternal.WithMessage("failed to delete backup schedule")
 	}
@@ -240,7 +240,7 @@ func (s *Service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskR
 func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) error {
 	username := middleware.GetUsername(c)
 
-	schedule, err := s.repo.GetScheduleById(req.Id)
+	schedule, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
@@ -250,7 +250,7 @@ func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) 
 	// Mark revert as running
 	schedule.RevertStatus = intPtr(1) // running
 	schedule.RevertBeginTime = &now
-	s.repo.UpdateSchedule(schedule)
+	s.repo.Save(schedule)
 
 	// Create task execution record
 	task := &NMSBackupAndRevertTask{
@@ -284,7 +284,7 @@ func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) 
 	// Mark revert as completed
 	schedule.RevertStatus = intPtr(2) // completed
 	schedule.RevertEndTime = &endTime
-	s.repo.UpdateSchedule(schedule)
+	s.repo.Save(schedule)
 
 	// Create log record
 	logRecord := &NMSBackupAndRevertLog{

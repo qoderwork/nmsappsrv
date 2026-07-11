@@ -3,6 +3,7 @@ package user
 import (
 	"time"
 
+	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
@@ -34,13 +35,19 @@ type Repository interface {
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
+// The embedded BaseRepository provides generic CRUD for SysUser that is
+// reused through delegation methods below.
 type repository struct {
+	*baserepo.BaseRepository[SysUser, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
 func NewRepository(db *gorm.DB) Repository {
-	return &repository{db: db}
+	return &repository{
+		BaseRepository: baserepo.New[SysUser, int](db, "id"),
+		db:             db,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -57,12 +64,9 @@ func (r *repository) FindUserByUsername(username string) (*SysUser, error) {
 }
 
 // FindUserByID returns a user by primary key.
+// Delegates to BaseRepository.FindByID.
 func (r *repository) FindUserByID(id int) (*SysUser, error) {
-	var u SysUser
-	if err := r.db.Where("id = ?", id).First(&u).Error; err != nil {
-		return nil, err
-	}
-	return &u, nil
+	return r.BaseRepository.FindByID(id)
 }
 
 // FindUsers returns a paginated list of users for the given license.
@@ -84,23 +88,27 @@ func (r *repository) FindUsers(licenseId int, offset, limit int) ([]SysUser, int
 }
 
 // CreateUser inserts a new user row.
+// Delegates to BaseRepository.Create.
 func (r *repository) CreateUser(u *SysUser) error {
-	return r.db.Create(u).Error
+	return r.BaseRepository.Create(u)
 }
 
 // UpdateUser saves all fields of an existing user.
+// Delegates to BaseRepository.Save.
 func (r *repository) UpdateUser(u *SysUser) error {
-	return r.db.Save(u).Error
+	return r.BaseRepository.Save(u)
 }
 
 // DeleteUser removes a user by ID.
+// Delegates to BaseRepository.DeleteByID.
 func (r *repository) DeleteUser(id int) error {
-	return r.db.Where("id = ?", id).Delete(&SysUser{}).Error
+	return r.BaseRepository.DeleteByID(id)
 }
 
 // UpdateUserFields updates specific fields of a user.
+// Delegates to BaseRepository.UpdateFields.
 func (r *repository) UpdateUserFields(id int, fields map[string]interface{}) error {
-	return r.db.Model(&SysUser{}).Where("id = ?", id).Updates(fields).Error
+	return r.BaseRepository.UpdateFields(id, fields)
 }
 
 // ---------------------------------------------------------------------------
