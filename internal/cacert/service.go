@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/config"
+	"nmsappsrv/pkg/apperror"
 	redisclient "nmsappsrv/pkg/redis"
 )
 
@@ -104,7 +105,7 @@ func (s *Service) SaveCaTask(ctx context.Context, taskName string, caFileId int,
 	// Validate CA file exists
 	caFile, err := s.repo.GetCaFileByID(ctx, caFileId)
 	if err != nil {
-		return fmt.Errorf("CA file not found: %w", err)
+		return apperror.ErrNotFound.WithMessage("CA file not found")
 	}
 
 	// Create task record
@@ -117,7 +118,7 @@ func (s *Service) SaveCaTask(ctx context.Context, taskName string, caFileId int,
 		CreateTime: &now,
 	}
 	if err := s.repo.CreateCaTask(ctx, task); err != nil {
-		return fmt.Errorf("create task: %w", err)
+		return apperror.Wrap(err, "CA_TASK_CREATE_FAILED", 500, "failed to create CA task")
 	}
 
 	// Build device list based on scope

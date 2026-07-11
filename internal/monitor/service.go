@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"nmsappsrv/pkg/apperror"
 )
 
 // Service contains monitor business logic.
@@ -43,11 +45,11 @@ func (s *Service) DeleteMonitorTask(id int) error {
 func (s *Service) GetMonitorData(elementId int64, parameterId string, startTime, endTime string) ([]MonitorData, error) {
 	st, err := time.Parse(time.RFC3339, startTime)
 	if err != nil {
-		return nil, err
+		return nil, apperror.ErrInvalidInput.WithMessage("invalid start_time format, expected RFC3339")
 	}
 	et, err := time.Parse(time.RFC3339, endTime)
 	if err != nil {
-		return nil, err
+		return nil, apperror.ErrInvalidInput.WithMessage("invalid end_time format, expected RFC3339")
 	}
 	return s.repo.FindMonitorData(elementId, parameterId, st, et)
 }

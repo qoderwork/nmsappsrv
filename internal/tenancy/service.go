@@ -2,6 +2,8 @@ package tenancy
 
 import (
 	"fmt"
+
+	"nmsappsrv/pkg/apperror"
 )
 
 // Service provides tenancy management operations
@@ -17,7 +19,7 @@ func NewService(repo *Repository) *Service {
 // AddTenancy creates a new tenancy
 func (s *Service) AddTenancy(req *AddTenancyRequest) (int, error) {
 	if req.LicenseName == "" {
-		return 0, fmt.Errorf("tenancy name cannot be null")
+		return 0, apperror.ErrInvalidInput.WithMessage("tenancy name cannot be null")
 	}
 
 	exists, err := s.repo.ExistsByName(req.LicenseName)
@@ -25,17 +27,17 @@ func (s *Service) AddTenancy(req *AddTenancyRequest) (int, error) {
 		return 0, err
 	}
 	if exists {
-		return 0, fmt.Errorf("the tenant name is already in use")
+		return 0, apperror.ErrConflict.WithMessage("the tenant name is already in use")
 	}
 
 	if req.ExpiryDate == nil {
-		return 0, fmt.Errorf("the expiration time cannot be null")
+		return 0, apperror.ErrInvalidInput.WithMessage("the expiration time cannot be null")
 	}
 	if req.UserQuantity < 0 {
-		return 0, fmt.Errorf("user quantity cannot be smaller than 0")
+		return 0, apperror.ErrInvalidInput.WithMessage("user quantity cannot be smaller than 0")
 	}
 	if req.EnbQuantity < 0 {
-		return 0, fmt.Errorf("device quantity cannot be smaller than 0")
+		return 0, apperror.ErrInvalidInput.WithMessage("device quantity cannot be smaller than 0")
 	}
 
 	t := &tenancyModel{
@@ -73,16 +75,16 @@ func (s *Service) AddTenancy(req *AddTenancyRequest) (int, error) {
 // UpdateTenancy updates an existing tenancy
 func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error) {
 	if req.LicenseName == "" {
-		return nil, fmt.Errorf("tenancy name cannot be null")
+		return nil, apperror.ErrInvalidInput.WithMessage("tenancy name cannot be null")
 	}
 	if req.ExpiryDate == nil {
-		return nil, fmt.Errorf("the expiration time cannot be null")
+		return nil, apperror.ErrInvalidInput.WithMessage("the expiration time cannot be null")
 	}
 	if req.UserQuantity < 0 {
-		return nil, fmt.Errorf("user quantity cannot be smaller than 0")
+		return nil, apperror.ErrInvalidInput.WithMessage("user quantity cannot be smaller than 0")
 	}
 	if req.EnbQuantity < 0 {
-		return nil, fmt.Errorf("device quantity cannot be smaller than 0")
+		return nil, apperror.ErrInvalidInput.WithMessage("device quantity cannot be smaller than 0")
 	}
 
 	existing, err := s.repo.FindByID(req.Id)
@@ -90,7 +92,7 @@ func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error
 		return nil, err
 	}
 	if existing == nil {
-		return nil, fmt.Errorf("user license not found")
+		return nil, apperror.ErrNotFound.WithMessage("user license not found")
 	}
 
 	// Check name uniqueness
@@ -99,7 +101,7 @@ func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error
 		return nil, err
 	}
 	if nameExists {
-		return nil, fmt.Errorf("license name already exists")
+		return nil, apperror.ErrConflict.WithMessage("license name already exists")
 	}
 
 	// Update fields
@@ -165,7 +167,7 @@ func (s *Service) ListTenancies(query *ListTenancyQuery) ([]TenancyVO, int64, er
 // DeleteTenancy deletes a tenancy by ID
 func (s *Service) DeleteTenancy(id int) error {
 	if id == 0 {
-		return fmt.Errorf("default tenancy cannot be deleted")
+		return apperror.ErrInvalidInput.WithMessage("default tenancy cannot be deleted")
 	}
 	return s.repo.DeleteByID(id)
 }
@@ -177,7 +179,7 @@ func (s *Service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
 		return nil, err
 	}
 	if t == nil {
-		return nil, fmt.Errorf("user license not found")
+		return nil, apperror.ErrNotFound.WithMessage("user license not found")
 	}
 
 	return &ViewTenancyResponse{

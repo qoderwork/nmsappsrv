@@ -2,11 +2,11 @@ package restapi
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/snmp"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -25,11 +25,11 @@ func (s *Service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
 	// Verify device exists and get connection info
 	dev, err := s.repo.GetDeviceById(req.ElementId, licenseId)
 	if err != nil {
-		return fmt.Errorf("device not found")
+		return apperror.ErrDeviceNotFound
 	}
 
 	if dev.DeviceIp == nil || *dev.DeviceIp == "" {
-		return fmt.Errorf("device has no IP address configured")
+		return apperror.ErrInvalidInput.WithMessage("device has no IP address configured")
 	}
 
 	// Build SNMP parameters from OIDs
@@ -56,13 +56,13 @@ func (s *Service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
 	// Marshal and push to Redis SNMP queue
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal SNMP message")
+		return apperror.Wrap(err, "MARSHAL_SNMP_MESSAGE_FAILED", 500, "failed to marshal SNMP message")
 	}
 
 	ctx := c.Request.Context()
 	if err := redis.LPush(ctx, snmp.SnmpQueueName, string(msgJSON)); err != nil {
 		logger.Errorf("Failed to push SNMP GET to queue: %v", err)
-		return fmt.Errorf("failed to queue SNMP GET operation")
+		return apperror.Wrap(err, "QUEUE_SNMP_GET_FAILED", 500, "failed to queue SNMP GET operation")
 	}
 
 	logger.Infof("SNMP GET queued for device %d (%d OIDs) by user %s", req.ElementId, len(req.OIDs), username)
@@ -77,11 +77,11 @@ func (s *Service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
 	// Verify device exists and get connection info
 	dev, err := s.repo.GetDeviceById(req.ElementId, licenseId)
 	if err != nil {
-		return fmt.Errorf("device not found")
+		return apperror.ErrDeviceNotFound
 	}
 
 	if dev.DeviceIp == nil || *dev.DeviceIp == "" {
-		return fmt.Errorf("device has no IP address configured")
+		return apperror.ErrInvalidInput.WithMessage("device has no IP address configured")
 	}
 
 	// Build SNMP parameters
@@ -109,13 +109,13 @@ func (s *Service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
 	// Marshal and push to Redis SNMP queue
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal SNMP message")
+		return apperror.Wrap(err, "MARSHAL_SNMP_MESSAGE_FAILED", 500, "failed to marshal SNMP message")
 	}
 
 	ctx := c.Request.Context()
 	if err := redis.LPush(ctx, snmp.SnmpQueueName, string(msgJSON)); err != nil {
 		logger.Errorf("Failed to push SNMP SET to queue: %v", err)
-		return fmt.Errorf("failed to queue SNMP SET operation")
+		return apperror.Wrap(err, "QUEUE_SNMP_SET_FAILED", 500, "failed to queue SNMP SET operation")
 	}
 
 	logger.Infof("SNMP SET queued for device %d (%d params) by user %s", req.ElementId, len(req.Parameters), username)
@@ -127,7 +127,7 @@ func (s *Service) ListSnmpOperationLogs(c *gin.Context, offset, limit int) ([]Sn
 	logs, total, err := s.repo.ListSnmpOperationLogs(offset, limit)
 	if err != nil {
 		logger.Errorf("Failed to list SNMP operation logs: %v", err)
-		return nil, 0, fmt.Errorf("failed to list SNMP operation logs")
+		return nil, 0, apperror.Wrap(err, "LIST_SNMP_LOGS_FAILED", 500, "failed to list SNMP operation logs")
 	}
 
 	var result []SnmpOperationLogVo

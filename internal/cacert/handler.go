@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
 
@@ -49,7 +50,7 @@ func (h *Handler) ListCaFiles(c *gin.Context) {
 	ctx := context.Background()
 	data, total, err := h.svc.ListCaFiles(ctx, req.Page, req.PageSize)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -66,7 +67,7 @@ func (h *Handler) DeleteCaFile(c *gin.Context) {
 
 	ctx := context.Background()
 	if err := h.svc.DeleteCaFiles(ctx, []int{req.Id}); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -78,7 +79,7 @@ func (h *Handler) QueryCaList(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListAllCaFiles(ctx)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -138,14 +139,14 @@ func (h *Handler) UploadCaFile(c *gin.Context) {
 	caFilePath := h.svc.GetCaFilePath()
 	if err := os.MkdirAll(caFilePath, 0755); err != nil {
 		logger.Errorf("Failed to create CA file directory: %v", err)
-		utils.Error(c, 500, "failed to create directory")
+		utils.HandleError(c, apperror.Wrap(err, "CA_DIR_CREATE_FAILED", 500, "failed to create directory"))
 		return
 	}
 
 	zipPath := filepath.Join(caFilePath, zipFileName)
 	if err := h.createZipFile(zipPath, files); err != nil {
 		logger.Errorf("Failed to create zip file: %v", err)
-		utils.Error(c, 500, "failed to save file")
+		utils.HandleError(c, apperror.Wrap(err, "CA_ZIP_CREATE_FAILED", 500, "failed to save file"))
 		return
 	}
 
@@ -153,7 +154,7 @@ func (h *Handler) UploadCaFile(c *gin.Context) {
 	username := middleware.GetUsername(c)
 	if err := h.svc.CreateCaFileRecord(context.Background(), zipFileName, zipPath, description, username); err != nil {
 		logger.Errorf("Failed to save CA file record: %v", err)
-		utils.Error(c, 500, "failed to save file record")
+		utils.HandleError(c, apperror.Wrap(err, "CA_FILE_RECORD_CREATE_FAILED", 500, "failed to save file record"))
 		return
 	}
 
@@ -175,19 +176,19 @@ func (h *Handler) DownloadCaFile(c *gin.Context) {
 	ctx := context.Background()
 	caFile, err := h.svc.GetCaFileByID(ctx, fileId)
 	if err != nil {
-		utils.Error(c, 404, "CA file not found")
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("CA file not found"))
 		return
 	}
 
 	filePath := strOrEmpty(caFile.URL)
 	if filePath == "" {
-		utils.Error(c, 404, "file path not available")
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("file path not available"))
 		return
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		utils.Error(c, 404, fmt.Sprintf("CA Task file %s not found", strOrEmpty(caFile.FileName)))
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage(fmt.Sprintf("CA Task file %s not found", strOrEmpty(caFile.FileName))))
 		return
 	}
 
@@ -208,8 +209,7 @@ func (h *Handler) SaveCaTask(c *gin.Context) {
 	ctx := context.Background()
 
 	if err := h.svc.SaveCaTask(ctx, req.TaskName, req.CaFileId, req.Scope, req.DeviceIds, req.GroupIds, username); err != nil {
-		logger.Errorf("Failed to save CA task: %v", err)
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -241,7 +241,7 @@ func (h *Handler) ListCaTasks(c *gin.Context) {
 	ctx := context.Background()
 	data, total, err := h.svc.ListCaTasks(ctx, req.Page, req.PageSize, tenancyIdPtr)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -259,7 +259,7 @@ func (h *Handler) GetCaTaskDetail(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.GetCaTaskDetail(ctx, req.Id)
 	if err != nil {
-		utils.Error(c, 404, "task not found")
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("task not found"))
 		return
 	}
 
@@ -276,7 +276,7 @@ func (h *Handler) DeleteCaTask(c *gin.Context) {
 
 	ctx := context.Background()
 	if err := h.svc.DeleteCaTasks(ctx, []int{req.Id}); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -301,7 +301,7 @@ func (h *Handler) QueryDeviceSendCaLog(c *gin.Context) {
 	ctx := context.Background()
 	data, total, err := h.svc.ListDeviceSendCaLogs(ctx, req.TaskId, req.Page, req.PageSize)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

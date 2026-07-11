@@ -1,9 +1,8 @@
 package restapi
 
 import (
-	"fmt"
-
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +17,7 @@ func (s *Service) ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, e
 
 	tbgs, total, err := s.repo.ListTBGs(licenseId, offset, limit)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, apperror.Wrap(err, "LIST_TBGS_FAILED", 500, "failed to list TBGs")
 	}
 
 	var result []TBGVo
@@ -39,7 +38,7 @@ func (s *Service) ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, e
 func (s *Service) GetTBGBySN(sn string) (*TBGVo, error) {
 	tbg, err := s.repo.GetTBGBySN(sn)
 	if err != nil {
-		return nil, fmt.Errorf("TBG device not found")
+		return nil, apperror.ErrNotFound.WithMessage("TBG device not found")
 	}
 
 	return &TBGVo{
@@ -54,7 +53,7 @@ func (s *Service) GetTBGBySN(sn string) (*TBGVo, error) {
 func (s *Service) GetTBGByWanMac(mac string) (*TBGVo, error) {
 	tbg, err := s.repo.GetTBGByWanMac(mac)
 	if err != nil {
-		return nil, fmt.Errorf("TBG device not found")
+		return nil, apperror.ErrNotFound.WithMessage("TBG device not found")
 	}
 
 	return &TBGVo{
@@ -71,7 +70,7 @@ func (s *Service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error)
 	username := middleware.GetUsername(c)
 
 	if len(reqs) > 100 {
-		return nil, fmt.Errorf("batch size exceeds maximum of 100")
+		return nil, apperror.ErrInvalidInput.WithMessage("batch size exceeds maximum of 100")
 	}
 
 	var tbgs []TBGDevice
@@ -79,7 +78,7 @@ func (s *Service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error)
 		// Check for duplicate SN
 		existing, _ := s.repo.GetTBGBySN(req.SerialNumber)
 		if existing != nil {
-			return nil, fmt.Errorf("TBG with serial number %s already exists", req.SerialNumber)
+			return nil, apperror.ErrConflict.WithMessage("TBG with serial number " + req.SerialNumber + " already exists")
 		}
 
 		sn := req.SerialNumber
@@ -101,7 +100,7 @@ func (s *Service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error)
 
 	if err := s.repo.CreateTBGs(tbgs); err != nil {
 		logger.Errorf("Failed to create TBG devices: %v", err)
-		return nil, fmt.Errorf("failed to create TBG devices")
+		return nil, apperror.Wrap(err, "CREATE_TBG_FAILED", 500, "failed to create TBG devices")
 	}
 
 	logger.Infof("Created %d TBG devices by user %s", len(tbgs), username)
@@ -127,7 +126,7 @@ func (s *Service) ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error {
 	for _, req := range reqs {
 		tbg, err := s.repo.GetTBGBySN(req.SerialNumber)
 		if err != nil {
-			return fmt.Errorf("TBG with serial number %s not found", req.SerialNumber)
+			return apperror.ErrNotFound.WithMessage("TBG with serial number " + req.SerialNumber + " not found")
 		}
 
 		if req.Band != nil {
@@ -142,7 +141,7 @@ func (s *Service) ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error {
 
 		if err := s.repo.UpdateTBG(tbg); err != nil {
 			logger.Errorf("Failed to update TBG %s: %v", req.SerialNumber, err)
-			return fmt.Errorf("failed to update TBG device %s", req.SerialNumber)
+			return apperror.Wrap(err, "UPDATE_TBG_FAILED", 500, "failed to update TBG device " + req.SerialNumber)
 		}
 	}
 
@@ -154,12 +153,12 @@ func (s *Service) DeleteTBGs(c *gin.Context, req *DeleteTBGRequest) error {
 	username := middleware.GetUsername(c)
 
 	if len(req.SerialNumbers) > 100 {
-		return fmt.Errorf("batch size exceeds maximum of 100")
+		return apperror.ErrInvalidInput.WithMessage("batch size exceeds maximum of 100")
 	}
 
 	if err := s.repo.DeleteTBGsBySNs(req.SerialNumbers); err != nil {
 		logger.Errorf("Failed to delete TBG devices: %v", err)
-		return fmt.Errorf("failed to delete TBG devices")
+		return apperror.Wrap(err, "DELETE_TBG_FAILED", 500, "failed to delete TBG devices")
 	}
 
 	logger.Infof("Deleted %d TBG devices by user %s", len(req.SerialNumbers), username)

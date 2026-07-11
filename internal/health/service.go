@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"nmsappsrv/internal/mq"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -55,7 +56,7 @@ func (s *Service) GetRedisInfo() (*RedisInfo, error) {
 	ctx := context.Background()
 	info, err := redis.RDB.Info(ctx, "all").Result()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get redis info: %w", err)
+		return nil, apperror.Wrap(err, "GET_REDIS_INFO_FAILED", 500, "failed to get redis info")
 	}
 
 	metrics := make(map[string]string)

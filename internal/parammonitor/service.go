@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/tr069/soap"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"sync"
@@ -116,12 +117,12 @@ func (s *Service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest)
 
 	if err := s.repo.CreateConfig(&config); err != nil {
 		logger.Errorf("CreateConfig error: %v", err)
-		return err
+		return apperror.Wrap(err, "CREATE_MONITOR_CONFIG_FAILED", 500, "failed to create monitor config")
 	}
 
 	if err := s.repo.SetConfigParameters(config.Id, req.ParameterIds); err != nil {
 		logger.Errorf("SetConfigParameters error: %v", err)
-		return err
+		return apperror.Wrap(err, "SET_MONITOR_CONFIG_PARAMS_FAILED", 500, "failed to set monitor config parameters")
 	}
 
 	return nil
@@ -131,13 +132,13 @@ func (s *Service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
 	// Delete config
 	if err := s.repo.DeleteConfig(req.Id); err != nil {
 		logger.Errorf("DeleteConfig error: %v", err)
-		return err
+		return apperror.Wrap(err, "DELETE_MONITOR_CONFIG_FAILED", 500, "failed to delete monitor config")
 	}
 
 	// Delete associations
 	if err := s.repo.SetConfigParameters(req.Id, []string{}); err != nil {
 		logger.Errorf("Delete associations error: %v", err)
-		return err
+		return apperror.Wrap(err, "DELETE_MONITOR_ASSOCIATIONS_FAILED", 500, "failed to delete monitor config associations")
 	}
 
 	return nil
@@ -146,17 +147,17 @@ func (s *Service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
 func (s *Service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConfigDetailVo, error) {
 	config, err := s.repo.GetConfig(req.Id)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "VIEW_MONITOR_CONFIG_FAILED", 500, "failed to view monitor config")
 	}
 
 	paramIds, err := s.repo.GetConfigParameters(req.Id)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_MONITOR_CONFIG_PARAMS_FAILED", 500, "failed to get monitor config parameters")
 	}
 
 	paramMap, err := s.repo.GetParameterByIds(paramIds)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_MONITOR_PARAMETERS_FAILED", 500, "failed to get parameters")
 	}
 
 	parameters := make([]ParameterVo, 0, len(paramIds))
@@ -185,7 +186,7 @@ func (s *Service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConf
 func (s *Service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
 	config, err := s.repo.GetConfig(req.Id)
 	if err != nil {
-		return err
+		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
 
 	now := time.Now()
@@ -208,12 +209,12 @@ func (s *Service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
 	}
 
 	if err := s.repo.UpdateConfig(config); err != nil {
-		return err
+		return apperror.Wrap(err, "UPDATE_MONITOR_CONFIG_FAILED", 500, "failed to update monitor config")
 	}
 
 	if len(req.ParameterIds) > 0 {
 		if err := s.repo.SetConfigParameters(req.Id, req.ParameterIds); err != nil {
-			return err
+			return apperror.Wrap(err, "SET_MONITOR_CONFIG_PARAMS_FAILED", 500, "failed to update monitor config parameters")
 		}
 	}
 
@@ -232,7 +233,7 @@ func (s *Service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigReque
 
 	configs, total, err := s.repo.ListConfigs(licenseId, req.Page, req.PageSize)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, apperror.Wrap(err, "LIST_MONITOR_CONFIGS_FAILED", 500, "failed to list monitor configs")
 	}
 
 	result := make([]MonitorConfigVo, 0, len(configs))
@@ -263,20 +264,23 @@ func (s *Service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigReque
 func (s *Service) ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error {
 	config, err := s.repo.GetConfig(req.Id)
 	if err != nil {
-		return err
+		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
 
 	now := time.Now()
 	config.Enable = &req.Enable
 	config.UpdateTime = &now
 
-	return s.repo.UpdateConfig(config)
+	if err := s.repo.UpdateConfig(config); err != nil {
+		return apperror.Wrap(err, "TOGGLE_MONITOR_CONFIG_FAILED", 500, "failed to toggle monitor config")
+	}
+	return nil
 }
 
 func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]RealtimeMonitorDataVo, error) {
 	config, err := s.repo.GetConfig(req.ConfigId)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
 
 	// Get devices in scope (handles both elementIds and groupIds)
@@ -286,13 +290,13 @@ func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]Rea
 	}
 	elementIds, err := s.resolveScopeToElementIds(scope, config.ScopeData)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "RESOLVE_MONITOR_SCOPE_FAILED", 500, "failed to resolve monitor scope")
 	}
 
 	// Get parameter IDs for this config
 	paramIds, err := s.repo.GetConfigParameters(req.ConfigId)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_MONITOR_CONFIG_PARAMS_FAILED", 500, "failed to get monitor config parameters")
 	}
 
 	ctx := context.Background()
@@ -356,17 +360,17 @@ func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]Rea
 func (s *Service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
 	config, err := s.repo.GetConfig(req.ConfigId)
 	if err != nil {
-		return err
+		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
 	}
 
 	if config.Enable == nil || !*config.Enable {
-		return fmt.Errorf("monitor config is disabled")
+		return apperror.ErrInvalidInput.WithMessage("monitor config is disabled")
 	}
 
 	// Get parameter IDs
 	paramIds, err := s.repo.GetConfigParameters(req.ConfigId)
 	if err != nil {
-		return err
+		return apperror.Wrap(err, "GET_MONITOR_CONFIG_PARAMS_FAILED", 500, "failed to get monitor config parameters")
 	}
 
 	// Determine target devices
@@ -375,7 +379,7 @@ func (s *Service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
 		// Use all devices in scope
 		if config.ScopeData != nil && *config.ScopeData != "" {
 			if err := json.Unmarshal([]byte(*config.ScopeData), &elementIds); err != nil {
-				return err
+				return apperror.Wrap(err, "PARSE_SCOPE_DATA_FAILED", 400, "failed to parse scope data")
 			}
 		}
 	}
@@ -403,7 +407,7 @@ func (s *Service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) 
 	// Get parameter info
 	paramMap, err := s.repo.GetParameterByIds(req.ParameterIds)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Wrap(err, "GET_PARAMETER_IDS_FAILED", 500, "failed to get parameter info")
 	}
 
 	result := make([]BatchQueryResultVo, 0, len(req.ElementIds))
@@ -468,14 +472,14 @@ func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, use
 	// 1. Resolve parameter IDs to paths
 	paramMap, err := s.repo.GetParameterByIds(req.ParameterIds)
 	if err != nil {
-		return nil, fmt.Errorf("resolve parameters: %w", err)
+		return nil, apperror.Wrap(err, "RESOLVE_PARAMETERS_FAILED", 500, "failed to resolve parameters")
 	}
 	paramPaths := make([]string, 0, len(paramMap))
 	for _, path := range paramMap {
 		paramPaths = append(paramPaths, path)
 	}
 	if len(paramPaths) == 0 {
-		return nil, fmt.Errorf("no valid parameter paths found")
+		return nil, apperror.ErrInvalidInput.WithMessage("no valid parameter paths found")
 	}
 
 	// 2. Resolve device info for all element IDs

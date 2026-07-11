@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"nmsappsrv/pkg/apperror"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -60,7 +61,7 @@ func (h *Handler) ListDevices(c *gin.Context) {
 
 	data, total, err := h.svc.ListDevices(c, offset, limit)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -77,7 +78,7 @@ func (h *Handler) GetDevice(c *gin.Context) {
 
 	device, err := h.svc.GetDevice(c, id)
 	if err != nil {
-		utils.Error(c, 404, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -94,7 +95,7 @@ func (h *Handler) AddDevice(c *gin.Context) {
 
 	device, err := h.svc.AddDevice(c, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -116,7 +117,7 @@ func (h *Handler) ModifyDeviceById(c *gin.Context) {
 	}
 
 	if err := h.svc.ModifyDeviceById(c, id, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -132,7 +133,7 @@ func (h *Handler) ModifyDeviceBySN(c *gin.Context) {
 	}
 
 	if err := h.svc.ModifyDeviceBySN(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -148,7 +149,7 @@ func (h *Handler) DeleteDevice(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteDevice(c, id); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -169,7 +170,7 @@ func (h *Handler) GetDeviceParams(c *gin.Context) {
 
 	params, err := h.svc.GetDeviceParams(c, id)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -191,7 +192,7 @@ func (h *Handler) SetDeviceParams(c *gin.Context) {
 	}
 
 	if err := h.svc.SetDeviceParams(c, id, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -214,7 +215,7 @@ func (h *Handler) PresetDeviceParams(c *gin.Context) {
 
 	status, err := h.svc.PresetDeviceParams(c, id, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -235,7 +236,7 @@ func (h *Handler) GetRequestStatus(c *gin.Context) {
 
 	status, err := h.svc.GetRequestStatus(requestId)
 	if err != nil {
-		utils.Error(c, 404, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -252,7 +253,7 @@ func (h *Handler) ListAlarms(c *gin.Context) {
 
 	data, total, err := h.svc.ListAlarms(c, offset, limit)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -269,7 +270,7 @@ func (h *Handler) SyncAlarm(c *gin.Context) {
 
 	data, err := h.svc.SyncAlarms(c, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -285,7 +286,7 @@ func (h *Handler) ClearAlarm(c *gin.Context) {
 	}
 
 	if err := h.svc.ClearAlarms(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -318,13 +319,13 @@ func (h *Handler) UploadUpgradeFile(c *gin.Context) {
 
 	if err := c.SaveUploadedFile(file, filePath); err != nil {
 		logger.Errorf("Failed to save uploaded file: %v", err)
-		utils.Error(c, 500, "Failed to save uploaded file")
+		utils.HandleError(c, apperror.ErrInternal.WithMessage("failed to save uploaded file"))
 		return
 	}
 
 	vo, err := h.svc.UploadUpgradeFile(c, file.Filename, filePath, file.Size)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -337,7 +338,7 @@ func (h *Handler) ListUpgradeFiles(c *gin.Context) {
 
 	data, total, err := h.svc.ListUpgradeFiles(c, offset, limit)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -354,7 +355,7 @@ func (h *Handler) DeleteUpgradeFile(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteUpgradeFile(c, id); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -375,7 +376,7 @@ func (h *Handler) CreateUpgradeTask(c *gin.Context) {
 
 	vo, err := h.svc.CreateUpgradeTask(c, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -395,7 +396,7 @@ func (h *Handler) ListUpgradeTasks(c *gin.Context) {
 
 		vo, err := h.svc.GetUpgradeTask(c, id)
 		if err != nil {
-			utils.Error(c, 404, err.Error())
+			utils.HandleError(c, err)
 			return
 		}
 
@@ -408,7 +409,7 @@ func (h *Handler) ListUpgradeTasks(c *gin.Context) {
 
 	data, total, err := h.svc.ListUpgradeTasks(c, offset, limit)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -434,7 +435,7 @@ func (h *Handler) AddTBGs(c *gin.Context) {
 
 	data, err := h.svc.AddTBGs(c, reqs)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -450,7 +451,7 @@ func (h *Handler) ModifyTBGs(c *gin.Context) {
 	}
 
 	if err := h.svc.ModifyTBGs(c, reqs); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -466,7 +467,7 @@ func (h *Handler) DeleteTBGs(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteTBGs(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -479,7 +480,7 @@ func (h *Handler) ListTBGs(c *gin.Context) {
 
 	data, total, err := h.svc.ListTBGs(c, offset, limit)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -496,7 +497,7 @@ func (h *Handler) GetTBGBySN(c *gin.Context) {
 
 	tbg, err := h.svc.GetTBGBySN(sn)
 	if err != nil {
-		utils.Error(c, 404, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -513,7 +514,7 @@ func (h *Handler) GetTBGByWanMac(c *gin.Context) {
 
 	tbg, err := h.svc.GetTBGByWanMac(mac)
 	if err != nil {
-		utils.Error(c, 404, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -528,7 +529,7 @@ func (h *Handler) GetTBGByWanMac(c *gin.Context) {
 func (h *Handler) ListDeviceOnlineStatus(c *gin.Context) {
 	data, err := h.svc.ListDeviceOnlineStatus(c)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -545,7 +546,7 @@ func (h *Handler) GetDeviceOnlineStatus(c *gin.Context) {
 
 	data, err := h.svc.GetDeviceOnlineStatus(c, elementId)
 	if err != nil {
-		utils.Error(c, 404, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -560,7 +561,7 @@ func (h *Handler) GetDeviceOnlineStatus(c *gin.Context) {
 func (h *Handler) GetACSSettings(c *gin.Context) {
 	data, err := h.svc.GetACSSettings(c)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -576,7 +577,7 @@ func (h *Handler) UpdateACSSettings(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateACSSettings(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -596,7 +597,7 @@ func (h *Handler) SnmpGet(c *gin.Context) {
 	}
 
 	if err := h.svc.SnmpGet(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -612,7 +613,7 @@ func (h *Handler) SnmpSet(c *gin.Context) {
 	}
 
 	if err := h.svc.SnmpSet(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -625,7 +626,7 @@ func (h *Handler) ListSnmpOperationLogs(c *gin.Context) {
 
 	data, total, err := h.svc.ListSnmpOperationLogs(c, offset, limit)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -19,7 +20,7 @@ import (
 func (s *Service) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
 	status, err := s.repo.GetRequestStatus(requestId)
 	if err != nil {
-		return nil, fmt.Errorf("request not found")
+		return nil, apperror.ErrNotFound.WithMessage("request not found")
 	}
 	return status, nil
 }
@@ -35,7 +36,7 @@ func (s *Service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo
 	devices, err := s.repo.ListAllNonDeletedDevices(licenseId)
 	if err != nil {
 		logger.Errorf("Failed to list devices for online status: %v", err)
-		return nil, fmt.Errorf("failed to list devices")
+		return nil, apperror.Wrap(err, "LIST_DEVICE_ONLINE_STATUS_FAILED", 500, "failed to list devices")
 	}
 
 	if len(devices) == 0 {
@@ -77,7 +78,7 @@ func (s *Service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo
 func (s *Service) GetDeviceOnlineStatus(c *gin.Context, elementId int64) (*DeviceOnlineStatusVo, error) {
 	d, err := s.repo.GetDeviceByElementId(elementId)
 	if err != nil {
-		return nil, fmt.Errorf("device not found")
+		return nil, apperror.ErrDeviceNotFound
 	}
 
 	// Check Redis for online status
@@ -104,7 +105,7 @@ func (s *Service) GetACSSettings(c *gin.Context) (*RestACSConfigVo, error) {
 	configJSON, err := s.repo.GetACSConfig()
 	if err != nil {
 		logger.Errorf("Failed to get ACS config: %v", err)
-		return nil, fmt.Errorf("failed to get ACS config")
+		return nil, apperror.Wrap(err, "GET_ACS_CONFIG_FAILED", 500, "failed to get ACS config")
 	}
 
 	if configJSON == "" {
@@ -123,7 +124,7 @@ func (s *Service) GetACSSettings(c *gin.Context) (*RestACSConfigVo, error) {
 	}
 	if err := json.Unmarshal([]byte(configJSON), &fullCfg); err != nil {
 		logger.Errorf("Failed to unmarshal ACS config: %v", err)
-		return nil, fmt.Errorf("failed to parse ACS config")
+		return nil, apperror.Wrap(err, "PARSE_ACS_CONFIG_FAILED", 500, "failed to parse ACS config")
 	}
 
 	// Return without password for security
@@ -143,7 +144,7 @@ func (s *Service) UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequ
 	configJSON, err := s.repo.GetACSConfig()
 	if err != nil {
 		logger.Errorf("Failed to get existing ACS config: %v", err)
-		return fmt.Errorf("failed to get ACS config")
+		return apperror.Wrap(err, "GET_ACS_CONFIG_FAILED", 500, "failed to get ACS config")
 	}
 
 	// Parse existing config
@@ -159,7 +160,7 @@ func (s *Service) UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequ
 	if configJSON != "" {
 		if err := json.Unmarshal([]byte(configJSON), &existing); err != nil {
 			logger.Errorf("Failed to unmarshal existing ACS config: %v", err)
-			return fmt.Errorf("failed to parse existing ACS config")
+			return apperror.Wrap(err, "PARSE_ACS_CONFIG_FAILED", 500, "failed to parse existing ACS config")
 		}
 	}
 
@@ -189,13 +190,13 @@ func (s *Service) UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequ
 	// Marshal updated config
 	data, err := json.Marshal(existing)
 	if err != nil {
-		return fmt.Errorf("failed to marshal ACS config")
+		return apperror.Wrap(err, "MARSHAL_ACS_CONFIG_FAILED", 500, "failed to marshal ACS config")
 	}
 
 	// Save to DB
 	if err := s.repo.UpdateACSConfig(string(data)); err != nil {
 		logger.Errorf("Failed to update ACS config: %v", err)
-		return fmt.Errorf("failed to update ACS config")
+		return apperror.Wrap(err, "UPDATE_ACS_CONFIG_FAILED", 500, "failed to update ACS config")
 	}
 
 	// Also update Redis cache

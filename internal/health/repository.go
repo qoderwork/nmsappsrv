@@ -1,7 +1,7 @@
 package health
 
 import (
-	"fmt"
+	"nmsappsrv/pkg/apperror"
 
 	"gorm.io/gorm"
 )
@@ -20,7 +20,7 @@ func NewRepository(db *gorm.DB) *Repository {
 func (r *Repository) GetMysqlGlobalStatus() (map[string]string, error) {
 	rows, err := r.db.Raw("SHOW GLOBAL STATUS").Rows()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get mysql status: %w", err)
+		return nil, apperror.Wrap(err, "GET_MYSQL_STATUS_FAILED", 500, "failed to get mysql status")
 	}
 	defer rows.Close()
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"nmsappsrv/pkg/apperror"
 	redisclient "nmsappsrv/pkg/redis"
 )
 
@@ -96,7 +97,7 @@ func (s *Service) listOnlineStatistics(ctx context.Context, query *ListCpeOnline
 // ListProductTypeAndDeviceCount returns device count grouped by product type with online/offline status
 func (s *Service) ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenancyId *int) (*ListProductTypeAndDeviceCountVO, error) {
 	if mode == "" {
-		return nil, fmt.Errorf("mode is required")
+		return nil, apperror.ErrInvalidInput.WithMessage("mode is required")
 	}
 
 	devices, err := s.repo.ListDevicesByMode(ctx, mode, tenancyId)
@@ -329,7 +330,7 @@ func (s *Service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*Li
 // StatisticKPIForDevicelop returns KPI statistics for device groups
 func (s *Service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error) {
 	if len(deviceGroupIds) == 0 {
-		return nil, fmt.Errorf("deviceGroupId is required")
+		return nil, apperror.ErrInvalidInput.WithMessage("deviceGroupId is required")
 	}
 
 	// Default granularity

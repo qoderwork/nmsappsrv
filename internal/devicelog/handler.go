@@ -26,7 +26,7 @@ func (h *Handler) AddLogCollectionTask(c *gin.Context) {
 	}
 
 	if err := h.svc.AddLogCollectionTask(c, &req); err != nil {
-		utils.Error(c, 500, "Failed to add log collection task: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -42,7 +42,7 @@ func (h *Handler) ListLogCollectionResults(c *gin.Context) {
 
 	results, total, err := h.svc.ListLogCollectionResults(c, &req)
 	if err != nil {
-		utils.Error(c, 500, "Failed to list log collection results: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *Handler) DeleteAllLogFile(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteAllLogFile(&req); err != nil {
-		utils.Error(c, 500, "Failed to delete all log files: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *Handler) DeleteLogFile(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteLogFile(&req); err != nil {
-		utils.Error(c, 500, "Failed to delete log file: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *Handler) DownloadLogFile(c *gin.Context) {
 
 	filePath, err := h.svc.GetLogFile(logId)
 	if err != nil {
-		utils.Error(c, 500, "Failed to get log file: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *Handler) ListLogFiles(c *gin.Context) {
 
 	files, total, err := h.svc.ListLogFiles(&req)
 	if err != nil {
-		utils.Error(c, 500, "Failed to list log files: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *Handler) EnablePeriodicUpload(c *gin.Context) {
 	}
 
 	if err := h.svc.EnablePeriodicUpload(c, &req); err != nil {
-		utils.Error(c, 500, "Failed to enable periodic upload: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -147,7 +147,7 @@ func (h *Handler) DisablePeriodicUpload(c *gin.Context) {
 	}
 
 	if err := h.svc.DisablePeriodicUpload(c, &req); err != nil {
-		utils.Error(c, 500, "Failed to disable periodic upload: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

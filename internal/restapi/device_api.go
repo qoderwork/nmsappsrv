@@ -1,10 +1,9 @@
 package restapi
 
 import (
-	"fmt"
-
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -51,7 +50,7 @@ func (s *Service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
 
 	d, err := s.repo.GetDeviceById(id, licenseId)
 	if err != nil {
-		return nil, fmt.Errorf("device not found")
+		return nil, apperror.ErrDeviceNotFound
 	}
 
 	vo := &RestDeviceVo{
@@ -76,16 +75,16 @@ func (s *Service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDev
 	// Check for duplicate serial number
 	existing, _ := s.repo.GetDeviceBySN(req.SerialNumber, licenseId)
 	if existing != nil {
-		return nil, fmt.Errorf("device with serial number %s already exists", req.SerialNumber)
+		return nil, apperror.ErrDeviceAlreadyExist
 	}
 
 	// Check device limit (default max 10000)
 	count, err := s.repo.CountDevices(licenseId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check device count")
+		return nil, apperror.Wrap(err, "CHECK_DEVICE_COUNT_FAILED", 500, "failed to check device count")
 	}
 	if count >= 10000 {
-		return nil, fmt.Errorf("device limit reached (max 10000)")
+		return nil, apperror.ErrQuotaExceeded.WithMessage("device limit reached (max 10000)")
 	}
 
 	sn := req.SerialNumber
@@ -105,7 +104,7 @@ func (s *Service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDev
 
 	if err := s.repo.CreateDevice(d); err != nil {
 		logger.Errorf("Failed to create device: %v", err)
-		return nil, fmt.Errorf("failed to create device")
+		return nil, apperror.Wrap(err, "CREATE_DEVICE_FAILED", 500, "failed to create device")
 	}
 
 	logger.Infof("Device added: SN=%s by user %s", req.SerialNumber, username)
@@ -127,7 +126,7 @@ func (s *Service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDevi
 
 	d, err := s.repo.GetDeviceById(id, licenseId)
 	if err != nil {
-		return fmt.Errorf("device not found")
+		return apperror.ErrDeviceNotFound
 	}
 
 	if req.DeviceName != nil {
@@ -142,7 +141,7 @@ func (s *Service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDevi
 
 	if err := s.repo.UpdateDevice(d); err != nil {
 		logger.Errorf("Failed to modify device %d: %v", id, err)
-		return fmt.Errorf("failed to modify device")
+		return apperror.Wrap(err, "MODIFY_DEVICE_FAILED", 500, "failed to modify device")
 	}
 
 	return nil
@@ -153,7 +152,7 @@ func (s *Service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequ
 
 	d, err := s.repo.GetDeviceBySN(req.SerialNumber, licenseId)
 	if err != nil {
-		return fmt.Errorf("device with serial number %s not found", req.SerialNumber)
+		return apperror.ErrDeviceNotFound
 	}
 
 	if req.DeviceName != nil {
@@ -165,7 +164,7 @@ func (s *Service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequ
 
 	if err := s.repo.UpdateDevice(d); err != nil {
 		logger.Errorf("Failed to modify device by SN %s: %v", req.SerialNumber, err)
-		return fmt.Errorf("failed to modify device")
+		return apperror.Wrap(err, "MODIFY_DEVICE_FAILED", 500, "failed to modify device")
 	}
 
 	return nil
@@ -176,7 +175,7 @@ func (s *Service) DeleteDevice(c *gin.Context, id int64) error {
 
 	if err := s.repo.SoftDeleteDevice(id, licenseId); err != nil {
 		logger.Errorf("Failed to delete device %d: %v", id, err)
-		return fmt.Errorf("failed to delete device")
+		return apperror.Wrap(err, "DELETE_DEVICE_FAILED", 500, "failed to delete device")
 	}
 
 	return nil

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +34,7 @@ func (s *Service) UploadUpgradeFile(c *gin.Context, fileName string, filePath st
 	id, err := s.repo.CreateUpgradeFile(record)
 	if err != nil {
 		logger.Errorf("Failed to create upgrade file record: %v", err)
-		return nil, fmt.Errorf("failed to upload upgrade file")
+		return nil, apperror.Wrap(err, "UPLOAD_UPGRADE_FILE_FAILED", 500, "failed to upload upgrade file")
 	}
 
 	logger.Infof("Upgrade file uploaded: %s by user %s", fileName, username)
@@ -51,7 +52,7 @@ func (s *Service) ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpg
 
 	files, total, err := s.repo.ListUpgradeFiles(licenseId, offset, limit)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, apperror.Wrap(err, "LIST_UPGRADE_FILES_FAILED", 500, "failed to list upgrade files")
 	}
 
 	var result []RestUpgradeFileVo
@@ -86,7 +87,7 @@ func (s *Service) DeleteUpgradeFile(c *gin.Context, id int) error {
 
 	if err := s.repo.DeleteUpgradeFile(id, licenseId); err != nil {
 		logger.Errorf("Failed to delete upgrade file %d: %v", id, err)
-		return fmt.Errorf("failed to delete upgrade file")
+		return apperror.Wrap(err, "DELETE_UPGRADE_FILE_FAILED", 500, "failed to delete upgrade file")
 	}
 
 	return nil
@@ -117,7 +118,7 @@ func (s *Service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest)
 	id, err := s.repo.CreateUpgradeTask(record)
 	if err != nil {
 		logger.Errorf("Failed to create upgrade task: %v", err)
-		return nil, fmt.Errorf("failed to create upgrade task")
+		return nil, apperror.Wrap(err, "CREATE_UPGRADE_TASK_FAILED", 500, "failed to create upgrade task")
 	}
 
 	logger.Infof("Upgrade task %d created by user %s for %d devices", id, username, len(req.ElementIds))
@@ -133,7 +134,7 @@ func (s *Service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest)
 func (s *Service) GetUpgradeTask(c *gin.Context, id int) (*RestUpgradeTaskVo, error) {
 	task, err := s.repo.GetUpgradeTask(id)
 	if err != nil {
-		return nil, fmt.Errorf("upgrade task not found")
+		return nil, apperror.ErrNotFound.WithMessage("upgrade task not found")
 	}
 
 	vo := &RestUpgradeTaskVo{}
@@ -155,7 +156,7 @@ func (s *Service) ListUpgradeTasks(c *gin.Context, offset, limit int) ([]RestUpg
 
 	tasks, total, err := s.repo.ListUpgradeTasks(licenseId, offset, limit)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, apperror.Wrap(err, "LIST_UPGRADE_TASKS_FAILED", 500, "failed to list upgrade tasks")
 	}
 
 	var result []RestUpgradeTaskVo

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -39,7 +40,7 @@ func (s *Service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 		if req.BackupBeginTime != "" {
 			t, err := parseTime(req.BackupBeginTime)
 			if err != nil {
-				return nil, fmt.Errorf("invalid backupBeginTime: %w", err)
+				return nil, apperror.Wrap(err, "INVALID_INPUT", 400, "invalid backup begin time")
 			}
 			schedule.BackupBeginTime = &t
 		}
@@ -57,7 +58,7 @@ func (s *Service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 
 	if err := s.repo.CreateSchedule(schedule); err != nil {
 		logger.Errorf("Failed to create backup schedule: %v", err)
-		return nil, fmt.Errorf("failed to create backup schedule")
+		return nil, apperror.ErrInternal.WithMessage("failed to create backup schedule")
 	}
 
 	logger.Infof("Created backup schedule %d (%s) by user %s", schedule.Id, req.BackupName, username)
@@ -106,7 +107,7 @@ func (s *Service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequ
 func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskRequest) error {
 	schedule, err := s.repo.GetScheduleById(req.Id)
 	if err != nil {
-		return fmt.Errorf("schedule not found")
+		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
 
 	if req.BackupName != "" {
@@ -121,7 +122,7 @@ func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskR
 	if req.BackupBeginTime != nil {
 		t, err := parseTime(*req.BackupBeginTime)
 		if err != nil {
-			return fmt.Errorf("invalid backupBeginTime: %w", err)
+			return apperror.Wrap(err, "INVALID_INPUT", 400, "invalid backup begin time")
 		}
 		schedule.BackupBeginTime = &t
 	}
@@ -137,7 +138,7 @@ func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskR
 
 	if err := s.repo.UpdateSchedule(schedule); err != nil {
 		logger.Errorf("Failed to modify backup schedule %d: %v", req.Id, err)
-		return fmt.Errorf("failed to modify backup schedule")
+		return apperror.ErrInternal.WithMessage("failed to modify backup schedule")
 	}
 
 	logger.Infof("Modified backup schedule %d", req.Id)
@@ -150,7 +151,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 
 	schedule, err := s.repo.GetScheduleById(req.Id)
 	if err != nil {
-		return fmt.Errorf("schedule not found")
+		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
 
 	now := time.Now()
@@ -159,7 +160,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 	runningStatus := 1
 	schedule.BackupStatus = &runningStatus
 	if err := s.repo.UpdateSchedule(schedule); err != nil {
-		return fmt.Errorf("failed to update schedule status")
+		return apperror.ErrInternal.WithMessage("failed to update schedule status")
 	}
 
 	// Create task execution record
@@ -179,7 +180,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 		failedStatus := 3
 		schedule.BackupStatus = &failedStatus
 		s.repo.UpdateSchedule(schedule)
-		return fmt.Errorf("failed to create task record")
+		return apperror.ErrInternal.WithMessage("failed to create task record")
 	}
 
 	// Mark task as running
@@ -228,7 +229,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 func (s *Service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
 	if err := s.repo.DeleteSchedule(req.Id); err != nil {
 		logger.Errorf("Failed to delete backup schedule %d: %v", req.Id, err)
-		return fmt.Errorf("failed to delete backup schedule")
+		return apperror.ErrInternal.WithMessage("failed to delete backup schedule")
 	}
 
 	logger.Infof("Deleted backup schedule %d", req.Id)
@@ -241,7 +242,7 @@ func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) 
 
 	schedule, err := s.repo.GetScheduleById(req.Id)
 	if err != nil {
-		return fmt.Errorf("schedule not found")
+		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
 
 	now := time.Now()
@@ -265,7 +266,7 @@ func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) 
 
 	if err := s.repo.CreateTask(task); err != nil {
 		logger.Errorf("Failed to create revert task record: %v", err)
-		return fmt.Errorf("failed to create task record")
+		return apperror.ErrInternal.WithMessage("failed to create revert task record")
 	}
 
 	// Mark task as running then done
@@ -308,7 +309,7 @@ func (s *Service) GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, err
 	config, err := s.repo.GetRetentionConfig()
 	if err != nil {
 		logger.Errorf("Failed to get backup retention config: %v", err)
-		return nil, fmt.Errorf("failed to get retention config")
+		return nil, apperror.ErrInternal.WithMessage("failed to get retention config")
 	}
 	return &GetBackupAndRestoreConfigDTO{
 		BackupFileSavedDays: derefInt(config.BackupFileSavedDays),
@@ -319,7 +320,7 @@ func (s *Service) GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, err
 func (s *Service) UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest) error {
 	config, err := s.repo.GetRetentionConfig()
 	if err != nil {
-		return fmt.Errorf("failed to get current config")
+		return apperror.ErrInternal.WithMessage("failed to get current config")
 	}
 
 	if req.BackupFileSavedDays != nil {
@@ -328,7 +329,7 @@ func (s *Service) UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest)
 
 	if err := s.repo.UpdateRetentionConfig(config); err != nil {
 		logger.Errorf("Failed to update backup retention config: %v", err)
-		return fmt.Errorf("failed to update retention config")
+		return apperror.ErrInternal.WithMessage("failed to update retention config")
 	}
 
 	logger.Infof("Updated backup retention config")
@@ -371,7 +372,7 @@ func (s *Service) ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogV
 func (s *Service) GetBackupLogDetail(req *GetNMSBackupLogDetailRequest) (*NMSBackupAndRevertLog, error) {
 	log, err := s.repo.GetLogById(req.LogId)
 	if err != nil {
-		return nil, fmt.Errorf("log not found")
+		return nil, apperror.ErrNotFound.WithMessage("backup log not found")
 	}
 	return log, nil
 }

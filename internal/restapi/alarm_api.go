@@ -1,9 +1,8 @@
 package restapi
 
 import (
-	"fmt"
-
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +17,7 @@ func (s *Service) ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, 
 
 	alarms, total, err := s.repo.ListAlarms(licenseId, offset, limit)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, apperror.Wrap(err, "LIST_ALARMS_FAILED", 500, "failed to list alarms")
 	}
 
 	var result []RestAlarmVo
@@ -44,7 +43,7 @@ func (s *Service) SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarm
 
 	alarms, err := s.repo.SyncAlarms(req.ElementIds, licenseId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sync alarms")
+		return nil, apperror.Wrap(err, "SYNC_ALARMS_FAILED", 500, "failed to sync alarms")
 	}
 
 	var result []RestAlarmVo
@@ -71,7 +70,7 @@ func (s *Service) ClearAlarms(c *gin.Context, req *ClearAlarmRequest) error {
 
 	if err := s.repo.ClearAlarms(req.AlarmIds, licenseId); err != nil {
 		logger.Errorf("Failed to clear alarms: %v", err)
-		return fmt.Errorf("failed to clear alarms")
+		return apperror.Wrap(err, "CLEAR_ALARMS_FAILED", 500, "failed to clear alarms")
 	}
 
 	logger.Infof("Cleared %d alarms by user %s", len(req.AlarmIds), username)

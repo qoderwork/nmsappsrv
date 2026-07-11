@@ -31,7 +31,7 @@ func (h *Handler) ListCpeOnlineStatistics(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListCpeOnlineStatistics(ctx, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -48,7 +48,7 @@ func (h *Handler) ListGNBOnlineStatistics(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListGNBOnlineStatistics(ctx, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -71,7 +71,7 @@ func (h *Handler) ListProductTypeAndDeviceCount(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListProductTypeAndDeviceCount(ctx, req.Mode, tenancyIdPtr)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -100,7 +100,7 @@ func (h *Handler) ListBaseStationStatistics(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListBaseStationStatistics(ctx, tenancyIdPtr, req.ElementIds, *req.StartTime, *req.EndTime)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *Handler) ListPDCPTrafficStatistic(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListPDCPTrafficStatistic(ctx, startTimeStr, endTimeStr, tenancyIdPtr)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -150,7 +150,7 @@ func (h *Handler) ListDeviceOnlineInfo(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.ListDeviceOnlineInfo(ctx, tenancyIdPtr)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -179,7 +179,7 @@ func (h *Handler) StatisticKPIForDevicelop(c *gin.Context) {
 	ctx := context.Background()
 	data, err := h.svc.StatisticKPIForDevicelop(ctx, tenancyIdPtr, req.DeviceGroupId, req.Granularity, req.Gmt, req.Timestamp)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

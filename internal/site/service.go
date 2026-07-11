@@ -2,13 +2,13 @@ package site
 
 import (
 	"encoding/json"
-	"errors"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 )
 
@@ -47,7 +47,7 @@ func (s *Service) DeleteArea(id int) error {
 		return err
 	}
 	if len(children) > 0 {
-		return errors.New("this area contains subareas and cannot be deleted")
+		return apperror.ErrConflict.WithMessage("this area contains subareas and cannot be deleted")
 	}
 	return s.repo.DeleteArea(id)
 }
@@ -101,13 +101,13 @@ func (s *Service) ListSiteBasicInfo(licenseId int) ([]SiteBasicInfo, error) {
 // CreateSite creates a new site with UUID and duplicate name check.
 func (s *Service) CreateSite(site *SiteInfo, licenseId int) error {
 	if site.SiteName == nil || *site.SiteName == "" {
-		return errors.New("site name is required")
+		return apperror.ErrInvalidInput.WithMessage("site name is required")
 	}
 
 	// Check for duplicate name within the same license
 	existing, _ := s.repo.FindSiteByNameAndLicense(*site.SiteName, licenseId)
 	if existing != nil {
-		return errors.New("site name already exists")
+		return apperror.ErrConflict.WithMessage("site name already exists")
 	}
 
 	// Generate UUID
@@ -122,20 +122,20 @@ func (s *Service) CreateSite(site *SiteInfo, licenseId int) error {
 // UpdateSite updates an existing site with duplicate name check.
 func (s *Service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
 	if site.SiteName == nil || *site.SiteName == "" {
-		return errors.New("site name is required")
+		return apperror.ErrInvalidInput.WithMessage("site name is required")
 	}
 
 	// Load existing
 	existing, err := s.repo.FindByID(id)
 	if err != nil {
-		return errors.New("site not found")
+		return apperror.ErrNotFound.WithMessage("site not found")
 	}
 
 	// Check for duplicate name (exclude current site)
 	if *site.SiteName != *existing.SiteName {
 		dup, _ := s.repo.FindSiteByNameAndLicense(*site.SiteName, licenseId)
 		if dup != nil {
-			return errors.New("site name already exists")
+			return apperror.ErrConflict.WithMessage("site name already exists")
 		}
 	}
 
@@ -198,7 +198,7 @@ func (s *Service) UpdateSystemConfig(configJSON string) error {
 	// Validate that the incoming string is valid JSON.
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(configJSON), &js); err != nil {
-		return err
+		return apperror.ErrInvalidInput.WithMessage("invalid JSON configuration")
 	}
 	cfg := &SystemConfig{Config: &configJSON}
 	return s.repo.UpdateSystemConfig(cfg)

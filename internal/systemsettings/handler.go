@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"nmsappsrv/internal/middleware"
-	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
 )
 
@@ -26,8 +25,7 @@ func (h *SystemSettingsHandler) ListDeviceSettings(c *gin.Context) {
 
 	cfg, err := h.svc.GetDeviceSettings(tenancyId)
 	if err != nil {
-		logger.Errorf("Failed to get device settings: %v", err)
-		utils.Error(c, 500, "Failed to get device settings")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -45,8 +43,7 @@ func (h *SystemSettingsHandler) UpdateDeviceSettings(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 
 	if err := h.svc.UpdateDeviceSettings(&req, tenancyId); err != nil {
-		logger.Errorf("Failed to update device settings: %v", err)
-		utils.Error(c, 500, "Failed to update device settings")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -57,8 +54,7 @@ func (h *SystemSettingsHandler) UpdateDeviceSettings(c *gin.Context) {
 func (h *SystemSettingsHandler) ListACSSettings(c *gin.Context) {
 	cfg, err := h.svc.GetACSConfig()
 	if err != nil {
-		logger.Errorf("Failed to get ACS config: %v", err)
-		utils.Error(c, 500, "Failed to get ACS config")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -74,8 +70,7 @@ func (h *SystemSettingsHandler) UpdateACSSettings(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateACSConfig(&req); err != nil {
-		logger.Errorf("Failed to update ACS config: %v", err)
-		utils.Error(c, 500, "Failed to update ACS config")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -86,8 +81,7 @@ func (h *SystemSettingsHandler) UpdateACSSettings(c *gin.Context) {
 func (h *SystemSettingsHandler) ListLogSettings(c *gin.Context) {
 	cfg, err := h.svc.GetLogConfig()
 	if err != nil {
-		logger.Errorf("Failed to get log config: %v", err)
-		utils.Error(c, 500, "Failed to get log config")
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -103,8 +97,7 @@ func (h *SystemSettingsHandler) UpdateLogSettings(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateLogConfig(&req); err != nil {
-		logger.Errorf("Failed to update log config: %v", err)
-		utils.Error(c, 500, "Failed to update log config")
+		utils.HandleError(c, err)
 		return
 	}
 

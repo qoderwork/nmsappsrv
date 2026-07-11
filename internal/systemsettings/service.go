@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"gorm.io/gorm"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -45,7 +46,7 @@ func (s *SystemSettingsService) GetDeviceSettings(tenancyId int) (*DeviceConfig,
 
 	var cfg DeviceConfig
 	if err := json.Unmarshal([]byte(value), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal device config: %w", err)
+		return nil, apperror.Wrap(err, "UNMARSHAL_DEVICE_CONFIG_FAILED", 500, "failed to unmarshal device config")
 	}
 
 	return &cfg, nil
@@ -78,7 +79,7 @@ func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRe
 	// Marshal to JSON
 	data, err := json.Marshal(existing)
 	if err != nil {
-		return fmt.Errorf("failed to marshal device config: %w", err)
+		return apperror.Wrap(err, "MARSHAL_DEVICE_CONFIG_FAILED", 500, "failed to marshal device config")
 	}
 
 	// Save to DB
@@ -107,7 +108,7 @@ func (s *SystemSettingsService) GetACSConfig() (*ACSConfig, error) {
 	var cfg ACSConfig
 	if value != "" {
 		if err := json.Unmarshal([]byte(value), &cfg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal ACS config: %w", err)
+			return nil, apperror.Wrap(err, "UNMARSHAL_ACS_CONFIG_FAILED", 500, "failed to unmarshal ACS config")
 		}
 	}
 
@@ -144,7 +145,7 @@ func (s *SystemSettingsService) UpdateACSConfig(req *UpdateACSConfigRequest) err
 		// Encrypt password
 		encrypted, err := s.encrypt(*req.AcsPassword)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt password: %w", err)
+			return apperror.Wrap(err, "ENCRYPT_PASSWORD_FAILED", 500, "failed to encrypt password")
 		}
 		existing.AcsPassword = &encrypted
 	}
@@ -161,7 +162,7 @@ func (s *SystemSettingsService) UpdateACSConfig(req *UpdateACSConfigRequest) err
 	// Marshal to JSON
 	data, err := json.Marshal(existing)
 	if err != nil {
-		return fmt.Errorf("failed to marshal ACS config: %w", err)
+		return apperror.Wrap(err, "MARSHAL_ACS_CONFIG_FAILED", 500, "failed to marshal ACS config")
 	}
 
 	// Save to DB
@@ -197,7 +198,7 @@ func (s *SystemSettingsService) GetLogConfig() (*LogConfig, error) {
 
 	var cfg LogConfig
 	if err := json.Unmarshal([]byte(value), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal log config: %w", err)
+		return nil, apperror.Wrap(err, "UNMARSHAL_LOG_CONFIG_FAILED", 500, "failed to unmarshal log config")
 	}
 
 	return &cfg, nil
@@ -225,7 +226,7 @@ func (s *SystemSettingsService) UpdateLogConfig(req *UpdateLogConfigRequest) err
 	// Marshal to JSON
 	data, err := json.Marshal(existing)
 	if err != nil {
-		return fmt.Errorf("failed to marshal log config: %w", err)
+		return apperror.Wrap(err, "MARSHAL_LOG_CONFIG_FAILED", 500, "failed to marshal log config")
 	}
 
 	// Save to DB

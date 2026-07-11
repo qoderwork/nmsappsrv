@@ -1,10 +1,9 @@
 package restapi
 
 import (
-	"fmt"
-
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -20,12 +19,12 @@ func (s *Service) GetDeviceParams(c *gin.Context, elementId int64) ([]RestParame
 	// Verify device exists and belongs to this license
 	_, err := s.repo.GetDeviceById(elementId, licenseId)
 	if err != nil {
-		return nil, fmt.Errorf("device not found")
+		return nil, apperror.ErrDeviceNotFound
 	}
 
 	params, err := s.repo.GetDeviceParams(elementId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get device parameters")
+		return nil, apperror.Wrap(err, "GET_DEVICE_PARAMS_FAILED", 500, "failed to get device parameters")
 	}
 
 	return params, nil
@@ -38,12 +37,12 @@ func (s *Service) SetDeviceParams(c *gin.Context, elementId int64, req *SetRestP
 	// Verify device exists
 	_, err := s.repo.GetDeviceById(elementId, licenseId)
 	if err != nil {
-		return fmt.Errorf("device not found")
+		return apperror.ErrDeviceNotFound
 	}
 
 	if err := s.repo.SetDeviceParams(elementId, req.Parameters); err != nil {
 		logger.Errorf("Failed to set device params for element %d: %v", elementId, err)
-		return fmt.Errorf("failed to set device parameters")
+		return apperror.Wrap(err, "SET_DEVICE_PARAMS_FAILED", 500, "failed to set device parameters")
 	}
 
 	logger.Infof("Device params set for element %d by user %s", elementId, username)
@@ -57,7 +56,7 @@ func (s *Service) PresetDeviceParams(c *gin.Context, elementId int64, req *Prese
 	// Verify device exists
 	_, err := s.repo.GetDeviceById(elementId, licenseId)
 	if err != nil {
-		return nil, fmt.Errorf("device not found")
+		return nil, apperror.ErrDeviceNotFound
 	}
 
 	// Create preset parameters task record
@@ -69,7 +68,7 @@ func (s *Service) PresetDeviceParams(c *gin.Context, elementId int64, req *Prese
 	requestId, err := s.repo.PresetDeviceParams(elementId, req.Parameters)
 	if err != nil {
 		logger.Errorf("Failed to preset device params for element %d: %v", elementId, err)
-		return nil, fmt.Errorf("failed to preset device parameters")
+		return nil, apperror.Wrap(err, "PRESET_DEVICE_PARAMS_FAILED", 500, "failed to preset device parameters")
 	}
 
 	logger.Infof("Preset params queued for element %d, requestId=%s, by user %s", elementId, requestId, username)

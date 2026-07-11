@@ -31,7 +31,7 @@ func (h *Handler) ListSites(c *gin.Context) {
 
 	data, total, err := h.svc.ListSites(licenseId, search, page, pageSize)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Paginated(c, data, total, page, pageSize)
@@ -47,7 +47,7 @@ func (h *Handler) CreateSite(c *gin.Context) {
 
 	licenseId := middleware.GetLicenseId(c)
 	if err := h.svc.CreateSite(&site, licenseId); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, site)
@@ -69,7 +69,7 @@ func (h *Handler) UpdateSite(c *gin.Context) {
 
 	licenseId := middleware.GetLicenseId(c)
 	if err := h.svc.UpdateSite(id, &site, licenseId); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, site)
@@ -84,7 +84,7 @@ func (h *Handler) DeleteSite(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteSite(id); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -95,7 +95,7 @@ func (h *Handler) ListSiteBasicInfo(c *gin.Context) {
 	licenseId := middleware.GetLicenseId(c)
 	data, err := h.svc.ListSiteBasicInfo(licenseId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -107,7 +107,7 @@ func (h *Handler) ListAreas(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 	items, err := h.svc.ListAreas(tenancyId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -121,7 +121,7 @@ func (h *Handler) GetArea(c *gin.Context) {
 	}
 	item, err := h.svc.GetArea(id)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -134,7 +134,7 @@ func (h *Handler) CreateArea(c *gin.Context) {
 		return
 	}
 	if err := h.svc.CreateArea(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -153,7 +153,7 @@ func (h *Handler) UpdateArea(c *gin.Context) {
 	}
 	item.Id = id
 	if err := h.svc.UpdateArea(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -166,7 +166,7 @@ func (h *Handler) DeleteArea(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteArea(id); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -177,7 +177,7 @@ func (h *Handler) DeleteArea(c *gin.Context) {
 func (h *Handler) GetSystemConfig(c *gin.Context) {
 	cfg, err := h.svc.GetSystemConfig()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, cfg)
@@ -192,7 +192,7 @@ func (h *Handler) UpdateSystemConfig(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateSystemConfig(body.Config); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -203,7 +203,7 @@ func (h *Handler) UpdateSystemConfig(c *gin.Context) {
 func (h *Handler) ListSystemParameters(c *gin.Context) {
 	items, err := h.svc.ListSystemParameters()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -222,7 +222,7 @@ func (h *Handler) UpdateSystemParameter(c *gin.Context) {
 	}
 	item.Id = id
 	if err := h.svc.UpdateSystemParameter(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)

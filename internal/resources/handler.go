@@ -26,7 +26,7 @@ func (h *Handler) GetCpuAndMemUsage(c *gin.Context) {
 func (h *Handler) GetTableStatus(c *gin.Context) {
 	data, err := h.svc.GetTableStatus()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, data)
@@ -45,7 +45,7 @@ func (h *Handler) SetCPUAndMemThreshold(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateThreshold(&cfg); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -55,7 +55,7 @@ func (h *Handler) SetCPUAndMemThreshold(c *gin.Context) {
 func (h *Handler) ListCPUAndMemThreshold(c *gin.Context) {
 	cfg, err := h.svc.GetThreshold()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, cfg)

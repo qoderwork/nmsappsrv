@@ -2,12 +2,12 @@ package platform
 
 import (
 	"archive/zip"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
 	"nmsappsrv/internal/config"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -51,7 +51,7 @@ func (h *Handler) GetLogo(c *gin.Context) {
 func (h *Handler) ListLogConfig(c *gin.Context) {
 	cfg, err := h.svc.GetLogConfig()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, cfg)
@@ -65,7 +65,7 @@ func (h *Handler) UpdateLogConfig(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateLogConfig(&cfg); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -75,7 +75,7 @@ func (h *Handler) UpdateLogConfig(c *gin.Context) {
 func (h *Handler) GetFTPTransferLogConfig(c *gin.Context) {
 	cfg, err := h.svc.GetFTPTransferLogConfig()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, cfg)
@@ -89,7 +89,7 @@ func (h *Handler) UpdateFTPTransferLogConfig(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateFTPTransferLogConfig(&cfg); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -99,7 +99,7 @@ func (h *Handler) UpdateFTPTransferLogConfig(c *gin.Context) {
 func (h *Handler) GetHECConfig(c *gin.Context) {
 	cfg, err := h.svc.GetHECConfig()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, cfg)
@@ -113,7 +113,7 @@ func (h *Handler) UpdateHECConfig(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateHECConfig(&cfg); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -123,7 +123,7 @@ func (h *Handler) UpdateHECConfig(c *gin.Context) {
 func (h *Handler) ListNMSSecret(c *gin.Context) {
 	secret, err := h.svc.ListNMSSecret()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, secret)
@@ -137,7 +137,7 @@ func (h *Handler) UpdateNMSSecret(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateNMSSecret(&secret); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -147,7 +147,7 @@ func (h *Handler) UpdateNMSSecret(c *gin.Context) {
 func (h *Handler) DownloadPasswordRSAPublicKey(c *gin.Context) {
 	filePath := h.platformFiles.RSAPublicKeyPath
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		utils.Error(c, 404, fmt.Sprintf("RSA public key file not found: %s", filePath))
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("RSA public key file not found"))
 		return
 	}
 	c.File(filePath)
@@ -160,14 +160,14 @@ func (h *Handler) DownloadPlatformLogs(c *gin.Context) {
 	// Check if the platform log directory exists
 	dirInfo, err := os.Stat(logDir)
 	if err != nil || !dirInfo.IsDir() {
-		utils.Error(c, 404, fmt.Sprintf("platform log directory not found: %s", logDir))
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("platform log directory not found"))
 		return
 	}
 
 	// Create a temp file for the ZIP
 	tmpFile, err := os.CreateTemp("", "platform-logs-*.zip")
 	if err != nil {
-		utils.Error(c, 500, "failed to create temp file for log archive")
+		utils.HandleError(c, apperror.Wrap(err, "INTERNAL", 500, "failed to create temp file for log archive"))
 		return
 	}
 	tmpPath := tmpFile.Name()
@@ -215,14 +215,14 @@ func (h *Handler) DownloadPlatformLogs(c *gin.Context) {
 	if err != nil {
 		zipWriter.Close()
 		tmpFile.Close()
-		utils.Error(c, 500, "failed to create log archive")
+		utils.HandleError(c, apperror.Wrap(err, "INTERNAL", 500, "failed to create log archive"))
 		return
 	}
 
 	// Close the ZIP writer and temp file
 	if err := zipWriter.Close(); err != nil {
 		tmpFile.Close()
-		utils.Error(c, 500, "failed to finalize log archive")
+		utils.HandleError(c, apperror.Wrap(err, "INTERNAL", 500, "failed to finalize log archive"))
 		return
 	}
 	tmpFile.Close()
@@ -235,7 +235,7 @@ func (h *Handler) DownloadPlatformLogs(c *gin.Context) {
 func (h *Handler) DownloadNMSManualDocument(c *gin.Context) {
 	filePath := h.platformFiles.NMSManualDocPath
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		utils.Error(c, 404, fmt.Sprintf("NMS manual document not found: %s", filePath))
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("NMS manual document not found"))
 		return
 	}
 	c.FileAttachment(filePath, "nms_manual.pdf")

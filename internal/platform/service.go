@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"nmsappsrv/internal/config"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -84,7 +85,7 @@ func (s *Service) GetLogConfig() (*LogConfig, error) {
 // UpdateLogConfig updates the log level configuration
 func (s *Service) UpdateLogConfig(cfg *LogConfig) error {
 	if !isValidLogLevel(cfg.Level) {
-		return fmt.Errorf("invalid log level: %s", cfg.Level)
+		return apperror.ErrInvalidInput.WithMessage("invalid log level: " + cfg.Level)
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -123,7 +124,7 @@ func (s *Service) GetFTPTransferLogConfig() (*FTPTransferLogConfig, error) {
 // UpdateFTPTransferLogConfig updates the FTP transfer log config with encrypted password
 func (s *Service) UpdateFTPTransferLogConfig(cfg *FTPTransferLogConfig) error {
 	if cfg.Host == "" || cfg.Username == "" || cfg.Password == "" || cfg.UploadPath == "" || cfg.Port == nil {
-		return fmt.Errorf("host, username, password, uploadPath and port are required")
+		return apperror.ErrInvalidInput.WithMessage("host, username, password, uploadPath and port are required")
 	}
 
 	// Check if existing config exists
@@ -180,7 +181,7 @@ func (s *Service) GetHECConfig() (*HECConfig, error) {
 // UpdateHECConfig updates the HEC configuration
 func (s *Service) UpdateHECConfig(cfg *HECConfig) error {
 	if cfg.URL == "" || cfg.Token == "" {
-		return fmt.Errorf("url and token are required")
+		return apperror.ErrInvalidInput.WithMessage("url and token are required")
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -227,10 +228,10 @@ func (s *Service) ListNMSSecret() (*NMSSecret, error) {
 // UpdateNMSSecret updates NMS secret settings
 func (s *Service) UpdateNMSSecret(secret *NMSSecret) error {
 	if secret.EmailSecret == "" {
-		return fmt.Errorf("emailSecret is required")
+		return apperror.ErrInvalidInput.WithMessage("emailSecret is required")
 	}
 	if !isValidSecret(secret.EmailSecret) {
-		return fmt.Errorf("emailSecret can only contain numbers and letters and must be 32 characters long")
+		return apperror.ErrInvalidInput.WithMessage("emailSecret can only contain numbers and letters and must be 32 characters long")
 	}
 	data, err := json.Marshal(secret)
 	if err != nil {
@@ -344,7 +345,7 @@ func (s *Service) StartLogCollection() (string, error) {
 	initial := logDownloadStatus{Status: "collecting"}
 	data, _ := json.Marshal(initial)
 	if err := redis.Set(context.Background(), key, string(data), logDownloadTTL); err != nil {
-		return "", fmt.Errorf("failed to store log collection status: %w", err)
+		return "", apperror.Wrap(err, "INTERNAL", 500, "failed to store log collection status")
 	}
 
 	utils.SafeGo("platform-log-collection", func() {
@@ -467,12 +468,12 @@ func (s *Service) GetLogCollectionStatus(taskId string) (status, filePath string
 	key := logDownloadKeyPrefix + taskId
 	val, err := redis.Get(context.Background(), key)
 	if err != nil {
-		return "", "", fmt.Errorf("task not found or expired: %w", err)
+		return "", "", apperror.Wrap(err, "NOT_FOUND", 404, "task not found or expired")
 	}
 
 	var st logDownloadStatus
 	if err := json.Unmarshal([]byte(val), &st); err != nil {
-		return "", "", fmt.Errorf("invalid status data: %w", err)
+		return "", "", apperror.Wrap(err, "INTERNAL", 500, "invalid status data")
 	}
 	return st.Status, st.FilePath, nil
 }
@@ -484,10 +485,10 @@ func (s *Service) DownloadCollectedLogs(taskId string) (string, error) {
 		return "", err
 	}
 	if status != "ready" {
-		return "", fmt.Errorf("logs not ready, current status: %s", status)
+		return "", apperror.New("LOGS_NOT_READY", 409, "logs not ready, current status: "+status)
 	}
 	if filePath == "" {
-		return "", fmt.Errorf("file path is empty for task %s", taskId)
+		return "", apperror.ErrInternal.WithMessage("file path is empty for task " + taskId)
 	}
 	return filePath, nil
 }

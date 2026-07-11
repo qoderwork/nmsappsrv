@@ -2,9 +2,9 @@ package systemsettings
 
 import (
 	"errors"
-	"fmt"
 
 	"gorm.io/gorm"
+	"nmsappsrv/pkg/apperror"
 )
 
 // systemConfigModel maps to the system_config table (shared with misc package).
@@ -33,7 +33,7 @@ func (r *SystemSettingsRepository) GetSystemConfig(key string) (string, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}
-		return "", fmt.Errorf("failed to get system config: %w", err)
+		return "", apperror.Wrap(err, "GET_SYSTEM_CONFIG_FAILED", 500, "failed to get system config")
 	}
 	if cfg.Value == nil {
 		return "", nil
@@ -53,7 +53,7 @@ func (r *SystemSettingsRepository) SaveSystemConfig(key, value string) error {
 			}
 			return r.db.Create(&cfg).Error
 		}
-		return fmt.Errorf("failed to query system config: %w", err)
+		return apperror.Wrap(err, "QUERY_SYSTEM_CONFIG_FAILED", 500, "failed to query system config")
 	}
 	cfg.Value = &value
 	return r.db.Save(&cfg).Error
@@ -66,7 +66,7 @@ func (r *SystemSettingsRepository) GetSysParameter(key string) (string, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}
-		return "", fmt.Errorf("failed to get sys parameter: %w", err)
+		return "", apperror.Wrap(err, "GET_SYS_PARAMETER_FAILED", 500, "failed to get sys parameter")
 	}
 	if param.Value == nil {
 		return "", nil
@@ -86,7 +86,7 @@ func (r *SystemSettingsRepository) SaveSysParameter(key, value string) error {
 			}
 			return r.db.Create(&param).Error
 		}
-		return fmt.Errorf("failed to query sys parameter: %w", err)
+		return apperror.Wrap(err, "QUERY_SYS_PARAMETER_FAILED", 500, "failed to query sys parameter")
 	}
 	param.Value = &value
 	return r.db.Save(&param).Error

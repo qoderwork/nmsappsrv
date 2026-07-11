@@ -2,9 +2,10 @@ package dashboard
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
+
+	"nmsappsrv/pkg/apperror"
 
 	"gorm.io/gorm"
 )
@@ -39,7 +40,7 @@ func (r *Repository) ListDevicesByMode(ctx context.Context, mode string, tenancy
 	case "gNB":
 		q = q.Where("device_type = ? AND generation = ?", "enb", "NR")
 	default:
-		return nil, fmt.Errorf("invalid mode: %s", mode)
+		return nil, apperror.New("INVALID_MODE", 400, "invalid mode: "+mode)
 	}
 
 	err := q.Scan(&results).Error

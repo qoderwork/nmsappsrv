@@ -26,7 +26,7 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 func (h *Handler) GetMysqlInfo(c *gin.Context) {
 	info, err := h.svc.GetMysqlInfo()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, info)
@@ -36,7 +36,7 @@ func (h *Handler) GetMysqlInfo(c *gin.Context) {
 func (h *Handler) GetRedisInfo(c *gin.Context) {
 	info, err := h.svc.GetRedisInfo()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, info)
@@ -57,7 +57,7 @@ func (h *Handler) ReportHAStatus(c *gin.Context) {
 	}
 
 	if err := h.svc.ReportHAStatus(status); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

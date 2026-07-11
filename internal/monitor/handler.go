@@ -26,7 +26,7 @@ func (h *Handler) ListMonitorTasks(c *gin.Context) {
 	licenseId := middleware.GetLicenseId(c)
 	items, err := h.svc.ListMonitorTasks(licenseId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -40,7 +40,7 @@ func (h *Handler) GetMonitorTask(c *gin.Context) {
 	}
 	item, err := h.svc.GetMonitorTask(id)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -53,7 +53,7 @@ func (h *Handler) CreateMonitorTask(c *gin.Context) {
 		return
 	}
 	if err := h.svc.CreateMonitorTask(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -72,7 +72,7 @@ func (h *Handler) UpdateMonitorTask(c *gin.Context) {
 	}
 	item.Id = id
 	if err := h.svc.UpdateMonitorTask(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -85,7 +85,7 @@ func (h *Handler) DeleteMonitorTask(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteMonitorTask(id); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -104,7 +104,7 @@ func (h *Handler) GetMonitorData(c *gin.Context) {
 	endTime := c.Query("end_time")
 	items, err := h.svc.GetMonitorData(elementId, parameterId, startTime, endTime)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -120,7 +120,7 @@ func (h *Handler) GetMonitorElements(c *gin.Context) {
 	}
 	items, err := h.svc.GetMonitorElements(id)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -140,7 +140,7 @@ func (h *Handler) SaveMonitorElements(c *gin.Context) {
 		return
 	}
 	if err := h.svc.SaveMonitorElements(id, body.ElementIds); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -156,7 +156,7 @@ func (h *Handler) GetMonitorParameters(c *gin.Context) {
 	}
 	items, err := h.svc.GetMonitorParameters(id)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -176,7 +176,7 @@ func (h *Handler) SaveMonitorParameters(c *gin.Context) {
 		return
 	}
 	if err := h.svc.SaveMonitorParameters(id, body.ParameterIds); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)

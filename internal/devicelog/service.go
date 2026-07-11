@@ -3,8 +3,8 @@ package devicelog
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"os"
@@ -134,7 +134,7 @@ func (s *Service) GetLogFile(logId int64) (string, error) {
 	}
 
 	if log.FilePath == nil {
-		return "", fmt.Errorf("file path is empty")
+		return "", apperror.ErrNotFound.WithMessage("log file path is empty")
 	}
 
 	return *log.FilePath, nil
@@ -180,7 +180,7 @@ func (s *Service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUpload
 		Where("ne_neid = ? AND deleted = ?", req.ElementId, false).
 		First(&device).Error
 	if err != nil {
-		return fmt.Errorf("device not found")
+		return apperror.ErrDeviceNotFound
 	}
 
 	// Determine TR-069 path based on rootNode
@@ -221,7 +221,7 @@ func (s *Service) DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUplo
 		Where("ne_neid = ? AND deleted = ?", req.ElementId, false).
 		First(&device).Error
 	if err != nil {
-		return fmt.Errorf("device not found")
+		return apperror.ErrDeviceNotFound
 	}
 
 	// Determine TR-069 path based on rootNode

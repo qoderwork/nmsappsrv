@@ -3,8 +3,8 @@ package nmsbackup
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 
@@ -152,7 +152,7 @@ func (r *Repository) GetRetentionConfig() (*BackupRetentionConfig, error) {
 
 	var config BackupRetentionConfig
 	if err := json.Unmarshal([]byte(value), &config); err != nil {
-		return nil, fmt.Errorf("failed to parse retention config: %w", err)
+		return nil, apperror.Wrap(err, "INTERNAL", 500, "failed to parse retention config")
 	}
 
 	// Cache to Redis
@@ -168,7 +168,7 @@ func (r *Repository) UpdateRetentionConfig(config *BackupRetentionConfig) error 
 
 	jsonData, err := json.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal retention config: %w", err)
+		return apperror.Wrap(err, "INTERNAL", 500, "failed to marshal retention config")
 	}
 
 	// Update database

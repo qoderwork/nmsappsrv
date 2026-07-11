@@ -27,7 +27,7 @@ func (h *Handler) AddTenancy(c *gin.Context) {
 
 	id, err := h.svc.AddTenancy(&req)
 	if err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *Handler) UpdateTenancy(c *gin.Context) {
 
 	result, err := h.svc.UpdateTenancy(&req)
 	if err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -61,7 +61,7 @@ func (h *Handler) ListTenancy(c *gin.Context) {
 
 	items, total, err := h.svc.ListTenancies(&query)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *Handler) DeleteTenancy(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteTenancy(req.Id); err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *Handler) ViewTenancy(c *gin.Context) {
 
 	result, err := h.svc.ViewTenancy(req.Id)
 	if err != nil {
-		utils.Error(c, 400, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

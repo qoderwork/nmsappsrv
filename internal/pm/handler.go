@@ -26,7 +26,7 @@ func (h *Handler) ListKPIs(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 	items, err := h.svc.ListKPIs(tenancyId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -36,7 +36,7 @@ func (h *Handler) GetKPI(c *gin.Context) {
 	id := c.Param("id")
 	item, err := h.svc.GetKPI(id)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -49,7 +49,7 @@ func (h *Handler) CreateKPI(c *gin.Context) {
 		return
 	}
 	if err := h.svc.CreateKPI(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -64,7 +64,7 @@ func (h *Handler) UpdateKPI(c *gin.Context) {
 	}
 	item.Id = id
 	if err := h.svc.UpdateKPI(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -73,7 +73,7 @@ func (h *Handler) UpdateKPI(c *gin.Context) {
 func (h *Handler) DeleteKPI(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.DeleteKPI(id); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -85,7 +85,7 @@ func (h *Handler) ListKPISets(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 	items, err := h.svc.ListKPISets(tenancyId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -98,7 +98,7 @@ func (h *Handler) CreateKPISet(c *gin.Context) {
 		return
 	}
 	if err := h.svc.CreateKPISet(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -110,7 +110,7 @@ func (h *Handler) ListKPITemplates(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 	items, err := h.svc.ListKPITemplates(tenancyId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -123,7 +123,7 @@ func (h *Handler) CreateKPITemplate(c *gin.Context) {
 		return
 	}
 	if err := h.svc.CreateKPITemplate(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -143,7 +143,7 @@ func (h *Handler) UpdateKPITemplate(c *gin.Context) {
 	}
 	item.Id = intID
 	if err := h.svc.UpdateKPITemplate(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -157,7 +157,7 @@ func (h *Handler) DeleteKPITemplate(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteKPITemplate(intID); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -177,7 +177,7 @@ func (h *Handler) ListPMFileLogs(c *gin.Context) {
 	}
 	items, total, err := h.svc.ListPMFileLogs(tenancyId, page, pageSize)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Paginated(c, items, total, page, pageSize)
@@ -189,7 +189,7 @@ func (h *Handler) ListKPIAlarms(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 	items, err := h.svc.ListKPIAlarmTemplates(tenancyId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -202,7 +202,7 @@ func (h *Handler) CreateKPIAlarm(c *gin.Context) {
 		return
 	}
 	if err := h.svc.CreateKPIAlarmTemplate(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -222,7 +222,7 @@ func (h *Handler) UpdateKPIAlarm(c *gin.Context) {
 	}
 	item.Id = intID
 	if err := h.svc.UpdateKPIAlarmTemplate(&item); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, item)
@@ -236,7 +236,7 @@ func (h *Handler) DeleteKPIAlarm(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteKPIAlarmTemplate(intID); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, nil)
@@ -250,7 +250,7 @@ func (h *Handler) GetDashboardData(c *gin.Context) {
 	endTime := c.Query("end_time")
 	items, err := h.svc.GetDashboardData(tenancyId, startTime, endTime)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -264,7 +264,7 @@ func (h *Handler) GetPDCPTraffic(c *gin.Context) {
 	endTime := c.Query("end_time")
 	items, err := h.svc.GetPDCPTraffic(tenancyId, startTime, endTime)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)
@@ -276,7 +276,7 @@ func (h *Handler) GetDeviceOnlineInfo(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)
 	info, err := h.svc.GetDeviceOnlineInfo(tenancyId)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, info)
@@ -289,7 +289,7 @@ func (h *Handler) GetProductTypeAndDeviceCount(c *gin.Context) {
 	mode := c.DefaultQuery("mode", "")
 	items, err := h.svc.GetProductTypeAndDeviceCount(tenancyId, mode)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 	utils.Success(c, items)

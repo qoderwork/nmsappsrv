@@ -24,7 +24,7 @@ func (h *Handler) AddNMSBackupTask(c *gin.Context) {
 
 	schedule, err := h.svc.AddBackupSchedule(c, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *Handler) ListNMSBackupTask(c *gin.Context) {
 
 	data, total, err := h.svc.ListBackupSchedules(c, &req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *Handler) ModifyNMSBackupTask(c *gin.Context) {
 	}
 
 	if err := h.svc.ModifyBackupSchedule(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -82,7 +82,7 @@ func (h *Handler) RunNMSBackupTask(c *gin.Context) {
 	}
 
 	if err := h.svc.RunBackup(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *Handler) DeleteNMSBackupTask(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteBackupSchedule(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *Handler) RevertNMSBackupTask(c *gin.Context) {
 	}
 
 	if err := h.svc.RevertBackup(c, &req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *Handler) RevertNMSBackupTask(c *gin.Context) {
 func (h *Handler) GetBackupAndRestoreConfig(c *gin.Context) {
 	config, err := h.svc.GetBackupRetentionConfig()
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *Handler) UpdateBackupAndRestoreConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateBackupRetentionConfig(&req); err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -158,7 +158,7 @@ func (h *Handler) ListNMSBackupLogs(c *gin.Context) {
 
 	data, total, err := h.svc.ListBackupLogs(&req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -184,7 +184,7 @@ func (h *Handler) GetNMSBackupLogDetail(c *gin.Context) {
 
 	log, err := h.svc.GetBackupLogDetail(&req)
 	if err != nil {
-		utils.Error(c, 500, err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 

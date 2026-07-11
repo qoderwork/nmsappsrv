@@ -1,6 +1,7 @@
 package parammonitor
 
 import (
+	"nmsappsrv/pkg/apperror"
 	"strconv"
 
 	"nmsappsrv/internal/alarm"
@@ -42,7 +43,7 @@ func (h *Handler) AddMonitorConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.AddMonitorConfig(c, &req); err != nil {
-		utils.Error(c, 500, "Failed to add monitor config: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -57,7 +58,7 @@ func (h *Handler) DeleteMonitorConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteMonitorConfig(&req); err != nil {
-		utils.Error(c, 500, "Failed to delete monitor config: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -73,7 +74,7 @@ func (h *Handler) ViewMonitorConfig(c *gin.Context) {
 
 	vo, err := h.svc.ViewMonitorConfig(&req)
 	if err != nil {
-		utils.Error(c, 500, "Failed to view monitor config: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -88,7 +89,7 @@ func (h *Handler) UpdateMonitorConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateMonitorConfig(&req); err != nil {
-		utils.Error(c, 500, "Failed to update monitor config: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -104,7 +105,7 @@ func (h *Handler) ListMonitorConfigs(c *gin.Context) {
 
 	list, total, err := h.svc.ListMonitorConfigs(c, &req)
 	if err != nil {
-		utils.Error(c, 500, "Failed to list monitor configs: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -121,7 +122,7 @@ func (h *Handler) ToggleMonitorConfig(c *gin.Context) {
 	}
 
 	if err := h.svc.ToggleMonitorConfig(&req); err != nil {
-		utils.Error(c, 500, "Failed to toggle monitor config: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -137,7 +138,7 @@ func (h *Handler) GetRealtimeMonitorData(c *gin.Context) {
 
 	data, err := h.svc.GetRealtimeMonitorData(&req)
 	if err != nil {
-		utils.Error(c, 500, "Failed to get realtime monitor data: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -152,7 +153,7 @@ func (h *Handler) ReloadMonitorParameters(c *gin.Context) {
 	}
 
 	if err := h.svc.ReloadMonitorParameters(&req); err != nil {
-		utils.Error(c, 500, "Failed to reload monitor parameters: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -168,7 +169,7 @@ func (h *Handler) BatchQueryDeviceParameters(c *gin.Context) {
 
 	result, err := h.svc.BatchQueryDeviceParameters(&req)
 	if err != nil {
-		utils.Error(c, 500, "Failed to batch query device parameters: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -185,7 +186,7 @@ func (h *Handler) BatchQueryDeviceParametersLive(c *gin.Context) {
 	username := c.GetString("username")
 	result, err := h.svc.BatchQueryDeviceParametersLive(&req, username)
 	if err != nil {
-		utils.Error(c, 500, "Failed to batch query live: "+err.Error())
+		utils.HandleError(c, err)
 		return
 	}
 
@@ -206,7 +207,7 @@ func (h *Handler) CreateThresholdRule(c *gin.Context) {
 
 	repo := NewRepository(h.svc.repo.db)
 	if err := repo.CreateThresholdRule(&rule); err != nil {
-		utils.Error(c, 500, "Failed to create threshold rule: "+err.Error())
+		utils.HandleError(c, apperror.Wrap(err, "CREATE_THRESHOLD_FAILED", 500, "failed to create threshold rule"))
 		return
 	}
 
@@ -225,7 +226,7 @@ func (h *Handler) UpdateThresholdRule(c *gin.Context) {
 	repo := NewRepository(h.svc.repo.db)
 	existing, err := repo.GetThresholdRule(uint(id))
 	if err != nil {
-		utils.Error(c, 404, "Threshold rule not found")
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("threshold rule not found"))
 		return
 	}
 
@@ -258,7 +259,7 @@ func (h *Handler) UpdateThresholdRule(c *gin.Context) {
 	existing.DeviceGroupID = updates.DeviceGroupID
 
 	if err := repo.UpdateThresholdRule(existing); err != nil {
-		utils.Error(c, 500, "Failed to update threshold rule: "+err.Error())
+		utils.HandleError(c, apperror.Wrap(err, "UPDATE_THRESHOLD_FAILED", 500, "failed to update threshold rule"))
 		return
 	}
 
@@ -276,7 +277,7 @@ func (h *Handler) DeleteThresholdRule(c *gin.Context) {
 
 	repo := NewRepository(h.svc.repo.db)
 	if err := repo.DeleteThresholdRule(uint(id)); err != nil {
-		utils.Error(c, 500, "Failed to delete threshold rule: "+err.Error())
+		utils.HandleError(c, apperror.Wrap(err, "DELETE_THRESHOLD_FAILED", 500, "failed to delete threshold rule"))
 		return
 	}
 
@@ -303,7 +304,7 @@ func (h *Handler) ListThresholdRules(c *gin.Context) {
 	repo := NewRepository(h.svc.repo.db)
 	rules, total, err := repo.ListThresholdRules(enabledFilter, page, pageSize)
 	if err != nil {
-		utils.Error(c, 500, "Failed to list threshold rules: "+err.Error())
+		utils.HandleError(c, apperror.Wrap(err, "LIST_THRESHOLD_FAILED", 500, "failed to list threshold rules"))
 		return
 	}
 
@@ -322,7 +323,7 @@ func (h *Handler) GetThresholdRule(c *gin.Context) {
 	repo := NewRepository(h.svc.repo.db)
 	rule, err := repo.GetThresholdRule(uint(id))
 	if err != nil {
-		utils.Error(c, 404, "Threshold rule not found")
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("threshold rule not found"))
 		return
 	}
 
@@ -343,13 +344,13 @@ func (h *Handler) TestThresholdRule(c *gin.Context) {
 	repo := NewRepository(h.svc.repo.db)
 	rule, err := repo.GetThresholdRule(req.RuleID)
 	if err != nil {
-		utils.Error(c, 404, "Threshold rule not found")
+		utils.HandleError(c, apperror.ErrNotFound.WithMessage("threshold rule not found"))
 		return
 	}
 
 	violations, err := h.checker.evaluateRule(rule)
 	if err != nil {
-		utils.Error(c, 500, "Failed to evaluate rule: "+err.Error())
+		utils.HandleError(c, apperror.Wrap(err, "EVALUATE_THRESHOLD_FAILED", 500, "failed to evaluate rule"))
 		return
 	}
 
