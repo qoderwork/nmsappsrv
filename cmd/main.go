@@ -61,7 +61,30 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/qoderwork/go-infra/lifecycle"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	_ "nmsappsrv/docs" // swagger generated docs
 )
+
+// @title NMS Application Server API
+// @version 1.0
+// @description Network Management System for small cell base stations (gNB/eNB/CPE).
+// @description Provides device management, alarm monitoring, parameter configuration, firmware upgrade, performance metrics, and TR-069 ACS.
+
+// @contact.name API Support
+// @contact.url https://github.com/qoderwork/nmsappsrv
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Bearer JWT token. Format: "Bearer {token}"
 
 func main() {
 	// 命令行参数
@@ -183,6 +206,9 @@ func main() {
 
 	// Prometheus metrics
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	// Swagger API documentation
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// ========== 初始化所有模块Handler ==========
 	deviceH := device.NewHandler(db)

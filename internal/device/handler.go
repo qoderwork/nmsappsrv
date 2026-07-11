@@ -28,7 +28,19 @@ func NewHandler(db *gorm.DB) *Handler {
 // Device endpoints
 // ---------------------------------------------------------------------------
 
-// ListDevices handles GET /devices?page=1&pageSize=20&keyword=xxx
+// ListDevices godoc
+// @Summary List devices
+// @Description Returns a paginated list of devices for the authenticated tenant
+// @Tags devices
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number (default 1)"
+// @Param pageSize query int false "Page size (default 20)"
+// @Param keyword query string false "Search keyword (matches device_name or serial_number)"
+// @Security BearerAuth
+// @Success 200 {object} utils.PaginatedResponse
+// @Failure 500 {object} utils.Response
+// @Router /devices [get]
 func (h *Handler) ListDevices(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
@@ -43,7 +55,18 @@ func (h *Handler) ListDevices(c *gin.Context) {
 	utils.Paginated(c, data, total, page, pageSize)
 }
 
-// GetDevice handles GET /devices/:id
+// GetDevice godoc
+// @Summary Get device by ID
+// @Description Returns a single device by its primary key
+// @Tags devices
+// @Accept json
+// @Produce json
+// @Param id path int true "Device ID"
+// @Security BearerAuth
+// @Success 200 {object} utils.Response
+// @Failure 400 {object} utils.Response
+// @Failure 404 {object} utils.Response
+// @Router /devices/{id} [get]
 func (h *Handler) GetDevice(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -59,7 +82,17 @@ func (h *Handler) GetDevice(c *gin.Context) {
 	utils.Success(c, elem)
 }
 
-// CreateDevice handles POST /devices
+// CreateDevice godoc
+// @Summary Create a device
+// @Description Creates a new device record
+// @Tags devices
+// @Accept json
+// @Produce json
+// @Param device body CpeElement true "Device data"
+// @Security BearerAuth
+// @Success 200 {object} utils.Response
+// @Failure 400 {object} utils.Response
+// @Router /devices [post]
 func (h *Handler) CreateDevice(c *gin.Context) {
 	var elem CpeElement
 	if err := c.ShouldBindJSON(&elem); err != nil {
@@ -74,7 +107,19 @@ func (h *Handler) CreateDevice(c *gin.Context) {
 	utils.Success(c, elem)
 }
 
-// UpdateDevice handles PUT /devices/:id
+// UpdateDevice godoc
+// @Summary Update a device
+// @Description Updates an existing device record
+// @Tags devices
+// @Accept json
+// @Produce json
+// @Param id path int true "Device ID"
+// @Param device body CpeElement true "Device data"
+// @Security BearerAuth
+// @Success 200 {object} utils.Response
+// @Failure 400 {object} utils.Response
+// @Failure 404 {object} utils.Response
+// @Router /devices/{id} [put]
 func (h *Handler) UpdateDevice(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -96,7 +141,18 @@ func (h *Handler) UpdateDevice(c *gin.Context) {
 	utils.Success(c, elem)
 }
 
-// DeleteDevice handles DELETE /devices/:id
+// DeleteDevice godoc
+// @Summary Delete a device
+// @Description Soft-deletes a device (sets deleted=true)
+// @Tags devices
+// @Accept json
+// @Produce json
+// @Param id path int true "Device ID"
+// @Security BearerAuth
+// @Success 200 {object} utils.Response
+// @Failure 400 {object} utils.Response
+// @Failure 404 {object} utils.Response
+// @Router /devices/{id} [delete]
 func (h *Handler) DeleteDevice(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -175,9 +231,19 @@ func (h *Handler) DeleteGroup(c *gin.Context) {
 // Device Import
 // ---------------------------------------------------------------------------
 
-// ImportDevices handles POST /devices/import
-// Accepts a multipart file upload (field name "file") and optional query
-// parameters: deviceGroupId, deviceType (gnb/enb/cpe).
+// ImportDevices godoc
+// @Summary Import devices from Excel
+// @Description Upload an Excel file to batch-import devices. Supports Add/Modify/Delete operations per row.
+// @Tags devices
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Excel file (.xlsx)"
+// @Param deviceGroupId formData string false "Target device group ID"
+// @Param deviceType formData string false "Device type (gnb/enb/cpe)" Enums(gnb, enb, cpe)
+// @Security BearerAuth
+// @Success 200 {object} utils.Response
+// @Failure 400 {object} utils.Response
+// @Router /devices/import [post]
 func (h *Handler) ImportDevices(c *gin.Context) {
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {

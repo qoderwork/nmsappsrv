@@ -1,0 +1,352 @@
+basePath: /api/v1
+definitions:
+  internal_device.CpeElement:
+    properties:
+      aos_file_name:
+        type: string
+      cbsd_cert_file:
+        type: string
+      cbsd_cert_file_upload_time:
+        type: string
+      config_file:
+        type: string
+      config_file_upload_time:
+        type: string
+      connection_request_password:
+        type: string
+      connection_request_username:
+        type: string
+      coon_req_url:
+        type: string
+      creation_time:
+        type: string
+      deleted:
+        type: boolean
+      device_ip:
+        type: string
+      device_name:
+        type: string
+      device_type:
+        type: string
+      e911_data:
+        type: string
+      firmware_version:
+        type: string
+      full_software_version:
+        type: string
+      generation:
+        type: string
+      hardware_version:
+        type: string
+      in_diagnostics:
+        type: boolean
+      initial_id:
+        type: integer
+      installation_location:
+        type: string
+      ip:
+        type: string
+      is_initialized:
+        type: boolean
+      is_new_version:
+        type: boolean
+      last_log_collection_time:
+        type: string
+      latitude:
+        type: string
+      license_id:
+        type: integer
+      loaded_basic_info:
+        type: boolean
+      longitude:
+        type: string
+      low_resource:
+        type: boolean
+      mac:
+        type: string
+      maintainer_info_id:
+        type: string
+      manufacturer:
+        type: string
+      market:
+        type: string
+      model_name:
+        type: string
+      ne_areaid:
+        type: integer
+      ne_neid:
+        type: integer
+      open_station_config_status:
+        type: string
+      oui:
+        type: string
+      port:
+        type: integer
+      product:
+        type: string
+      psap_id:
+        type: string
+      ready_to_ztp:
+        type: boolean
+      root_node:
+        type: string
+      serial_number:
+        type: string
+      site_id:
+        type: string
+      software_version:
+        type: string
+      status:
+        type: string
+      stm_version:
+        type: string
+      target_hardware_version:
+        type: string
+      target_version:
+        type: string
+      wifi_or_gps_info:
+        type: string
+      ztp_parameters:
+        type: string
+    type: object
+  nmsappsrv_pkg_utils.PaginatedResponse:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  nmsappsrv_pkg_utils.Response:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+    url: https://github.com/qoderwork/nmsappsrv
+  description: |-
+    Network Management System for small cell base stations (gNB/eNB/CPE).
+    Provides device management, alarm monitoring, parameter configuration, firmware upgrade, performance metrics, and TR-069 ACS.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: NMS Application Server API
+  version: "1.0"
+paths:
+  /devices:
+    get:
+      consumes:
+      - application/json
+      description: Returns a paginated list of devices for the authenticated tenant
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 20)
+        in: query
+        name: pageSize
+        type: integer
+      - description: Search keyword (matches device_name or serial_number)
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.PaginatedResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: List devices
+      tags:
+      - devices
+    post:
+      consumes:
+      - application/json
+      description: Creates a new device record
+      parameters:
+      - description: Device data
+        in: body
+        name: device
+        required: true
+        schema:
+          $ref: '#/definitions/internal_device.CpeElement'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a device
+      tags:
+      - devices
+  /devices/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft-deletes a device (sets deleted=true)
+      parameters:
+      - description: Device ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a device
+      tags:
+      - devices
+    get:
+      consumes:
+      - application/json
+      description: Returns a single device by its primary key
+      parameters:
+      - description: Device ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: Get device by ID
+      tags:
+      - devices
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing device record
+      parameters:
+      - description: Device ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Device data
+        in: body
+        name: device
+        required: true
+        schema:
+          $ref: '#/definitions/internal_device.CpeElement'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a device
+      tags:
+      - devices
+  /devices/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload an Excel file to batch-import devices. Supports Add/Modify/Delete
+        operations per row.
+      parameters:
+      - description: Excel file (.xlsx)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Target device group ID
+        in: formData
+        name: deviceGroupId
+        type: string
+      - description: Device type (gnb/enb/cpe)
+        enum:
+        - gnb
+        - enb
+        - cpe
+        in: formData
+        name: deviceType
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/nmsappsrv_pkg_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: Import devices from Excel
+      tags:
+      - devices
+securityDefinitions:
+  BearerAuth:
+    description: 'Bearer JWT token. Format: "Bearer {token}"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

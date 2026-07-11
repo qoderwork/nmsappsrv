@@ -1,0 +1,536 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Network Management System for small cell base stations (gNB/eNB/CPE).\nProvides device management, alarm monitoring, parameter configuration, firmware upgrade, performance metrics, and TR-069 ACS.",
+        "title": "NMS Application Server API",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/qoderwork/nmsappsrv"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/devices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of devices for the authenticated tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "List devices",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 20)",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search keyword (matches device_name or serial_number)",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.PaginatedResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new device record",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Create a device",
+                "parameters": [
+                    {
+                        "description": "Device data",
+                        "name": "device",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_device.CpeElement"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upload an Excel file to batch-import devices. Supports Add/Modify/Delete operations per row.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Import devices from Excel",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Excel file (.xlsx)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Target device group ID",
+                        "name": "deviceGroupId",
+                        "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            "gnb",
+                            "enb",
+                            "cpe"
+                        ],
+                        "type": "string",
+                        "description": "Device type (gnb/enb/cpe)",
+                        "name": "deviceType",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a single device by its primary key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Get device by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates an existing device record",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Update a device",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Device data",
+                        "name": "device",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_device.CpeElement"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft-deletes a device (sets deleted=true)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Delete a device",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/nmsappsrv_pkg_utils.Response"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "internal_device.CpeElement": {
+            "type": "object",
+            "properties": {
+                "aos_file_name": {
+                    "type": "string"
+                },
+                "cbsd_cert_file": {
+                    "type": "string"
+                },
+                "cbsd_cert_file_upload_time": {
+                    "type": "string"
+                },
+                "config_file": {
+                    "type": "string"
+                },
+                "config_file_upload_time": {
+                    "type": "string"
+                },
+                "connection_request_password": {
+                    "type": "string"
+                },
+                "connection_request_username": {
+                    "type": "string"
+                },
+                "coon_req_url": {
+                    "type": "string"
+                },
+                "creation_time": {
+                    "type": "string"
+                },
+                "deleted": {
+                    "type": "boolean"
+                },
+                "device_ip": {
+                    "type": "string"
+                },
+                "device_name": {
+                    "type": "string"
+                },
+                "device_type": {
+                    "type": "string"
+                },
+                "e911_data": {
+                    "type": "string"
+                },
+                "firmware_version": {
+                    "type": "string"
+                },
+                "full_software_version": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "hardware_version": {
+                    "type": "string"
+                },
+                "in_diagnostics": {
+                    "type": "boolean"
+                },
+                "initial_id": {
+                    "type": "integer"
+                },
+                "installation_location": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "is_initialized": {
+                    "type": "boolean"
+                },
+                "is_new_version": {
+                    "type": "boolean"
+                },
+                "last_log_collection_time": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "string"
+                },
+                "license_id": {
+                    "type": "integer"
+                },
+                "loaded_basic_info": {
+                    "type": "boolean"
+                },
+                "longitude": {
+                    "type": "string"
+                },
+                "low_resource": {
+                    "type": "boolean"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "maintainer_info_id": {
+                    "type": "string"
+                },
+                "manufacturer": {
+                    "type": "string"
+                },
+                "market": {
+                    "type": "string"
+                },
+                "model_name": {
+                    "type": "string"
+                },
+                "ne_areaid": {
+                    "type": "integer"
+                },
+                "ne_neid": {
+                    "type": "integer"
+                },
+                "open_station_config_status": {
+                    "type": "string"
+                },
+                "oui": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "product": {
+                    "type": "string"
+                },
+                "psap_id": {
+                    "type": "string"
+                },
+                "ready_to_ztp": {
+                    "type": "boolean"
+                },
+                "root_node": {
+                    "type": "string"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "site_id": {
+                    "type": "string"
+                },
+                "software_version": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "stm_version": {
+                    "type": "string"
+                },
+                "target_hardware_version": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "string"
+                },
+                "wifi_or_gps_info": {
+                    "type": "string"
+                },
+                "ztp_parameters": {
+                    "type": "string"
+                }
+            }
+        },
+        "nmsappsrv_pkg_utils.PaginatedResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nmsappsrv_pkg_utils.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Bearer JWT token. Format: \"Bearer {token}\"",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
