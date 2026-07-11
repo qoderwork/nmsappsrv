@@ -164,6 +164,11 @@ func Load(configPath ...string) (*Config, error) {
 		Cfg.PlatformFiles.PlatformLogDir = "./logs/platform"
 	}
 
+	// Validate required fields
+	if err := Cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
 	// 初始化日志
 	logger.Init(logger.Config{
 		Filename:      Cfg.Logger.Filename,
@@ -186,4 +191,33 @@ func GetSNMPEnterpriseOID() string {
 		return ""
 	}
 	return Cfg.SNMP.EnterpriseOID
+}
+
+// Validate checks that all required configuration fields are set.
+func (c *Config) Validate() error {
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("server.port must be between 1 and 65535, got %d", c.Server.Port)
+	}
+	if c.DB.Host == "" {
+		return fmt.Errorf("database.host is required")
+	}
+	if c.DB.Port <= 0 {
+		return fmt.Errorf("database.port is required")
+	}
+	if c.DB.User == "" {
+		return fmt.Errorf("database.user is required")
+	}
+	if c.DB.DBName == "" {
+		return fmt.Errorf("database.dbname is required")
+	}
+	if c.JWT.Secret == "" {
+		return fmt.Errorf("jwt.secret is required (set via config or NMS_JWT_SECRET env var)")
+	}
+	if len(c.JWT.Secret) < 32 {
+		return fmt.Errorf("jwt.secret must be at least 32 bytes, got %d", len(c.JWT.Secret))
+	}
+	if c.Mail.AESKey != "" && len(c.Mail.AESKey) != 64 {
+		return fmt.Errorf("mail.aes_key must be 64 hex characters (32 bytes), got %d", len(c.Mail.AESKey))
+	}
+	return nil
 }

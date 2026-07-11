@@ -1,0 +1,40 @@
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - misspell
+  disable:
+    - exhaustive
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+  govet:
+    enable-all: false
+  misspell:
+    locale: US
+  staticcheck:
+    checks: ["all", "-SA1019"]
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+    # Exclude known false positives
+    - linters:
+        - staticcheck
+      text: "SA1019:"
