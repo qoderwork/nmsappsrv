@@ -54,10 +54,12 @@ import (
 	"nmsappsrv/internal/websocket"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
+	"nmsappsrv/pkg/metrics"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/qoderwork/go-infra/lifecycle"
 )
 
@@ -139,14 +141,48 @@ func main() {
 
 	// 全局中间件
 	router.Use(gin.Recovery())
+	router.Use(metrics.Middleware())
 	router.Use(middleware.CORSMiddleware(cfg.Server.CORSAllowedOrigins))
+	router.Use(middleware.TraceID())
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.TenancyMiddleware())
 
-	// 健康检查
+	// 健康检查 (liveness — process alive, no dependency checks)
 	router.GET("/health", func(c *gin.Context) {
 		utils.OK(c, "ok")
 	})
+
+	// 就绪检查 (readiness — dependencies healthy)
+	router.GET("/ready", func(c *gin.Context) {
+		status := map[string]string{}
+		allOK := true
+
+		// Check MySQL
+		sqlDB, err := db.DB()
+		if err != nil || sqlDB.Ping() != nil {
+			status["mysql"] = "down"
+			allOK = false
+		} else {
+			status["mysql"] = "up"
+		}
+
+		// Check Redis
+		if err := redis.RDB.Ping(c.Request.Context()).Err(); err != nil {
+			status["redis"] = "down"
+			allOK = false
+		} else {
+			status["redis"] = "up"
+		}
+
+		if allOK {
+			utils.OK(c, status)
+		} else {
+			c.JSON(503, utils.Response{Code: 503, Message: "service not ready", Data: status})
+		}
+	})
+
+	// Prometheus metrics
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// ========== 初始化所有模块Handler ==========
 	deviceH := device.NewHandler(db)

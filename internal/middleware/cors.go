@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"time"
-
 	"github.com/gin-gonic/gin"
 
 	"nmsappsrv/pkg/logger"
@@ -44,17 +42,5 @@ func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 			return
 		}
 		c.Next()
-	}
-}
-
-// RequestLogger logs each request's method, URI, client IP, status code, and latency.
-func RequestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-		latency := time.Since(start)
-		logger.Infof("[%s] %s %s %d %v",
-			c.Request.Method, c.Request.RequestURI,
-			c.ClientIP(), c.Writer.Status(), latency)
 	}
 }
