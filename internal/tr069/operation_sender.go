@@ -1,4 +1,4 @@
-﻿package tr069
+package tr069
 
 import (
 	"context"
