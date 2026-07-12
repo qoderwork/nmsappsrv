@@ -28,6 +28,7 @@ type Service interface {
 	CreateParameterTemplate(t *ParameterTemplate) error
 	UpdateParameterTemplate(t *ParameterTemplate) error
 	DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error)
+	ListDeployTemplateLogs(templateId int64, page, pageSize int) ([]DeployTemplateLogVo, int64, error)
 	TriggerBackup(elementId int64, username string) error
 	ListBackupLogs(elementId int64) ([]ParameterBackupLog, error)
 	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error

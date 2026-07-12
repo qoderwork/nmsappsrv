@@ -144,3 +144,25 @@ type AlarmTemplate struct {
 }
 
 func (AlarmTemplate) TableName() string { return "alarm_template" }
+
+// SystemConfig maps to the system_config table for key-value configuration storage.
+type SystemConfig struct {
+	Id    int     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex" json:"key"`
+	Value *string `gorm:"column:config_value;type:longtext" json:"value"`
+}
+
+func (SystemConfig) TableName() string { return "system_config" }
+
+// AddCommentRequest is the JSON body for POST /alarms/:id/comment.
+type AddCommentRequest struct {
+	Comment string `json:"comment" binding:"required"`
+}
+
+// AlarmSyncConfig represents the alarm sync configuration stored in system_config.
+type AlarmSyncConfig struct {
+	Enabled       *bool   `json:"enabled"`
+	SyncInterval  *int    `json:"syncInterval"`
+	SourceAddress *string `json:"sourceAddress"`
+	LastSyncTime  *string `json:"lastSyncTime"`
+}

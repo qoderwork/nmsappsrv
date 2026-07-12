@@ -1,10 +1,12 @@
 package alarm
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/utils"
@@ -268,6 +270,198 @@ func (h *Handler) DeleteAlarmFilter(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteAlarmFilter(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// ---------------------------------------------------------------------------
+// AlarmLibrary – import / template
+// ---------------------------------------------------------------------------
+
+// alarmLibraryHeaders defines the column order for the import template.
+var alarmLibraryHeaders = []string{
+	"Alarm Identifier",
+	"Probable Cause",
+	"Severity",
+	"Event Type",
+	"Explanation",
+	"Specific Problem",
+	"Alarm Source",
+}
+
+// ImportAlarmLibrary handles POST /alarm-library/import
+//
+// Accepts a multipart file upload (field name "file") containing an Excel
+// workbook whose first sheet has a header row followed by data rows.
+func (h *Handler) ImportAlarmLibrary(c *gin.Context) {
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "missing or invalid file upload")
+		return
+	}
+	defer file.Close()
+
+	f, err := excelize.OpenReader(file)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "failed to open Excel file: "+err.Error())
+		return
+	}
+	defer f.Close()
+
+	sheetName := f.GetSheetName(0)
+	if sheetName == "" {
+		utils.Error(c, http.StatusBadRequest, "Excel file has no sheets")
+		return
+	}
+
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "failed to read sheet rows: "+err.Error())
+		return
+	}
+	if len(rows) < 2 {
+		utils.Error(c, http.StatusBadRequest, "Excel file must have a header row and at least one data row")
+		return
+	}
+
+	// Build a column-index map from the header row so column order is flexible.
+	headerRow := rows[0]
+	colIdx := make(map[string]int, len(headerRow))
+	for i, hdr := range headerRow {
+		colIdx[hdr] = i
+	}
+
+	strPtr := func(row []string, col string) *string {
+		idx, ok := colIdx[col]
+		if !ok || idx >= len(row) {
+			return nil
+		}
+		v := row[idx]
+		return &v
+	}
+
+	var items []AlarmLibrary
+	for _, row := range rows[1:] {
+		// Skip completely empty rows.
+		allEmpty := true
+		for _, cell := range row {
+			if cell != "" {
+				allEmpty = false
+				break
+			}
+		}
+		if allEmpty {
+			continue
+		}
+		items = append(items, AlarmLibrary{
+			AlarmIdentifier: strPtr(row, "Alarm Identifier"),
+			ProbableCause:   strPtr(row, "Probable Cause"),
+			Severity:        strPtr(row, "Severity"),
+			EventType:       strPtr(row, "Event Type"),
+			Explanation:     strPtr(row, "Explanation"),
+			SpecificProblem: strPtr(row, "Specific Problem"),
+			AlarmSource:     strPtr(row, "Alarm Source"),
+		})
+	}
+
+	if len(items) == 0 {
+		utils.Error(c, http.StatusBadRequest, "no valid data rows found in the uploaded file")
+		return
+	}
+
+	tenancyId := middleware.GetLicenseId(c)
+	imported, err := h.svc.ImportAlarmLibrary(tenancyId, items)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, map[string]interface{}{"importedCount": imported})
+}
+
+// DownloadAlarmLibraryTemplate handles GET /alarm-library/template
+//
+// Generates an Excel workbook with the alarm library column headers and serves
+// it as a downloadable file.
+func (h *Handler) DownloadAlarmLibraryTemplate(c *gin.Context) {
+	f := excelize.NewFile()
+	defer f.Close()
+
+	sheetName := "AlarmLibrary"
+	index, _ := f.NewSheet(sheetName)
+	f.SetActiveSheet(index)
+	// Remove the default "Sheet1".
+	f.DeleteSheet("Sheet1")
+
+	for i, header := range alarmLibraryHeaders {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetName, cell, header)
+	}
+
+	fileName := "alarm_library_template.xlsx"
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	if err := f.Write(c.Writer); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to write template file")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AlarmSyncConfig
+// ---------------------------------------------------------------------------
+
+// GetAlarmSyncConfig handles GET /alarm-sync-config
+func (h *Handler) GetAlarmSyncConfig(c *gin.Context) {
+	cfg, err := h.svc.GetAlarmSyncConfig()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, cfg)
+}
+
+// UpdateAlarmSyncConfig handles PUT /alarm-sync-config
+func (h *Handler) UpdateAlarmSyncConfig(c *gin.Context) {
+	var cfg AlarmSyncConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.svc.UpdateAlarmSyncConfig(&cfg); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	// Return the merged config so the UI can refresh.
+	updated, err := h.svc.GetAlarmSyncConfig()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, updated)
+}
+
+// ---------------------------------------------------------------------------
+// Alarm – comment
+// ---------------------------------------------------------------------------
+
+// AddCommentForAlarm handles POST /alarms/:id/comment
+func (h *Handler) AddCommentForAlarm(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
+		return
+	}
+
+	var req AddCommentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body: comment is required")
+		return
+	}
+
+	if err := h.svc.AddCommentForAlarm(id, req.Comment); err != nil {
 		utils.HandleError(c, err)
 		return
 	}

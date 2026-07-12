@@ -84,11 +84,13 @@ func (s *service) DeployTemplate(templateId int64, elementIds []int64, username 
 			Scan(&deviceInfo).Error; err != nil {
 			status.Message = fmt.Sprintf("device not found: %v", err)
 			results = append(results, status)
+			s.insertDeployLog(templateId, elementId, 0, false, status.Message, now)
 			continue
 		}
 		if deviceInfo.SerialNumber == "" {
 			status.Message = "device has no serial number"
 			results = append(results, status)
+			s.insertDeployLog(templateId, elementId, 0, false, status.Message, now)
 			continue
 		}
 		status.SerialNumber = deviceInfo.SerialNumber
@@ -107,6 +109,7 @@ func (s *service) DeployTemplate(templateId int64, elementIds []int64, username 
 		if len(paramValues) == 0 {
 			status.Message = "no parameter values found for device"
 			results = append(results, status)
+			s.insertDeployLog(templateId, elementId, 0, false, status.Message, now)
 			continue
 		}
 
@@ -124,6 +127,7 @@ func (s *service) DeployTemplate(templateId int64, elementIds []int64, username 
 		if err != nil {
 			status.Message = fmt.Sprintf("create event_log failed: %v", err)
 			results = append(results, status)
+			s.insertDeployLog(templateId, elementId, 0, false, status.Message, now)
 			continue
 		}
 
@@ -164,6 +168,7 @@ func (s *service) DeployTemplate(templateId int64, elementIds []int64, username 
 			status.Message = fmt.Sprintf("push to device queue failed: %v", err)
 			s.repo.DB().Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
 			results = append(results, status)
+			s.insertDeployLog(templateId, elementId, eventLogId, false, status.Message, now)
 			continue
 		}
 		redis.Expire(ctx, queueKey, 24*time.Hour)
@@ -172,10 +177,91 @@ func (s *service) DeployTemplate(templateId int64, elementIds []int64, username 
 		status.ParamCount = len(paramValues)
 		status.Message = "SPV dispatched successfully"
 		results = append(results, status)
+		s.insertDeployLog(templateId, elementId, eventLogId, true, status.Message, now)
 
 		logger.Infof("DeployTemplate: dispatched %d params to device %s (elementId=%d) from template %d",
 			len(paramValues), deviceInfo.SerialNumber, elementId, templateId)
 	}
 
 	return results, nil
+}
+
+// insertDeployLog is a helper that creates a parameter_deployment_log entry.
+// Errors are logged but not propagated since logging is non-fatal.
+func (s *service) insertDeployLog(templateId, elementId, eventLogId int64, result bool, info string, opTime time.Time) {
+	log := &ParameterDeploymentLog{
+		TemplateId:    &templateId,
+		ElementId:     &elementId,
+		Result:        &result,
+		Info:          &info,
+		OperationTime: &opTime,
+	}
+	if eventLogId > 0 {
+		log.EventLogId = &eventLogId
+	}
+	if err := s.repo.CreateDeployTemplateLog(log); err != nil {
+		logger.Errorf("failed to create deploy template log: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ListDeployTemplateLogs
+// ---------------------------------------------------------------------------
+
+// ListDeployTemplateLogs returns a paginated list of deployment history logs
+// for the given template, enriched with device and template names.
+func (s *service) ListDeployTemplateLogs(templateId int64, page, pageSize int) ([]DeployTemplateLogVo, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	logs, total, err := s.repo.FindDeployTemplateLogs(templateId, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Resolve template name once
+	templateName := ""
+	var tpl ParameterTemplate
+	if err := s.repo.DB().Where("id = ?", templateId).First(&tpl).Error; err == nil && tpl.Name != nil {
+		templateName = *tpl.Name
+	}
+
+	// Build VOs, resolving device info per element
+	vos := make([]DeployTemplateLogVo, 0, len(logs))
+	for _, l := range logs {
+		vo := DeployTemplateLogVo{
+			Id:           l.Id,
+			TemplateName: templateName,
+			Result:       l.Result,
+		}
+		if l.Info != nil {
+			vo.Info = *l.Info
+		}
+		if l.OperationTime != nil {
+			vo.OperationTime = l.OperationTime.Format(time.RFC3339)
+		}
+
+		if l.ElementId != nil {
+			var deviceInfo struct {
+				SerialNumber string `gorm:"column:serial_number"`
+				DeviceName   string `gorm:"column:device_name"`
+			}
+			if err := s.repo.DB().Table("cpe_element").
+				Select("serial_number, device_name").
+				Where("ne_neid = ?", *l.ElementId).
+				Scan(&deviceInfo).Error; err == nil {
+				vo.DeviceName = deviceInfo.DeviceName
+				vo.SerialNumber = deviceInfo.SerialNumber
+			}
+		}
+
+		vos = append(vos, vo)
+	}
+
+	return vos, total, nil
 }

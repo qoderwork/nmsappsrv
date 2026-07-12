@@ -158,6 +158,12 @@ func (h *ACSHandler) HandleGnbACS(c *gin.Context) {
 	h.handleACSWithType(c, "enb", "NR")
 }
 
+// HandleGnbInitialACS handles TR069 requests from gNodeB (5G NR) devices during initial provisioning.
+// It delegates to HandleGnbACS since the initial contact flow is identical to the regular gNB flow.
+func (h *ACSHandler) HandleGnbInitialACS(c *gin.Context) {
+	h.HandleGnbACS(c)
+}
+
 // HandleCpeACS handles TR069 requests from CPE devices.
 func (h *ACSHandler) HandleCpeACS(c *gin.Context) {
 	h.handleACSWithType(c, "cpe", "")

@@ -46,6 +46,8 @@ type Repository interface {
 	BatchConfigDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
 	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
 	CreateParameterLogWithID(log *ParameterLog) error
+	CreateDeployTemplateLog(log *ParameterDeploymentLog) error
+	FindDeployTemplateLogs(templateId int64, offset, limit int) ([]ParameterDeploymentLog, int64, error)
 	DB() *gorm.DB
 }
 
@@ -325,6 +327,34 @@ func (r *repository) CreateParameterLogWithID(log *ParameterLog) error {
 		log.Id = uuid.NewString()
 	}
 	return r.db.Create(log).Error
+}
+
+// ---------------------------------------------------------------------------
+// ParameterDeploymentLog
+// ---------------------------------------------------------------------------
+
+// CreateDeployTemplateLog inserts a new parameter_deployment_log entry.
+func (r *repository) CreateDeployTemplateLog(log *ParameterDeploymentLog) error {
+	return r.db.Create(log).Error
+}
+
+// FindDeployTemplateLogs returns a paginated list of deployment logs for the
+// given template together with the total count.
+func (r *repository) FindDeployTemplateLogs(templateId int64, offset, limit int) ([]ParameterDeploymentLog, int64, error) {
+	var logs []ParameterDeploymentLog
+	var total int64
+
+	query := r.db.Model(&ParameterDeploymentLog{}).Where("template_id = ?", templateId)
+
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindDeployTemplateLogs count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("operation_time DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		logger.Errorf("FindDeployTemplateLogs query error: %v", err)
+		return nil, 0, err
+	}
+	return logs, total, nil
 }
 
 // DB returns the underlying *gorm.DB.

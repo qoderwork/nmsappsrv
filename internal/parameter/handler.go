@@ -247,6 +247,25 @@ func (h *Handler) DeployTemplate(c *gin.Context) {
 	utils.Success(c, results)
 }
 
+// ListDeployTemplateLogs handles GET /parameter-templates/:templateId/deploy-logs
+func (h *Handler) ListDeployTemplateLogs(c *gin.Context) {
+	templateId, err := strconv.ParseInt(c.Param("templateId"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid template id")
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+
+	data, total, err := h.svc.ListDeployTemplateLogs(templateId, page, pageSize)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to list deploy template logs")
+		return
+	}
+	utils.Paginated(c, data, total, page, pageSize)
+}
+
 // TriggerBackup handles POST /parameter/:elementId/backup
 func (h *Handler) TriggerBackup(c *gin.Context) {
 	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)

@@ -1,6 +1,7 @@
 package alarm
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -22,6 +23,7 @@ type Service interface {
 	CreateAlarm(a *Alarm) error
 	CheckAlarmSuppression(alarm *Alarm) (bool, string)
 	ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error)
+	ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error)
 	ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error)
 	CreateAlarmTemplate(t *AlarmTemplate) error
 	UpdateAlarmTemplate(t *AlarmTemplate) error
@@ -29,6 +31,9 @@ type Service interface {
 	CreateAlarmFilter(f *AlarmFilter) error
 	UpdateAlarmFilter(f *AlarmFilter) error
 	DeleteAlarmFilter(id int) error
+	GetAlarmSyncConfig() (*AlarmSyncConfig, error)
+	UpdateAlarmSyncConfig(config *AlarmSyncConfig) error
+	AddCommentForAlarm(id int64, comment string) error
 }
 
 // service contains the business logic for alarm management.
@@ -410,4 +415,96 @@ func (s *service) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
 		out = append(out, SeverityCount{Severity: sev, AlarmCount: counts[sev]})
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// AlarmLibrary – import
+// ---------------------------------------------------------------------------
+
+// ImportAlarmLibrary persists a batch of alarm library entries for the given
+// tenancy. Entries that already exist (matched by tenancy_id + alarm_identifier)
+// are updated in place. Returns the number of entries processed.
+func (s *service) ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error) {
+	// Stamp every row with the current tenancy.
+	tenancyIdCopy := tenancyId
+	for i := range items {
+		items[i].TenancyId = &tenancyIdCopy
+	}
+	if err := s.repo.BulkCreateAlarmLibrary(items); err != nil {
+		return 0, apperror.Wrap(err, "IMPORT_ALARM_LIBRARY_FAILED", 500, "failed to import alarm library")
+	}
+	return len(items), nil
+}
+
+// ---------------------------------------------------------------------------
+// AlarmSyncConfig
+// ---------------------------------------------------------------------------
+
+const alarmSyncConfigKey = "alarm_sync_config"
+
+// GetAlarmSyncConfig reads the alarm sync configuration from system_config.
+// When no configuration has been saved yet it returns a zero-value struct.
+func (s *service) GetAlarmSyncConfig() (*AlarmSyncConfig, error) {
+	raw, err := s.repo.GetSystemConfig(alarmSyncConfigKey)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_ALARM_SYNC_CONFIG_FAILED", 500, "failed to get alarm sync config")
+	}
+	if raw == "" {
+		return &AlarmSyncConfig{}, nil
+	}
+	var cfg AlarmSyncConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		logger.Errorf("GetAlarmSyncConfig: unmarshal error: %v", err)
+		return nil, apperror.Wrap(err, "UNMARSHAL_ALARM_SYNC_CONFIG_FAILED", 500, "failed to unmarshal alarm sync config")
+	}
+	return &cfg, nil
+}
+
+// UpdateAlarmSyncConfig persists the alarm sync configuration to system_config.
+func (s *service) UpdateAlarmSyncConfig(config *AlarmSyncConfig) error {
+	// Merge with existing values so callers can send partial updates.
+	existing, err := s.GetAlarmSyncConfig()
+	if err != nil {
+		return err
+	}
+	if config.Enabled != nil {
+		existing.Enabled = config.Enabled
+	}
+	if config.SyncInterval != nil {
+		existing.SyncInterval = config.SyncInterval
+	}
+	if config.SourceAddress != nil {
+		existing.SourceAddress = config.SourceAddress
+	}
+	if config.LastSyncTime != nil {
+		existing.LastSyncTime = config.LastSyncTime
+	}
+
+	data, err := json.Marshal(existing)
+	if err != nil {
+		return apperror.Wrap(err, "MARSHAL_ALARM_SYNC_CONFIG_FAILED", 500, "failed to marshal alarm sync config")
+	}
+	if err := s.repo.SaveSystemConfig(alarmSyncConfigKey, string(data)); err != nil {
+		return apperror.Wrap(err, "UPDATE_ALARM_SYNC_CONFIG_FAILED", 500, "failed to update alarm sync config")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Alarm – comment
+// ---------------------------------------------------------------------------
+
+// AddCommentForAlarm appends or replaces the comment on a single alarm.
+func (s *service) AddCommentForAlarm(id int64, comment string) error {
+	// Verify the alarm exists first.
+	if _, err := s.repo.FindByID(id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.ErrAlarmNotFound
+		}
+		return apperror.Wrap(err, "ADD_COMMENT_FAILED", 500, "failed to add comment for alarm")
+	}
+	if err := s.repo.UpdateAlarmComment(id, comment); err != nil {
+		return apperror.Wrap(err, "ADD_COMMENT_FAILED", 500, "failed to add comment for alarm")
+	}
+	return nil
 }

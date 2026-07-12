@@ -1,6 +1,7 @@
 package alarm
 
 import (
+	"errors"
 	"time"
 
 	"nmsappsrv/pkg/baserepo"
@@ -245,4 +246,93 @@ func (r *Repository) CountBySeverity(licenseId int) (map[string]int64, error) {
 		out[key] = row.Cnt
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// AlarmLibrary – import
+// ---------------------------------------------------------------------------
+
+// BulkCreateAlarmLibrary inserts multiple alarm library entries in a single
+// transaction, using upsert (ON DUPLICATE KEY UPDATE) semantics based on the
+// unique index (tenancy_id, alarm_identifier).
+func (r *Repository) BulkCreateAlarmLibrary(items []AlarmLibrary) error {
+	if len(items) == 0 {
+		return nil
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for i := range items {
+			// Try to find existing entry by tenancy_id + alarm_identifier.
+			var existing AlarmLibrary
+			err := tx.Where("tenancy_id = ? AND alarm_identifier = ?",
+				items[i].TenancyId, items[i].AlarmIdentifier).First(&existing).Error
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					if createErr := tx.Create(&items[i]).Error; createErr != nil {
+						return createErr
+					}
+					continue
+				}
+				return err
+			}
+			// Update existing entry.
+			existing.ProbableCause = items[i].ProbableCause
+			existing.Severity = items[i].Severity
+			existing.EventType = items[i].EventType
+			existing.Explanation = items[i].Explanation
+			existing.SpecificProblem = items[i].SpecificProblem
+			existing.AlarmSource = items[i].AlarmSource
+			if saveErr := tx.Save(&existing).Error; saveErr != nil {
+				return saveErr
+			}
+		}
+		return nil
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Alarm – comment
+// ---------------------------------------------------------------------------
+
+// UpdateAlarmComment sets the comment field on a single alarm.
+func (r *Repository) UpdateAlarmComment(id int64, comment string) error {
+	return r.db.Model(&Alarm{}).Where("id = ?", id).
+		Update("comment", comment).Error
+}
+
+// ---------------------------------------------------------------------------
+// SystemConfig – alarm sync config
+// ---------------------------------------------------------------------------
+
+// GetSystemConfig reads a system_config entry by config_key.
+// Returns ("", nil) when the key does not exist.
+func (r *Repository) GetSystemConfig(key string) (string, error) {
+	var cfg SystemConfig
+	if err := r.db.Where("config_key = ?", key).First(&cfg).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	if cfg.Value == nil {
+		return "", nil
+	}
+	return *cfg.Value, nil
+}
+
+// SaveSystemConfig upserts a system_config entry by config_key.
+func (r *Repository) SaveSystemConfig(key, value string) error {
+	var cfg SystemConfig
+	err := r.db.Where("config_key = ?", key).First(&cfg).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			cfg = SystemConfig{
+				Key:   &key,
+				Value: &value,
+			}
+			return r.db.Create(&cfg).Error
+		}
+		return err
+	}
+	cfg.Value = &value
+	return r.db.Save(&cfg).Error
 }

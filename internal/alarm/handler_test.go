@@ -27,6 +27,7 @@ type mockService struct {
 	createAlarmFn           func(a *Alarm) error
 	checkAlarmSuppressionFn func(alarm *Alarm) (bool, string)
 	listAlarmLibraryFn      func(tenancyId int) ([]AlarmLibrary, error)
+	importAlarmLibraryFn    func(tenancyId int, items []AlarmLibrary) (int, error)
 	listAlarmTemplatesFn    func(tenancyId int) ([]AlarmTemplate, error)
 	createAlarmTemplateFn   func(t *AlarmTemplate) error
 	updateAlarmTemplateFn   func(t *AlarmTemplate) error
@@ -37,6 +38,9 @@ type mockService struct {
 	confirmAlarmFn          func(id int64) error
 	unconfirmAlarmFn        func(id int64) error
 	getSeverityCountFn      func(licenseId int) ([]SeverityCount, error)
+	getAlarmSyncConfigFn    func() (*AlarmSyncConfig, error)
+	updateAlarmSyncConfigFn func(config *AlarmSyncConfig) error
+	addCommentForAlarmFn    func(id int64, comment string) error
 }
 
 func (m *mockService) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
@@ -156,6 +160,34 @@ func (m *mockService) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
 		return m.getSeverityCountFn(licenseId)
 	}
 	panic("mockService.GetSeverityCount not implemented")
+}
+
+func (m *mockService) ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error) {
+	if m.importAlarmLibraryFn != nil {
+		return m.importAlarmLibraryFn(tenancyId, items)
+	}
+	panic("mockService.ImportAlarmLibrary not implemented")
+}
+
+func (m *mockService) GetAlarmSyncConfig() (*AlarmSyncConfig, error) {
+	if m.getAlarmSyncConfigFn != nil {
+		return m.getAlarmSyncConfigFn()
+	}
+	panic("mockService.GetAlarmSyncConfig not implemented")
+}
+
+func (m *mockService) UpdateAlarmSyncConfig(config *AlarmSyncConfig) error {
+	if m.updateAlarmSyncConfigFn != nil {
+		return m.updateAlarmSyncConfigFn(config)
+	}
+	panic("mockService.UpdateAlarmSyncConfig not implemented")
+}
+
+func (m *mockService) AddCommentForAlarm(id int64, comment string) error {
+	if m.addCommentForAlarmFn != nil {
+		return m.addCommentForAlarmFn(id, comment)
+	}
+	panic("mockService.AddCommentForAlarm not implemented")
 }
 
 // ---------------------------------------------------------------------------

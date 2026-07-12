@@ -385,6 +385,7 @@ func main() {
 	router.POST("/tr069/cpeAcs", acsAuth, tr069ACS.HandleCpeACS)
 	router.POST("/tr069/enbAcs", acsAuth, tr069ACS.HandleEnbACS)
 	router.POST("/tr069/gnbAcs", acsAuth, tr069ACS.HandleGnbACS)
+	router.POST("/tr069/gnbInitialAcs", acsAuth, tr069ACS.HandleGnbInitialACS)
 
 	// Init Server endpoint (ZTP) — device-facing, no web UI auth
 	router.POST("/init-server", initserverH.HandleInitServer)

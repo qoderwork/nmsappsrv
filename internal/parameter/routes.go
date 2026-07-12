@@ -16,6 +16,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/parameter-templates", h.CreateParameterTemplate)
 	rg.PUT("/parameter-templates/:id", h.UpdateParameterTemplate)
 	rg.POST("/parameter-templates/:templateId/deploy", h.DeployTemplate)
+	rg.GET("/parameter-templates/:templateId/deploy-logs", h.ListDeployTemplateLogs)
 	rg.GET("/parameter-backup-logs", h.ListBackupLogs)
 	rg.POST("/parameter-backup/:elementId", h.TriggerBackup)
 	rg.POST("/parameter-tasks", h.BatchParameterConfigurationDirect)

@@ -148,6 +148,32 @@ type ParameterTemplateHasParameter struct {
 
 func (ParameterTemplateHasParameter) TableName() string { return "parameter_template_has_parameter" }
 
+// ParameterDeploymentLog 对应 parameter_deployment_log 表 (对齐Java ParameterDeploymentLog entity)
+type ParameterDeploymentLog struct {
+	Id            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	TemplateId    *int64     `gorm:"column:template_id" json:"template_id"`
+	ElementId     *int64     `gorm:"column:element_id" json:"element_id"`
+	EventLogId    *int64     `gorm:"column:event_log_id" json:"event_log_id"`
+	Result        *bool      `gorm:"column:result" json:"result"`
+	Info          *string    `gorm:"column:info;type:text" json:"info"`
+	OperationTime *time.Time `gorm:"column:operation_time" json:"operation_time"`
+	TenancyId     *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+}
+
+func (ParameterDeploymentLog) TableName() string { return "parameter_deployment_log" }
+
+// DeployTemplateLogVo is the API response VO for deploy template log queries (对齐Java ParameterDeploymentLogVO).
+type DeployTemplateLogVo struct {
+	Id            int64   `json:"id"`
+	TenancyName   string  `json:"tenancyName"`
+	TemplateName  string  `json:"templateName"`
+	DeviceName    string  `json:"deviceName"`
+	SerialNumber  string  `json:"serialNumber"`
+	OperationTime string  `json:"operationTime"`
+	Info          string  `json:"info"`
+	Result        *bool   `json:"result"`
+}
+
 // ---------- Batch Parameter Configuration DTOs ----------
 
 // BatchParamValue is a single key-value pair in a batch parameter config request.
