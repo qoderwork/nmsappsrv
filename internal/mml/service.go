@@ -18,6 +18,14 @@ type Service interface {
 	ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error)
 	ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error)
 	GetMmlResult(id int) (*MmlExecuteResult, error)
+	UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, licenseId int) (*BatchProcessFile, error)
+	ListBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
+	SendBatchProcessFile(id int, licenseId int) (*BatchProcessFile, error)
+	CheckBatchProcessFile(id int) (*BatchProcessFile, error)
+	ListBatchProcessLogs(batchFileId int) ([]BatchProcessLog, error)
+	ListBatchExecuteResults(batchFileId int) ([]MmlExecuteResult, error)
+	GetBatchProcessFile(id int) (*BatchProcessFile, error)
+	DeleteBatchProcessFile(id int) error
 }
 
 // service is the concrete implementation of Service.

@@ -25,6 +25,14 @@ type Repository interface {
 	FindMmlCommands(setId int) ([]MmlCommand, error)
 	FindMmlCommandParams(commandId int) ([]MmlCommandParam, error)
 	FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error)
+	FindBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
+	FindBatchProcessFileByID(id int) (*BatchProcessFile, error)
+	CreateBatchProcessFile(file *BatchProcessFile) error
+	UpdateBatchProcessFile(file *BatchProcessFile) error
+	DeleteBatchProcessFile(id int) error
+	FindBatchProcessLogs(batchFileId int) ([]BatchProcessLog, error)
+	CreateBatchProcessLog(log *BatchProcessLog) error
+	FindBatchProcessExecuteResults(batchFileId int) ([]MmlExecuteResult, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.

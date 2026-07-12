@@ -34,6 +34,24 @@ type Service interface {
 	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error
 	ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error)
 	ListBatchConfigurationDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
+
+	// TR-069 Parameter Definition CRUD.
+	AddTR069Parameter(param *TR069Parameter) error
+	ListTR069Parameters(page, pageSize int) ([]TR069Parameter, int64, error)
+	ViewTR069Parameter(id int64) (*TR069Parameter, error)
+	UpdateTR069Parameter(param *TR069Parameter) error
+	DeleteTR069Parameter(id int64) error
+
+	// Model Tree operations.
+	GetModelTree(elementId int64) (*ModelTreeNode, error)
+	RefreshParameter(elementId int64, paramPath string, username string) error
+	ReloadParameter(elementId int64, paramPaths []string, username string) error
+	AddObject(elementId int64, objectName string, username string) error
+	DeleteObject(elementId int64, objectName string, username string) error
+	BatchDeleteObject(elementId int64, objectNames []string, username string) error
+
+	// Export Parameter Template.
+	ExportParameterTemplate(templateId int64) ([]byte, string, error)
 }
 
 // service is the concrete implementation of Service.

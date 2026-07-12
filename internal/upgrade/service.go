@@ -28,6 +28,31 @@ type Service interface {
 	ListRollbackTasks(tenancyId int, page, pageSize int) ([]RollbackTask, int64, error)
 	StartUpgradeTask(id int) error
 	StartRollbackTask(id int) error
+
+	// Task lifecycle
+	CancelUpgradeTask(id int) error
+	CancelRollbackTask(id int) error
+
+	// Results
+	ListUpgradeResults(taskId int, page, pageSize int) ([]UpgradeResultVo, int64, error)
+	ListUpgradeResultDetail(taskId int, page, pageSize int) ([]UpgradeResultDetailVo, int64, error)
+	ListRollbackResults(taskId int, page, pageSize int) ([]UpgradeResultVo, int64, error)
+
+	// Statistics
+	ListUpgradeTaskStatusCount(tenancyId int) ([]StatusCountItem, error)
+	ListUpgradeDeviceResultCount(taskId int) ([]DeviceResultCountItem, error)
+
+	// AutoUpgradeTask CRUD
+	ListAutoUpgradeTasks(page, pageSize int) ([]AutoUpgradeTask, int64, error)
+	AddAutoUpgradeTask(t *AutoUpgradeTask) error
+	ModifyAutoUpgradeTask(t *AutoUpgradeTask) error
+	DeleteAutoUpgradeTask(id int64) error
+
+	// File operations
+	DownloadUpgradeFile(id int) (*UpgradeFile, error)
+	ViewUpgradeFile(id int) (*UpgradeFile, error)
+	UpdateUpgradeFile(f *UpgradeFile) error
+	UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte) error
 }
 
 // service is the concrete implementation of Service.
@@ -535,4 +560,296 @@ func (s *service) StartRollbackTask(id int) error {
 	}
 
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Task lifecycle: Cancel
+// ---------------------------------------------------------------------------
+
+// CancelUpgradeTask cancels a waiting or executing upgrade task.
+func (s *service) CancelUpgradeTask(id int) error {
+	task, err := s.repo.FindUpgradeTaskByID(id)
+	if err != nil {
+		return err
+	}
+	status := derefInt(task.Status)
+	if status != 1 && status != 2 {
+		return fmt.Errorf("task cannot be cancelled in current status")
+	}
+
+	ctx := context.Background()
+	lockKey := fmt.Sprintf("upgrade_task_cancel_%d", id)
+	if !redis.Lock(ctx, lockKey, 30*time.Second) {
+		return fmt.Errorf("task is being operated by another request")
+	}
+	defer redis.Unlock(ctx, lockKey)
+
+	return s.repo.CancelUpgradeTask(id)
+}
+
+// CancelRollbackTask cancels a waiting or executing rollback task.
+func (s *service) CancelRollbackTask(id int) error {
+	task, err := s.repo.FindRollbackTaskByID(id)
+	if err != nil {
+		return err
+	}
+	status := derefInt(task.Status)
+	if status != 1 && status != 2 {
+		return fmt.Errorf("task cannot be cancelled in current status")
+	}
+
+	ctx := context.Background()
+	lockKey := fmt.Sprintf("rollback_task_cancel_%d", id)
+	if !redis.Lock(ctx, lockKey, 30*time.Second) {
+		return fmt.Errorf("task is being operated by another request")
+	}
+	defer redis.Unlock(ctx, lockKey)
+
+	return s.repo.CancelRollbackTask(id)
+}
+
+// ---------------------------------------------------------------------------
+// Results
+// ---------------------------------------------------------------------------
+
+// ListUpgradeResults returns paginated upgrade results for a task.
+func (s *service) ListUpgradeResults(taskId int, page, pageSize int) ([]UpgradeResultVo, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	logs, total, err := s.repo.FindUpgradeLogsByTaskId(taskId, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	vos := make([]UpgradeResultVo, 0, len(logs))
+	for _, log := range logs {
+		vo := UpgradeResultVo{
+			TaskId:  derefInt(log.TaskId),
+			Success: derefBool(log.Success),
+			Message: derefString(log.Message),
+		}
+		if log.NeId != nil {
+			vo.ElementId = *log.NeId
+		}
+		if log.OldVersion != nil {
+			vo.OldVersion = *log.OldVersion
+		}
+		if log.NewVersion != nil {
+			vo.NewVersion = *log.NewVersion
+		}
+		if log.CreationTime != nil {
+			vo.CreationTime = log.CreationTime.Format("2006-01-02 15:04:05")
+		}
+		if log.DoneTime != nil {
+			vo.DoneTime = log.DoneTime.Format("2006-01-02 15:04:05")
+		}
+		if derefBool(log.IsDone) {
+			if derefBool(log.Success) {
+				vo.Status = 3 // Success
+			} else {
+				vo.Status = 4 // Failed
+			}
+		} else {
+			vo.Status = 2 // In progress
+		}
+		vos = append(vos, vo)
+	}
+	return vos, total, nil
+}
+
+// ListUpgradeResultDetail returns paginated detailed upgrade results for a task.
+func (s *service) ListUpgradeResultDetail(taskId int, page, pageSize int) ([]UpgradeResultDetailVo, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	logs, total, err := s.repo.FindUpgradeLogsByTaskIdDetail(taskId, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	vos := make([]UpgradeResultDetailVo, 0, len(logs))
+	for _, log := range logs {
+		vo := UpgradeResultDetailVo{
+			UpgradeResultVo: UpgradeResultVo{
+				TaskId:  derefInt(log.TaskId),
+				Success: derefBool(log.Success),
+				Message: derefString(log.Message),
+			},
+			IsDownloaded: derefBool(log.IsDownloaded),
+			UpgradeType:  derefString(log.UpgradeType),
+			RetryTimes:   derefInt(log.RetryTimes),
+		}
+		if log.NeId != nil {
+			vo.ElementId = *log.NeId
+		}
+		if log.OldVersion != nil {
+			vo.OldVersion = *log.OldVersion
+		}
+		if log.NewVersion != nil {
+			vo.NewVersion = *log.NewVersion
+		}
+		if log.CreationTime != nil {
+			vo.CreationTime = log.CreationTime.Format("2006-01-02 15:04:05")
+		}
+		if log.DoneTime != nil {
+			vo.DoneTime = log.DoneTime.Format("2006-01-02 15:04:05")
+		}
+		if log.DownloadedTime != nil {
+			vo.DownloadedTime = log.DownloadedTime.Format("2006-01-02 15:04:05")
+		}
+		if derefBool(log.IsDone) {
+			if derefBool(log.Success) {
+				vo.Status = 3
+			} else {
+				vo.Status = 4
+			}
+		} else {
+			vo.Status = 2
+		}
+		vos = append(vos, vo)
+	}
+	return vos, total, nil
+}
+
+// ListRollbackResults returns paginated rollback results for a task.
+func (s *service) ListRollbackResults(taskId int, page, pageSize int) ([]UpgradeResultVo, int64, error) {
+	return s.ListUpgradeResults(taskId, page, pageSize)
+}
+
+// ---------------------------------------------------------------------------
+// Statistics
+// ---------------------------------------------------------------------------
+
+// ListUpgradeTaskStatusCount returns per-status counts of upgrade tasks.
+func (s *service) ListUpgradeTaskStatusCount(tenancyId int) ([]StatusCountItem, error) {
+	return s.repo.CountUpgradeTaskStatusCounts(tenancyId)
+}
+
+// ListUpgradeDeviceResultCount returns per-result counts for a task.
+func (s *service) ListUpgradeDeviceResultCount(taskId int) ([]DeviceResultCountItem, error) {
+	return s.repo.CountUpgradeDeviceResultCounts(taskId)
+}
+
+// ---------------------------------------------------------------------------
+// AutoUpgradeTask CRUD
+// ---------------------------------------------------------------------------
+
+// ListAutoUpgradeTasks returns a paginated list of auto-upgrade tasks.
+func (s *service) ListAutoUpgradeTasks(page, pageSize int) ([]AutoUpgradeTask, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	return s.repo.FindAutoUpgradeTasks(offset, pageSize)
+}
+
+// AddAutoUpgradeTask persists a new auto-upgrade task.
+func (s *service) AddAutoUpgradeTask(t *AutoUpgradeTask) error {
+	now := time.Now()
+	t.CreateTime = now
+	t.UpdateTime = now
+	return s.repo.CreateAutoUpgradeTask(t)
+}
+
+// ModifyAutoUpgradeTask updates an existing auto-upgrade task.
+func (s *service) ModifyAutoUpgradeTask(t *AutoUpgradeTask) error {
+	existing, err := s.repo.FindAutoUpgradeTaskByID(t.Id)
+	if err != nil {
+		return err
+	}
+	t.CreateTime = existing.CreateTime
+	t.UpdateTime = time.Now()
+	return s.repo.UpdateAutoUpgradeTask(t)
+}
+
+// DeleteAutoUpgradeTask removes an auto-upgrade task.
+func (s *service) DeleteAutoUpgradeTask(id int64) error {
+	return s.repo.DeleteAutoUpgradeTask(id)
+}
+
+// ---------------------------------------------------------------------------
+// File operations
+// ---------------------------------------------------------------------------
+
+// DownloadUpgradeFile returns the upgrade file record for download.
+func (s *service) DownloadUpgradeFile(id int) (*UpgradeFile, error) {
+	return s.repo.FindUpgradeFileByID(id)
+}
+
+// ViewUpgradeFile returns the upgrade file record for viewing.
+func (s *service) ViewUpgradeFile(id int) (*UpgradeFile, error) {
+	return s.repo.FindUpgradeFileByID(id)
+}
+
+// UpdateUpgradeFile persists changes to an existing upgrade file.
+func (s *service) UpdateUpgradeFile(f *UpgradeFile) error {
+	return s.repo.UpdateUpgradeFile(f)
+}
+
+// UploadUpgradeFileByPiecemeal handles chunked file upload.
+func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte) error {
+	ctx := context.Background()
+
+	// Store chunk in Redis with a key based on uploadId and chunk index
+	chunkKey := fmt.Sprintf("upgrade_chunk:%s:%d", req.UploadId, req.ChunkIndex)
+	if err := redis.Set(ctx, chunkKey, chunkData, 2*time.Hour); err != nil {
+		return fmt.Errorf("failed to store chunk: %w", err)
+	}
+
+	// Track uploaded chunks
+	metaKey := fmt.Sprintf("upgrade_chunk_meta:%s", req.UploadId)
+	if err := redis.HSet(ctx, metaKey, fmt.Sprintf("chunk_%d", req.ChunkIndex), "1"); err != nil {
+		return fmt.Errorf("failed to track chunk: %w", err)
+	}
+	redis.Expire(ctx, metaKey, 2*time.Hour)
+
+	// Check if all chunks are uploaded
+	chunks := redis.HGetAll(ctx, metaKey)
+	if len(chunks) >= req.TotalChunks {
+		// All chunks received - assemble file record
+		now := time.Now()
+		file := &UpgradeFile{
+			FileName:    &req.FileName,
+			Version:     &req.Version,
+			DeviceType:  &req.DeviceType,
+			FileSize:    &req.TotalSize,
+			UploadTime:  &now,
+			ProductType: &req.ProductType,
+		}
+		if err := s.repo.Create(file); err != nil {
+			return fmt.Errorf("failed to create upgrade file record: %w", err)
+		}
+
+		// Clean up chunk keys
+		for i := 0; i < req.TotalChunks; i++ {
+			redis.Del(ctx, fmt.Sprintf("upgrade_chunk:%s:%d", req.UploadId, i))
+		}
+		redis.Del(ctx, metaKey)
+
+		logger.Infof("piecemeal upload completed for file %s (id=%d)", req.FileName, file.Id)
+	}
+
+	return nil
+}
+
+// derefBool safely dereferences a *bool, returning false if nil.
+func derefBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
 }

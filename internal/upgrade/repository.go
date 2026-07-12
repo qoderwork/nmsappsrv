@@ -40,6 +40,29 @@ type Repository interface {
 	UpdateUpgradeLog(log *UpgradeLog) error
 	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
 	CountUpgradeLogsBySuccess(taskId int, success bool) (int64, error)
+
+	// Task lifecycle
+	CancelUpgradeTask(id int) error
+	CancelRollbackTask(id int) error
+
+	// Results
+	FindUpgradeLogsByTaskId(taskId int, offset, limit int) ([]UpgradeLog, int64, error)
+	FindUpgradeLogsByTaskIdDetail(taskId int, offset, limit int) ([]UpgradeLog, int64, error)
+
+	// Statistics
+	CountUpgradeTaskStatusCounts(tenancyId int) ([]StatusCountItem, error)
+	CountUpgradeDeviceResultCounts(taskId int) ([]DeviceResultCountItem, error)
+
+	// AutoUpgradeTask CRUD
+	FindAutoUpgradeTasks(offset, limit int) ([]AutoUpgradeTask, int64, error)
+	FindAutoUpgradeTaskByID(id int64) (*AutoUpgradeTask, error)
+	CreateAutoUpgradeTask(t *AutoUpgradeTask) error
+	UpdateAutoUpgradeTask(t *AutoUpgradeTask) error
+	DeleteAutoUpgradeTask(id int64) error
+
+	// UpgradeFile update
+	UpdateUpgradeFile(f *UpgradeFile) error
+	FindUpgradeFileByID(id int) (*UpgradeFile, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -273,4 +296,163 @@ func ParseElementIds(jsonStr string) []int64 {
 func MarshalElementIds(ids []int64) string {
 	b, _ := json.Marshal(ids)
 	return string(b)
+}
+
+// ---------------------------------------------------------------------------
+// Task lifecycle: Cancel
+// ---------------------------------------------------------------------------
+
+// CancelUpgradeTask sets an upgrade task status to cancelled (status=5).
+func (r *repository) CancelUpgradeTask(id int) error {
+	return r.db.Model(&UpgradeTask{}).Where("id = ? AND status IN (1, 2)", id).
+		Update("status", 5).Error
+}
+
+// CancelRollbackTask sets a rollback task status to cancelled (status=5).
+func (r *repository) CancelRollbackTask(id int) error {
+	return r.db.Model(&RollbackTask{}).Where("id = ? AND status IN (1, 2)", id).
+		Update("status", 5).Error
+}
+
+// ---------------------------------------------------------------------------
+// Results
+// ---------------------------------------------------------------------------
+
+// FindUpgradeLogsByTaskId returns paginated upgrade logs for a given task.
+func (r *repository) FindUpgradeLogsByTaskId(taskId int, offset, limit int) ([]UpgradeLog, int64, error) {
+	var logs []UpgradeLog
+	var total int64
+
+	query := r.db.Model(&UpgradeLog{}).Where("task_id = ?", taskId)
+
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindUpgradeLogsByTaskId count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("creation_time DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		logger.Errorf("FindUpgradeLogsByTaskId query error: %v", err)
+		return nil, 0, err
+	}
+	return logs, total, nil
+}
+
+// FindUpgradeLogsByTaskIdDetail returns paginated detailed upgrade logs for a task.
+func (r *repository) FindUpgradeLogsByTaskIdDetail(taskId int, offset, limit int) ([]UpgradeLog, int64, error) {
+	var logs []UpgradeLog
+	var total int64
+
+	query := r.db.Model(&UpgradeLog{}).Where("task_id = ?", taskId)
+
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindUpgradeLogsByTaskIdDetail count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("creation_time DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		logger.Errorf("FindUpgradeLogsByTaskIdDetail query error: %v", err)
+		return nil, 0, err
+	}
+	return logs, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// Statistics
+// ---------------------------------------------------------------------------
+
+// CountUpgradeTaskStatusCounts returns per-status counts of upgrade tasks for a tenancy.
+func (r *repository) CountUpgradeTaskStatusCounts(tenancyId int) ([]StatusCountItem, error) {
+	var results []StatusCountItem
+	type row struct {
+		Status int   `gorm:"column:status"`
+		Cnt    int64 `gorm:"column:cnt"`
+	}
+	var rows []row
+	err := r.db.Model(&UpgradeTask{}).
+		Select("status, COUNT(*) as cnt").
+		Where("tenancy_id = ?", tenancyId).
+		Group("status").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		results = append(results, StatusCountItem{Status: r.Status, Count: r.Cnt})
+	}
+	return results, nil
+}
+
+// CountUpgradeDeviceResultCounts returns per-result counts of upgrade logs for a task.
+func (r *repository) CountUpgradeDeviceResultCounts(taskId int) ([]DeviceResultCountItem, error) {
+	var results []DeviceResultCountItem
+
+	var successCount, failCount, pendingCount int64
+	r.db.Model(&UpgradeLog{}).Where("task_id = ? AND is_done = ? AND success = ?", taskId, true, true).Count(&successCount)
+	r.db.Model(&UpgradeLog{}).Where("task_id = ? AND is_done = ? AND success = ?", taskId, true, false).Count(&failCount)
+	r.db.Model(&UpgradeLog{}).Where("task_id = ? AND is_done = ?", taskId, false).Count(&pendingCount)
+
+	results = append(results,
+		DeviceResultCountItem{Result: "success", Count: successCount},
+		DeviceResultCountItem{Result: "fail", Count: failCount},
+		DeviceResultCountItem{Result: "pending", Count: pendingCount},
+	)
+	return results, nil
+}
+
+// ---------------------------------------------------------------------------
+// AutoUpgradeTask CRUD
+// ---------------------------------------------------------------------------
+
+// FindAutoUpgradeTasks returns a paginated list of auto-upgrade tasks.
+func (r *repository) FindAutoUpgradeTasks(offset, limit int) ([]AutoUpgradeTask, int64, error) {
+	var tasks []AutoUpgradeTask
+	var total int64
+
+	query := r.db.Model(&AutoUpgradeTask{})
+
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindAutoUpgradeTasks count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&tasks).Error; err != nil {
+		logger.Errorf("FindAutoUpgradeTasks query error: %v", err)
+		return nil, 0, err
+	}
+	return tasks, total, nil
+}
+
+// FindAutoUpgradeTaskByID returns a single auto-upgrade task by ID.
+func (r *repository) FindAutoUpgradeTaskByID(id int64) (*AutoUpgradeTask, error) {
+	var t AutoUpgradeTask
+	if err := r.db.Where("id = ?", id).First(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// CreateAutoUpgradeTask inserts a new auto-upgrade task.
+func (r *repository) CreateAutoUpgradeTask(t *AutoUpgradeTask) error {
+	return r.db.Create(t).Error
+}
+
+// UpdateAutoUpgradeTask saves changes to an existing auto-upgrade task.
+func (r *repository) UpdateAutoUpgradeTask(t *AutoUpgradeTask) error {
+	return r.db.Save(t).Error
+}
+
+// DeleteAutoUpgradeTask removes an auto-upgrade task by ID.
+func (r *repository) DeleteAutoUpgradeTask(id int64) error {
+	return r.db.Where("id = ?", id).Delete(&AutoUpgradeTask{}).Error
+}
+
+// ---------------------------------------------------------------------------
+// UpgradeFile update
+// ---------------------------------------------------------------------------
+
+// UpdateUpgradeFile saves changes to an existing upgrade file.
+func (r *repository) UpdateUpgradeFile(f *UpgradeFile) error {
+	return r.db.Save(f).Error
+}
+
+// FindUpgradeFileByID returns a single upgrade file by ID.
+func (r *repository) FindUpgradeFileByID(id int) (*UpgradeFile, error) {
+	return r.FindByID(id)
 }

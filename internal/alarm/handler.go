@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
@@ -466,4 +467,75 @@ func (h *Handler) AddCommentForAlarm(c *gin.Context) {
 		return
 	}
 	utils.Success(c, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Alarm Statistic Top-N
+// ---------------------------------------------------------------------------
+
+// QueryAlarmStatisticTopN handles GET /alarms/statistic/top-n
+func (h *Handler) QueryAlarmStatisticTopN(c *gin.Context) {
+	topN, _ := strconv.Atoi(c.DefaultQuery("topN", "10"))
+	if topN < 1 {
+		topN = 10
+	}
+
+	var startTime, endTime *time.Time
+	if v := c.Query("startTime"); v != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+			startTime = &t
+		} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+			startTime = &t
+		}
+	}
+	if v := c.Query("endTime"); v != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+			endTime = &t
+		} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+			endTime = &t
+		}
+	}
+
+	data, err := h.svc.QueryAlarmStatisticTopN(topN, startTime, endTime)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// ---------------------------------------------------------------------------
+// Email Notification Config
+// ---------------------------------------------------------------------------
+
+// ListEmailNotificationConfig handles GET /email-notification/config
+func (h *Handler) ListEmailNotificationConfig(c *gin.Context) {
+	cfg, err := h.svc.GetEmailNotificationConfig()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, cfg)
+}
+
+// UpdateEmailNotificationConfig handles PUT /email-notification/config
+func (h *Handler) UpdateEmailNotificationConfig(c *gin.Context) {
+	var cfg EmailNotificationConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.svc.UpdateEmailNotificationConfig(&cfg); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	// Return the merged config so the UI can refresh.
+	updated, err := h.svc.GetEmailNotificationConfig()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, updated)
 }

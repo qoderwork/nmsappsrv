@@ -166,3 +166,21 @@ type AlarmSyncConfig struct {
 	SourceAddress *string `json:"sourceAddress"`
 	LastSyncTime  *string `json:"lastSyncTime"`
 }
+
+// AlarmStatisticTopN is one row of the top-N alarm statistics returned by
+// QueryAlarmStatisticTopN, grouping alarms by alarm_identifier and counting.
+type AlarmStatisticTopN struct {
+	AlarmIdentifier string `json:"alarmIdentifier" gorm:"column:alarm_identifier"`
+	AlarmCount      int64  `json:"alarmCount" gorm:"column:alarm_count"`
+}
+
+// EmailNotificationConfig represents the email notification configuration
+// stored in system_config with key "email_notification_config".
+type EmailNotificationConfig struct {
+	Enabled      *bool    `json:"enabled"`
+	SmtpHost     *string  `json:"smtpHost"`
+	SmtpPort     *int     `json:"smtpPort"`
+	SmtpUser     *string  `json:"smtpUser"`
+	SmtpPassword *string  `json:"smtpPassword"`
+	Recipients   []string `json:"recipients"`
+}

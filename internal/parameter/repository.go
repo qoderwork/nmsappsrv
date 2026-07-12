@@ -48,6 +48,14 @@ type Repository interface {
 	CreateParameterLogWithID(log *ParameterLog) error
 	CreateDeployTemplateLog(log *ParameterDeploymentLog) error
 	FindDeployTemplateLogs(templateId int64, offset, limit int) ([]ParameterDeploymentLog, int64, error)
+
+	// TR-069 Parameter Definition CRUD.
+	CreateTR069Parameter(param *TR069Parameter) error
+	FindTR069Parameters(offset, limit int) ([]TR069Parameter, int64, error)
+	FindTR069ParameterByID(id int64) (*TR069Parameter, error)
+	UpdateTR069Parameter(param *TR069Parameter) error
+	DeleteTR069Parameter(id int64) error
+
 	DB() *gorm.DB
 }
 
@@ -360,4 +368,50 @@ func (r *repository) FindDeployTemplateLogs(templateId int64, offset, limit int)
 // DB returns the underlying *gorm.DB.
 func (r *repository) DB() *gorm.DB {
 	return r.db
+}
+
+// ---------------------------------------------------------------------------
+// TR-069 Parameter Definition
+// ---------------------------------------------------------------------------
+
+// CreateTR069Parameter inserts a new TR-069 parameter definition.
+func (r *repository) CreateTR069Parameter(param *TR069Parameter) error {
+	return r.db.Create(param).Error
+}
+
+// FindTR069Parameters returns a paginated list of TR-069 parameter definitions.
+func (r *repository) FindTR069Parameters(offset, limit int) ([]TR069Parameter, int64, error) {
+	var params []TR069Parameter
+	var total int64
+
+	query := r.db.Model(&TR069Parameter{})
+
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindTR069Parameters count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&params).Error; err != nil {
+		logger.Errorf("FindTR069Parameters query error: %v", err)
+		return nil, 0, err
+	}
+	return params, total, nil
+}
+
+// FindTR069ParameterByID returns a single TR-069 parameter definition by ID.
+func (r *repository) FindTR069ParameterByID(id int64) (*TR069Parameter, error) {
+	var param TR069Parameter
+	if err := r.db.Where("id = ?", id).First(&param).Error; err != nil {
+		return nil, err
+	}
+	return &param, nil
+}
+
+// UpdateTR069Parameter saves changes to an existing TR-069 parameter definition.
+func (r *repository) UpdateTR069Parameter(param *TR069Parameter) error {
+	return r.db.Save(param).Error
+}
+
+// DeleteTR069Parameter removes a TR-069 parameter definition by ID.
+func (r *repository) DeleteTR069Parameter(id int64) error {
+	return r.db.Delete(&TR069Parameter{}, id).Error
 }

@@ -7,6 +7,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	// 告警
 	rg.GET("/alarms", h.ListAlarms)
 	rg.GET("/alarms/severity-count", h.GetSeverityCount)
+	rg.GET("/alarms/statistic/top-n", h.QueryAlarmStatisticTopN)
 	rg.GET("/alarms/:id", h.GetAlarm)
 	rg.POST("/alarms/:id/clear", h.ClearAlarm)
 	rg.POST("/alarms/:id/confirm", h.ConfirmAlarm)
@@ -25,4 +26,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.DELETE("/alarm-filters/:id", h.DeleteAlarmFilter)
 	rg.GET("/alarm-sync-config", h.GetAlarmSyncConfig)
 	rg.PUT("/alarm-sync-config", h.UpdateAlarmSyncConfig)
+
+	// 邮件通知配置
+	rg.GET("/email-notification/config", h.ListEmailNotificationConfig)
+	rg.PUT("/email-notification/config", h.UpdateEmailNotificationConfig)
 }

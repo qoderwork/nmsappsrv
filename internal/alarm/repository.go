@@ -248,6 +248,29 @@ func (r *Repository) CountBySeverity(licenseId int) (map[string]int64, error) {
 	return out, nil
 }
 
+// FindAlarmStatisticTopN returns the top-N alarm identifiers by count,
+// optionally filtered by a time range.
+func (r *Repository) FindAlarmStatisticTopN(topN int, startTime, endTime *time.Time) ([]AlarmStatisticTopN, error) {
+	var rows []AlarmStatisticTopN
+	query := r.db.Model(&Alarm{}).
+		Select("COALESCE(alarm_identifier, '(unknown)') as alarm_identifier, COUNT(*) as alarm_count").
+		Where("alarm_identifier IS NOT NULL")
+	if startTime != nil {
+		query = query.Where("event_time >= ?", *startTime)
+	}
+	if endTime != nil {
+		query = query.Where("event_time <= ?", *endTime)
+	}
+	if err := query.Group("alarm_identifier").
+		Order("alarm_count DESC").
+		Limit(topN).
+		Scan(&rows).Error; err != nil {
+		logger.Errorf("FindAlarmStatisticTopN error: %v", err)
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ---------------------------------------------------------------------------
 // AlarmLibrary – import
 // ---------------------------------------------------------------------------

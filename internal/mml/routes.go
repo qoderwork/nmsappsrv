@@ -11,4 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/mml-execute", h.ExecuteMml)
 	rg.GET("/mml-results", h.ListMmlResults)
 	rg.GET("/mml-results/:id", h.GetMmlResult)
+
+	// MML脚本批量处理
+	RegisterBatchProcessRoutes(rg, h)
 }

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -188,6 +189,18 @@ func (m *mockService) AddCommentForAlarm(id int64, comment string) error {
 		return m.addCommentForAlarmFn(id, comment)
 	}
 	panic("mockService.AddCommentForAlarm not implemented")
+}
+
+func (m *mockService) QueryAlarmStatisticTopN(topN int, startTime, endTime *time.Time) ([]AlarmStatisticTopN, error) {
+	return nil, nil
+}
+
+func (m *mockService) GetEmailNotificationConfig() (*EmailNotificationConfig, error) {
+	return &EmailNotificationConfig{}, nil
+}
+
+func (m *mockService) UpdateEmailNotificationConfig(config *EmailNotificationConfig) error {
+	return nil
 }
 
 // ---------------------------------------------------------------------------

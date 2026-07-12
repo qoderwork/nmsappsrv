@@ -34,6 +34,9 @@ type Service interface {
 	GetAlarmSyncConfig() (*AlarmSyncConfig, error)
 	UpdateAlarmSyncConfig(config *AlarmSyncConfig) error
 	AddCommentForAlarm(id int64, comment string) error
+	QueryAlarmStatisticTopN(topN int, startTime, endTime *time.Time) ([]AlarmStatisticTopN, error)
+	GetEmailNotificationConfig() (*EmailNotificationConfig, error)
+	UpdateEmailNotificationConfig(config *EmailNotificationConfig) error
 }
 
 // service contains the business logic for alarm management.
@@ -505,6 +508,83 @@ func (s *service) AddCommentForAlarm(id int64, comment string) error {
 	}
 	if err := s.repo.UpdateAlarmComment(id, comment); err != nil {
 		return apperror.Wrap(err, "ADD_COMMENT_FAILED", 500, "failed to add comment for alarm")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Alarm Statistic Top-N
+// ---------------------------------------------------------------------------
+
+// QueryAlarmStatisticTopN returns the top-N alarm identifiers grouped by count.
+func (s *service) QueryAlarmStatisticTopN(topN int, startTime, endTime *time.Time) ([]AlarmStatisticTopN, error) {
+	if topN < 1 {
+		topN = 10
+	}
+	data, err := s.repo.FindAlarmStatisticTopN(topN, startTime, endTime)
+	if err != nil {
+		return nil, apperror.Wrap(err, "ALARM_STATISTIC_TOP_N_FAILED", 500, "failed to query alarm statistic top-n")
+	}
+	return data, nil
+}
+
+// ---------------------------------------------------------------------------
+// Email Notification Config
+// ---------------------------------------------------------------------------
+
+const emailNotificationConfigKey = "email_notification_config"
+
+// GetEmailNotificationConfig reads the email notification configuration from
+// system_config. When no configuration has been saved yet it returns a
+// zero-value struct.
+func (s *service) GetEmailNotificationConfig() (*EmailNotificationConfig, error) {
+	raw, err := s.repo.GetSystemConfig(emailNotificationConfigKey)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_EMAIL_NOTIFICATION_CONFIG_FAILED", 500, "failed to get email notification config")
+	}
+	if raw == "" {
+		return &EmailNotificationConfig{}, nil
+	}
+	var cfg EmailNotificationConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		logger.Errorf("GetEmailNotificationConfig: unmarshal error: %v", err)
+		return nil, apperror.Wrap(err, "UNMARSHAL_EMAIL_NOTIFICATION_CONFIG_FAILED", 500, "failed to unmarshal email notification config")
+	}
+	return &cfg, nil
+}
+
+// UpdateEmailNotificationConfig persists the email notification configuration
+// to system_config. Partial updates are merged with existing values.
+func (s *service) UpdateEmailNotificationConfig(config *EmailNotificationConfig) error {
+	existing, err := s.GetEmailNotificationConfig()
+	if err != nil {
+		return err
+	}
+	if config.Enabled != nil {
+		existing.Enabled = config.Enabled
+	}
+	if config.SmtpHost != nil {
+		existing.SmtpHost = config.SmtpHost
+	}
+	if config.SmtpPort != nil {
+		existing.SmtpPort = config.SmtpPort
+	}
+	if config.SmtpUser != nil {
+		existing.SmtpUser = config.SmtpUser
+	}
+	if config.SmtpPassword != nil {
+		existing.SmtpPassword = config.SmtpPassword
+	}
+	if config.Recipients != nil {
+		existing.Recipients = config.Recipients
+	}
+
+	data, err := json.Marshal(existing)
+	if err != nil {
+		return apperror.Wrap(err, "MARSHAL_EMAIL_NOTIFICATION_CONFIG_FAILED", 500, "failed to marshal email notification config")
+	}
+	if err := s.repo.SaveSystemConfig(emailNotificationConfigKey, string(data)); err != nil {
+		return apperror.Wrap(err, "UPDATE_EMAIL_NOTIFICATION_CONFIG_FAILED", 500, "failed to update email notification config")
 	}
 	return nil
 }

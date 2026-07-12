@@ -506,7 +506,7 @@ func (h *Handler) GetTBGBySN(c *gin.Context) {
 
 // GET /v1/femtos/wan/:mac — get TBG by WAN MAC address
 func (h *Handler) GetTBGByWanMac(c *gin.Context) {
-	mac := c.Param("mac")
+	mac := c.Param("wanMac")
 	if mac == "" {
 		utils.Error(c, 400, "WAN MAC address is required")
 		return

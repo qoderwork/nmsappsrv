@@ -91,3 +91,42 @@ type CbrsLog struct {
 }
 
 func (CbrsLog) TableName() string { return "cbrs_log" }
+
+// SasConfig 对应 sas_config 表
+type SasConfig struct {
+	Id          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	SasName     string    `gorm:"column:sas_name;type:varchar(255)" json:"sas_name"`
+	SasUrl      string    `gorm:"column:sas_url;type:varchar(500)" json:"sas_url"`
+	CertPath    string    `gorm:"column:cert_path;type:varchar(500)" json:"cert_path"`
+	KeyPath     string    `gorm:"column:key_path;type:varchar(500)" json:"key_path"`
+	Enabled     bool      `gorm:"column:enabled" json:"enabled"`
+	LicenseId   int       `gorm:"column:license_id" json:"license_id"`
+	CreateTime  time.Time `gorm:"column:create_time" json:"create_time"`
+	UpdateTime  time.Time `gorm:"column:update_time" json:"update_time"`
+}
+
+func (SasConfig) TableName() string { return "sas_config" }
+
+// SpectrumInquiryRequest represents a SAS spectrum inquiry request.
+type SpectrumInquiryRequest struct {
+	LowFrequency   int64   `json:"low_frequency"`
+	HighFrequency  int64   `json:"high_frequency"`
+}
+
+// GrantRequest represents a SAS grant request.
+type GrantRequest struct {
+	LowFrequency   int64   `json:"low_frequency"`
+	HighFrequency  int64   `json:"high_frequency"`
+	MaxEirp        float64 `json:"max_eirp"`
+}
+
+// RelinquishmentRequest represents a SAS relinquishment request.
+type RelinquishmentRequest struct {
+	GrantId  string `json:"grant_id"`
+}
+
+// CbsdStatusCountItem holds a status -> count mapping for CBSD statistics.
+type CbsdStatusCountItem struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}

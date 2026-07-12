@@ -1,6 +1,7 @@
 package parameter
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -348,6 +349,29 @@ func (h *Handler) ListBatchConfigurationDetail(c *gin.Context) {
 		return
 	}
 	utils.Success(c, data)
+}
+
+// ---------------------------------------------------------------------------
+// Export Parameter Template
+// ---------------------------------------------------------------------------
+
+// ExportParameterTemplate handles GET /parameter-templates/:id/export
+// It downloads the parameter template as a CSV file.
+func (h *Handler) ExportParameterTemplate(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid template id")
+		return
+	}
+
+	data, filename, err := h.svc.ExportParameterTemplate(id)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to export parameter template")
+		return
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
 }
 
 // getTenancyId extracts tenancy_id from gin context as int.

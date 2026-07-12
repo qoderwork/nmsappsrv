@@ -1,8 +1,11 @@
 package cbsd
 
 import (
+	"encoding/csv"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -153,4 +156,186 @@ func (h *Handler) ListCertFileSendTasks(c *gin.Context) {
 		return
 	}
 	utils.Paginated(c, data, total, page, pageSize)
+}
+
+// ---------------------------------------------------------------------------
+// CBSD lifecycle
+// ---------------------------------------------------------------------------
+
+// EnableCBSD handles POST /cbsd/:id/enable
+func (h *Handler) EnableCBSD(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := h.svc.EnableCBSD(id); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// DisableCBSD handles POST /cbsd/:id/disable
+func (h *Handler) DisableCBSD(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := h.svc.DisableCBSD(id); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// DeleteCBSD handles DELETE /cbsd/:id
+func (h *Handler) DeleteCBSD(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := h.svc.DeleteCBSD(id); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to delete CBSD")
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// ---------------------------------------------------------------------------
+// SAS protocol operations
+// ---------------------------------------------------------------------------
+
+// SpectrumInquiry handles POST /cbsd/spectrum-inquiry
+func (h *Handler) SpectrumInquiry(c *gin.Context) {
+	var req SpectrumInquiryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	licenseId := middleware.GetLicenseId(c)
+	result, err := h.svc.SpectrumInquiry(licenseId, &req)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("spectrum inquiry failed: %v", err))
+		return
+	}
+	utils.Success(c, result)
+}
+
+// Grant handles POST /cbsd/:id/grant
+func (h *Handler) Grant(c *gin.Context) {
+	id := c.Param("id")
+
+	var req GrantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.svc.Grant(id, &req)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("grant failed: %v", err))
+		return
+	}
+	utils.Success(c, result)
+}
+
+// Relinquishment handles POST /cbsd/:id/relinquishment
+func (h *Handler) Relinquishment(c *gin.Context) {
+	id := c.Param("id")
+
+	var req RelinquishmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.svc.Relinquishment(id, &req)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("relinquishment failed: %v", err))
+		return
+	}
+	utils.Success(c, result)
+}
+
+// ---------------------------------------------------------------------------
+// Import / Template
+// ---------------------------------------------------------------------------
+
+// ImportCBSDs handles POST /cbsd/import (CSV file upload)
+func (h *Handler) ImportCBSDs(c *gin.Context) {
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "CSV file is required")
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "failed to parse CSV file")
+		return
+	}
+
+	// Skip header row if present
+	if len(records) > 0 && strings.HasPrefix(records[0][0], "serial") {
+		records = records[1:]
+	}
+
+	licenseId := middleware.GetLicenseId(c)
+	count, err := h.svc.ImportCBSDs(licenseId, records)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("import failed: %v", err))
+		return
+	}
+	utils.Success(c, map[string]interface{}{"imported": count})
+}
+
+// DownloadCBSDTemplate handles GET /cbsd/template
+func (h *Handler) DownloadCBSDTemplate(c *gin.Context) {
+	header := "serial_number,cbsd_category,latitude,longitude,height,vendor,model\n"
+	c.Header("Content-Disposition", "attachment; filename=cbsd_import_template.csv")
+	c.Data(http.StatusOK, "text/csv", []byte(header))
+}
+
+// ---------------------------------------------------------------------------
+// Statistics
+// ---------------------------------------------------------------------------
+
+// ListCBSDStatusCount handles POST /cbsd/status-count
+func (h *Handler) ListCBSDStatusCount(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+
+	data, err := h.svc.ListCBSDStatusCount(licenseId)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to get CBSD status count")
+		return
+	}
+	utils.Success(c, data)
+}
+
+// ---------------------------------------------------------------------------
+// SAS config
+// ---------------------------------------------------------------------------
+
+// ListSasConfig handles GET /cbsd/sas-config
+func (h *Handler) ListSasConfig(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+
+	data, err := h.svc.ListSasConfig(licenseId)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to list SAS config")
+		return
+	}
+	utils.Success(c, data)
+}
+
+// UpdateSasConfig handles PUT /cbsd/sas-config
+func (h *Handler) UpdateSasConfig(c *gin.Context) {
+	var cfg SasConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.svc.UpdateSasConfig(&cfg); err != nil {
+		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("failed to update SAS config: %v", err))
+		return
+	}
+	utils.Success(c, cfg)
 }

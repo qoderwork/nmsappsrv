@@ -223,3 +223,56 @@ type BatchSetParameterRequest struct {
 	ElementId int64                `json:"elementId" binding:"required"`
 	Values    []SetParameterRecord `json:"values" binding:"required"`
 }
+
+// ---------- TR-069 Parameter Definition ----------
+
+// TR069Parameter 对应 tr069_parameter 表 (TR-069 参数定义库)
+type TR069Parameter struct {
+	Id            int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	ParameterName string    `gorm:"column:parameter_name;type:varchar(500)" json:"parameter_name"`
+	ParameterType string    `gorm:"column:parameter_type;type:varchar(50)" json:"parameter_type"`
+	Description   string    `gorm:"column:description;type:text" json:"description"`
+	DefaultValue  string    `gorm:"column:default_value;type:varchar(500)" json:"default_value"`
+	IsReadOnly    bool      `gorm:"column:is_read_only" json:"is_read_only"`
+	CreateTime    time.Time `gorm:"column:create_time" json:"create_time"`
+}
+
+func (TR069Parameter) TableName() string { return "tr069_parameter" }
+
+// ---------- Model Tree DTOs ----------
+
+// ModelTreeNode represents a node in the device parameter tree.
+type ModelTreeNode struct {
+	Name       string          `json:"name"`
+	Path       string          `json:"path"`
+	Value      string          `json:"value,omitempty"`
+	ParamType  string          `json:"paramType,omitempty"`
+	Writable   bool            `json:"writable"`
+	IsObject   bool            `json:"isObject"`
+	Children   []ModelTreeNode `json:"children,omitempty"`
+}
+
+// AddObjectRequest is the JSON body for POST /model-tree/:elementId/add-object.
+type AddObjectRequest struct {
+	ObjectName string `json:"objectName" binding:"required"`
+}
+
+// DeleteObjectRequest is the JSON body for POST /model-tree/:elementId/delete-object.
+type DeleteObjectRequest struct {
+	ObjectName string `json:"objectName" binding:"required"`
+}
+
+// BatchDeleteObjectRequest is the JSON body for POST /model-tree/:elementId/batch-delete-object.
+type BatchDeleteObjectRequest struct {
+	ObjectNames []string `json:"objectNames" binding:"required"`
+}
+
+// RefreshParameterRequest is the JSON body for POST /model-tree/:elementId/refresh.
+type RefreshParameterRequest struct {
+	ParameterPath string `json:"parameterPath" binding:"required"`
+}
+
+// ReloadParameterRequest is the JSON body for POST /model-tree/:elementId/reload.
+type ReloadParameterRequest struct {
+	ParameterPaths []string `json:"parameterPaths" binding:"required"`
+}

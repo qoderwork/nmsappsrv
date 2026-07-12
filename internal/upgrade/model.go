@@ -193,3 +193,67 @@ type EUAndRUBatchUpgradeLog struct {
 }
 
 func (EUAndRUBatchUpgradeLog) TableName() string { return "eu_and_ru_batch_upgrade_log" }
+
+// AutoUpgradeTask 对应 auto_upgrade_task 表
+type AutoUpgradeTask struct {
+	Id             int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           string    `gorm:"column:name;type:varchar(255)" json:"name"`
+	UpgradeFileId  int64     `gorm:"column:upgrade_file_id" json:"upgrade_file_id"`
+	DeviceType     string    `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
+	CronExpression string    `gorm:"column:cron_expression;type:varchar(100)" json:"cron_expression"`
+	Enabled        bool      `gorm:"column:enabled" json:"enabled"`
+	CreateTime     time.Time `gorm:"column:create_time" json:"create_time"`
+	UpdateTime     time.Time `gorm:"column:update_time" json:"update_time"`
+}
+
+func (AutoUpgradeTask) TableName() string { return "auto_upgrade_task" }
+
+// UpgradeResultVo is the API response VO for upgrade result queries.
+type UpgradeResultVo struct {
+	Id             int64  `json:"id"`
+	TaskId         int    `json:"task_id"`
+	ElementId      int64  `json:"element_id"`
+	DeviceName     string `json:"device_name"`
+	SerialNumber   string `json:"serial_number"`
+	OldVersion     string `json:"old_version"`
+	NewVersion     string `json:"new_version"`
+	Status         int    `json:"status"`
+	Success        bool   `json:"success"`
+	Message        string `json:"message"`
+	CreationTime   string `json:"creation_time"`
+	DoneTime       string `json:"done_time"`
+}
+
+// UpgradeResultDetailVo provides extended result details per device.
+type UpgradeResultDetailVo struct {
+	UpgradeResultVo
+	IsDownloaded   bool   `json:"is_downloaded"`
+	DownloadedTime string `json:"downloaded_time"`
+	UpgradeType    string `json:"upgrade_type"`
+	RetryTimes     int    `json:"retry_times"`
+}
+
+// StatusCountItem holds a status -> count mapping for statistics.
+type StatusCountItem struct {
+	Status int   `json:"status"`
+	Count  int64 `json:"count"`
+}
+
+// DeviceResultCountItem holds a result -> count mapping for device results.
+type DeviceResultCountItem struct {
+	Result string `json:"result"`
+	Count  int64  `json:"count"`
+}
+
+// PiecemealUploadRequest represents a chunked file upload request.
+type PiecemealUploadRequest struct {
+	FileName       string `json:"file_name" binding:"required"`
+	ChunkIndex     int    `json:"chunk_index"`
+	TotalChunks    int    `json:"total_chunks"`
+	ChunkSize      int64  `json:"chunk_size"`
+	TotalSize      int64  `json:"total_size"`
+	UploadId       string `json:"upload_id" binding:"required"`
+	DeviceType     string `json:"device_type"`
+	Version        string `json:"version"`
+	ProductType    string `json:"product_type"`
+}

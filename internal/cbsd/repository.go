@@ -25,6 +25,17 @@ type Repository interface {
 	CreateCbrsLog(log *CbrsLog) error
 	CreateCertFileSendTask(t *CBSDCertFileSendTask) error
 	FindCertFileSendTasks(tenancyId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error)
+
+	// CBSD lifecycle
+	FindCbsdInfoByID(id string) (*CbsdInfo, error)
+	UpdateCbsdEnable(id string, enable bool) error
+	CountCbsdByStatus(licenseId int) ([]CbsdStatusCountItem, error)
+	BulkCreateCbsdInfos(infos []CbsdInfo) error
+
+	// SAS config
+	FindSasConfigs(licenseId int) ([]SasConfig, error)
+	FindSasConfigByID(id int64) (*SasConfig, error)
+	UpdateSasConfig(cfg *SasConfig) error
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -132,4 +143,76 @@ func (r *repository) FindCertFileSendTasks(tenancyId int, offset, limit int) ([]
 		return nil, 0, err
 	}
 	return tasks, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// CBSD lifecycle
+// ---------------------------------------------------------------------------
+
+// FindCbsdInfoByID returns a single CBSD info by its primary key.
+func (r *repository) FindCbsdInfoByID(id string) (*CbsdInfo, error) {
+	var info CbsdInfo
+	if err := r.db.Where("id = ?", id).First(&info).Error; err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// UpdateCbsdEnable sets the enable flag for a CBSD record.
+func (r *repository) UpdateCbsdEnable(id string, enable bool) error {
+	return r.db.Model(&CbsdInfo{}).Where("id = ?", id).Update("enable", enable).Error
+}
+
+// CountCbsdByStatus returns per-operation_state counts for a given license.
+func (r *repository) CountCbsdByStatus(licenseId int) ([]CbsdStatusCountItem, error) {
+	var results []CbsdStatusCountItem
+	type row struct {
+		OperationState string `gorm:"column:operation_state"`
+		Cnt            int64  `gorm:"column:cnt"`
+	}
+	var rows []row
+	err := r.db.Model(&CbsdInfo{}).
+		Select("operation_state, COUNT(*) as cnt").
+		Where("license_id = ?", licenseId).
+		Group("operation_state").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		results = append(results, CbsdStatusCountItem{Status: row.OperationState, Count: row.Cnt})
+	}
+	return results, nil
+}
+
+// BulkCreateCbsdInfos inserts multiple CBSD info records in a batch.
+func (r *repository) BulkCreateCbsdInfos(infos []CbsdInfo) error {
+	return r.db.CreateInBatches(infos, 100).Error
+}
+
+// ---------------------------------------------------------------------------
+// SAS config
+// ---------------------------------------------------------------------------
+
+// FindSasConfigs returns all SAS configs for the given license.
+func (r *repository) FindSasConfigs(licenseId int) ([]SasConfig, error) {
+	var configs []SasConfig
+	if err := r.db.Where("license_id = ?", licenseId).Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	return configs, nil
+}
+
+// FindSasConfigByID returns a single SAS config by ID.
+func (r *repository) FindSasConfigByID(id int64) (*SasConfig, error) {
+	var cfg SasConfig
+	if err := r.db.Where("id = ?", id).First(&cfg).Error; err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// UpdateSasConfig saves changes to an existing SAS config.
+func (r *repository) UpdateSasConfig(cfg *SasConfig) error {
+	return r.db.Save(cfg).Error
 }
