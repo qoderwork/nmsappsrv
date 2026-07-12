@@ -450,3 +450,67 @@ func (ep *EventProcessor) createParameterLog(ctx context.Context, cpe *device.Cp
 		logger.Errorf("failed to create parameter_log for %s param %s: %v", *cpe.SerialNumber, paramName, err)
 	}
 }
+
+// handleOpenStationDone updates BatchProcessFileSendLog status when open station completes.
+// Java: OpenStationPostprocessor.openStationDonePostprocessor
+// Finds the in-progress log (status=1) for the given element and updates it to
+// status=2 (success) or status=3 (failure), setting fault_info accordingly.
+func (ep *EventProcessor) handleOpenStationDone(elementId int64, success bool, faultInfo string) {
+	var log misc.BatchProcessFileSendLog
+	err := ep.db.Where("element_id = ? AND status = ?", elementId, 1).First(&log).Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("handleOpenStationDone: failed to query log for element %d: %v", elementId, err)
+		}
+		return
+	}
+
+	var newStatus int
+	if success {
+		newStatus = 2 // success
+	} else {
+		newStatus = 3 // failure
+	}
+
+	updates := map[string]interface{}{
+		"status":    newStatus,
+		"fault_info": faultInfo,
+	}
+	if err := ep.db.Model(&log).Updates(updates).Error; err != nil {
+		logger.Errorf("handleOpenStationDone: failed to update log %d for element %d: %v", log.Id, elementId, err)
+	} else {
+		logger.Infof("handleOpenStationDone: element %d, log %d updated to status=%d", elementId, log.Id, newStatus)
+	}
+}
+
+// handleOpenStationCheckDone updates BatchProcessFileSendLog status when open station check completes.
+// Java: OpenStationPostprocessor.checkDonePostprocessor
+// Finds the in-progress log (status=1, check_file=true) for the given element and updates it to
+// status=4 (check success) or status=5 (check failure), setting fault_info accordingly.
+func (ep *EventProcessor) handleOpenStationCheckDone(elementId int64, success bool, faultInfo string) {
+	var log misc.BatchProcessFileSendLog
+	err := ep.db.Where("element_id = ? AND status = ? AND check_file = ?", elementId, 1, true).First(&log).Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("handleOpenStationCheckDone: failed to query log for element %d: %v", elementId, err)
+		}
+		return
+	}
+
+	var newStatus int
+	if success {
+		newStatus = 4 // check success
+	} else {
+		newStatus = 5 // check failure
+	}
+
+	updates := map[string]interface{}{
+		"status":    newStatus,
+		"fault_info": faultInfo,
+	}
+	if err := ep.db.Model(&log).Updates(updates).Error; err != nil {
+		logger.Errorf("handleOpenStationCheckDone: failed to update log %d for element %d: %v", log.Id, elementId, err)
+	} else {
+		logger.Infof("handleOpenStationCheckDone: element %d, log %d updated to status=%d", elementId, log.Id, newStatus)
+	}
+}

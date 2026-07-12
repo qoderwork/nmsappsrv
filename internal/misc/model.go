@@ -160,6 +160,7 @@ type BatchProcessFileSendLog struct {
 	Status         *int       `gorm:"column:status" json:"status"`
 	FaultInfo      *string    `gorm:"column:fault_info;type:text" json:"fault_info"`
 	FileName       *string    `gorm:"column:file_name;type:varchar(255)" json:"file_name"`
+	CheckFile      *bool      `gorm:"column:check_file" json:"check_file"`
 }
 
 func (BatchProcessFileSendLog) TableName() string { return "batch_process_file_send_log" }

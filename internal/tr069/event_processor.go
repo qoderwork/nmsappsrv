@@ -46,6 +46,9 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 	now := time.Now()
 
 	if err == nil {
+		// DeviceReconnectedPostprocessor: check before updating online status
+		ep.handleDeviceReconnected(ctx, sn, &cpe)
+
 		// Device found: update online status in Redis
 		ep.updateDeviceOnlineStatus(ctx, sn, true)
 
@@ -249,6 +252,7 @@ func (ep *EventProcessor) processEventCode(ctx context.Context, evt soap.EventSt
 
 	case "101 ALARM":
 		logger.Infof("device %s: ALARM event - command key: %s", sn, evt.CommandKey)
+		ep.handleAlarmGenerated(ctx, sn, paramMap)
 		ep.handleValueChange(ctx, sn, params)
 
 	case "102 UPGRADE FINISH":

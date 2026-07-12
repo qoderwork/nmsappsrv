@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"nmsappsrv/internal/alarm"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/tr069/soap"
+	"nmsappsrv/pkg/constants"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -320,6 +322,31 @@ func (ep *EventProcessor) handlePCIChange(ctx context.Context, sn string, paramM
 	}
 
 	logger.Infof("device %s: PCI changed to %s", sn, pci)
+
+	// CPELockPCIPostprocessor: enforce PCI lock if configured
+	pciLockKey := fmt.Sprintf("pci_lock_%s", sn)
+	var lockedPCI string
+	if err := ep.db.Table("system_config").Where("config_key = ?", pciLockKey).Limit(1).Scan(&lockedPCI).Error; err == nil && lockedPCI != "" {
+		if lockedPCI != pci {
+			logger.Warnf("device %s: PCI lock enforced - reported=%s, locked=%s, reverting via SetParameterValues", sn, pci, lockedPCI)
+			utils.SafeGo("PCILock-"+sn, func() {
+				msgMgr := NewMessageManager()
+				opSender := NewOperationSender(ep.db, msgMgr)
+				revertParams := []soap.ParameterValueStruct{
+					{
+						Name:  "Device.Services.FAPService.1.CellConfig.1.NR.RAN.RF.PhyCellID",
+						Value: lockedPCI,
+						Type:  "string",
+					},
+				}
+				if err := opSender.SendSetParameterValues(sn, revertParams, "pci_lock_revert", "pci_lock_revert_"+sn); err != nil {
+					logger.Errorf("device %s: failed to send PCI lock revert SPV: %v", sn, err)
+				}
+			})
+		} else {
+			logger.Infof("device %s: PCI lock check passed - reported PCI matches locked value %s", sn, lockedPCI)
+		}
+	}
 }
 
 // handleMMLReport processes "X 681D64 MMLREPORT" event.
@@ -367,7 +394,7 @@ func (ep *EventProcessor) handleMMLReport(ctx context.Context, sn string, paramM
 }
 
 // handleBatchResult processes "X E01CEE BATCHRESULT" event.
-// Java: extracts batch status/failureCause, updates batch_process_file_send_log.
+// Java: extracts batch status/failureCause, delegates to OpenStationPostprocessor.openStationDonePostprocessor.
 func (ep *EventProcessor) handleBatchResult(ctx context.Context, sn string, paramMap map[string]string) {
 	var cpe device.CpeElement
 	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
@@ -377,27 +404,14 @@ func (ep *EventProcessor) handleBatchResult(ctx context.Context, sn string, para
 	status := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batch.Status"]
 	failureCause := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batch.FailureCause"]
 
-	// Update batch_process_file_send_log: find pending record (status=1) for this element
-	var newStatus int
-	if status == "1" {
-		newStatus = 2 // success
-	} else {
-		newStatus = 3 // failure
-	}
+	success := status == "1"
+	ep.handleOpenStationDone(cpe.NeNeid, success, failureCause)
 
-	updates := map[string]interface{}{
-		"status":     newStatus,
-		"fault_info": failureCause,
-	}
-	ep.db.Table("batch_process_file_send_log").
-		Where("element_id = ? AND status = ?", cpe.NeNeid, 1).
-		Updates(updates)
-
-	logger.Infof("device %s: batch result status=%s, newStatus=%d", sn, status, newStatus)
+	logger.Infof("device %s: batch result status=%s, success=%v", sn, status, success)
 }
 
 // handleBatchCheckResult processes "X E01CEE BATCHCHECKRESULT" event.
-// Java: extracts check status/failureCause, updates batch_process_file_send_log.
+// Java: extracts check status/failureCause, delegates to OpenStationPostprocessor.checkDonePostprocessor.
 func (ep *EventProcessor) handleBatchCheckResult(ctx context.Context, sn string, paramMap map[string]string) {
 	var cpe device.CpeElement
 	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
@@ -407,20 +421,191 @@ func (ep *EventProcessor) handleBatchCheckResult(ctx context.Context, sn string,
 	status := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batchCheck.Status"]
 	failureCause := paramMap["Device.Services.FAPService.1.FAPControl.SelfConfig.X_BBU_batchCheck.FailureCause"]
 
-	var newStatus int
-	if status == "1" {
-		newStatus = 4 // check success
+	success := status == "1"
+	ep.handleOpenStationCheckDone(cpe.NeNeid, success, failureCause)
+
+	logger.Infof("device %s: batch check result status=%s, success=%v", sn, status, success)
+}
+
+// handleAlarmGenerated processes "101 ALARM" event (Java: AlarmGeneratedPostprocessor).
+// Parses alarm fields from Inform parameters, creates or clears alarm records,
+// and publishes alarm notifications via Redis pub/sub.
+func (ep *EventProcessor) handleAlarmGenerated(ctx context.Context, sn string, paramMap map[string]string) {
+	// Parse alarm fields from Inform parameter map
+	alarmIdentifier := paramMap["Device.FaultMgmt.AlarmGenerated.AlarmIdentifier"]
+	probableCause := paramMap["Device.FaultMgmt.AlarmGenerated.ProbableCause"]
+	specificProblem := paramMap["Device.FaultMgmt.AlarmGenerated.SpecificProblem"]
+	perceivedSeverity := paramMap["Device.FaultMgmt.AlarmGenerated.PerceivedSeverity"]
+	eventTimeStr := paramMap["Device.FaultMgmt.AlarmGenerated.EventTime"]
+	additionalText := paramMap["Device.FaultMgmt.AlarmGenerated.AdditionalText"]
+
+	if alarmIdentifier == "" {
+		logger.Warnf("device %s: ALARM event missing AlarmIdentifier, skipping", sn)
+		return
+	}
+
+	// Map PerceivedSeverity (TR-069 integer) to severity string
+	severity := mapPerceivedSeverity(perceivedSeverity)
+
+	// Look up device by serial_number to get element_id and license_id
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+		logger.Warnf("device %s: ALARM event device not found, skipping", sn)
+		return
+	}
+
+	// Parse event_time from Inform parameter
+	var eventTime *time.Time
+	if eventTimeStr != "" {
+		if t, err := time.Parse("2006-01-02T15:04:05", eventTimeStr); err == nil {
+			eventTime = &t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", eventTimeStr); err == nil {
+			eventTime = &t
+		}
+	}
+
+	now := time.Now()
+
+	// Check if an active alarm already exists with same element_id + alarm_identifier + alarm_type=ACTIVE
+	var existingAlarm alarm.Alarm
+	activeType := alarm.AlarmTypeActive
+	err := ep.db.Where("element_id = ? AND alarm_identifier = ? AND alarm_type = ?",
+		cpe.NeNeid, alarmIdentifier, activeType).Limit(1).Find(&existingAlarm).Error
+
+	isCleared := perceivedSeverity == "6"
+
+	if err == nil && existingAlarm.Id != 0 {
+		// Active alarm exists
+		if isCleared {
+			// Severity is "cleared" (6): update alarm_status to HISTORY, set cleared_time
+			historyType := alarm.AlarmTypeHistory
+			historyStatus := alarm.AlarmStatusHistoryUnconfirmed
+			ep.db.Model(&existingAlarm).Updates(map[string]interface{}{
+				"alarm_status": historyStatus,
+				"alarm_type":   historyType,
+				"cleared_time": &now,
+				"update_time":  &now,
+			})
+			logger.Infof("device %s: alarm cleared, alarm_identifier=%s, alarm_id=%d", sn, alarmIdentifier, existingAlarm.Id)
+
+			// Publish alarm clear notification via Redis pub/sub
+			ep.publishAlarmNotify(ctx, existingAlarm.Id, cpe.NeNeid, severity, "cleared")
+		} else {
+			// Active alarm exists and not cleared: skip (dedup)
+			logger.Debugf("device %s: duplicate alarm ignored, alarm_identifier=%s, severity=%s", sn, alarmIdentifier, severity)
+		}
+	} else if !isCleared {
+		// No active alarm exists and not cleared: create new alarm record
+		newAlarm := alarm.Alarm{
+			ElementId:             &cpe.NeNeid,
+			LicenseId:             cpe.LicenseId,
+			AlarmIdentifier:       stringPtr(alarmIdentifier),
+			ProbableCause:         stringPtr(probableCause),
+			SpecificProblem:       stringPtr(specificProblem),
+			Severity:              stringPtr(severity),
+			AlarmId:               stringPtr(additionalText),
+			AdditionalInformation: stringPtr(additionalText),
+			AlarmSource:           stringPtr("TR069"),
+			EventType:             stringPtr("COMMUNICATION_ALARM"),
+			AlarmStatus:           intPtr(alarm.AlarmStatusActiveUnconfirmed),
+			AlarmType:             intPtr(alarm.AlarmTypeActive),
+			EventTime:             eventTime,
+			CreateTime:            &now,
+			UpdateTime:            &now,
+		}
+
+		if err := ep.db.Create(&newAlarm).Error; err != nil {
+			logger.Errorf("device %s: failed to create alarm record: %v", sn, err)
+			return
+		}
+
+		logger.Infof("device %s: new alarm created, alarm_identifier=%s, severity=%s, alarm_id=%d",
+			sn, alarmIdentifier, severity, newAlarm.Id)
+
+		// Publish alarm notify via Redis pub/sub
+		ep.publishAlarmNotify(ctx, newAlarm.Id, cpe.NeNeid, severity, "raised")
+	}
+}
+
+// publishAlarmNotify publishes an alarm event to Redis channel "alarm:notify"
+// for the alarm notifier service to process.
+func (ep *EventProcessor) publishAlarmNotify(ctx context.Context, alarmId int64, elementId int64, severity string, action string) {
+	payload := map[string]interface{}{
+		"alarm_id":   alarmId,
+		"element_id": elementId,
+		"severity":   severity,
+		"action":     action,
+		"timestamp":  time.Now().Unix(),
+	}
+	if payloadJson, err := json.Marshal(payload); err == nil {
+		redis.Publish(ctx, "alarm:notify", string(payloadJson))
 	} else {
-		newStatus = 5 // check failure
+		logger.Errorf("failed to marshal alarm notify payload: %v", err)
+	}
+}
+
+// mapPerceivedSeverity maps TR-069 PerceivedSeverity integer string to severity name.
+// 1=critical, 2=major, 3=minor, 4=warning, 5=indeterminate, 6=cleared
+func mapPerceivedSeverity(code string) string {
+	switch code {
+	case "1":
+		return "critical"
+	case "2":
+		return "major"
+	case "3":
+		return "minor"
+	case "4":
+		return "warning"
+	case "5":
+		return "indeterminate"
+	case "6":
+		return "cleared"
+	default:
+		return "indeterminate"
+	}
+}
+
+// handleDeviceReconnected processes device reconnection (Inform after being offline).
+// Java: DeviceReconnectedPostprocessor - clears stale state and triggers targeted parameter refresh.
+func (ep *EventProcessor) handleDeviceReconnected(ctx context.Context, sn string, cpe *device.CpeElement) {
+	// Check if the device was previously offline
+	onlineKey := constants.RedisKeyDeviceOnline + sn
+	wasOnline := false
+	if val, err := redis.Get(ctx, onlineKey); err == nil && val == "1" {
+		wasOnline = true
 	}
 
-	updates := map[string]interface{}{
-		"status":     newStatus,
-		"fault_info": failureCause,
+	if wasOnline {
+		// Device was already online, not a reconnection
+		return
 	}
-	ep.db.Table("batch_process_file_send_log").
-		Where("element_id = ? AND status = ?", cpe.NeNeid, 1).
-		Updates(updates)
 
-	logger.Infof("device %s: batch check result status=%s, newStatus=%d", sn, status, newStatus)
+	logger.Infof("device %s: reconnected from offline state (neId=%d)", sn, cpe.NeNeid)
+
+	// (a) Clear stale parameter cache in Redis (keys matching param_cache:{neId}:*)
+	cachePattern := fmt.Sprintf("param_cache:%d:*", cpe.NeNeid)
+	if keys, err := redis.RDB.Keys(ctx, cachePattern).Result(); err == nil && len(keys) > 0 {
+		if err := redis.Del(ctx, keys...); err != nil {
+			logger.Warnf("device %s: failed to clear stale param cache: %v", sn, err)
+		} else {
+			logger.Infof("device %s: cleared %d stale param cache keys", sn, len(keys))
+		}
+	}
+
+	// (b) Trigger targeted GPV for critical parameters
+	utils.SafeGo("DeviceReconnected-"+sn, func() {
+		msgMgr := NewMessageManager()
+		opSender := NewOperationSender(ep.db, msgMgr)
+		criticalParams := []string{
+			"Device.DeviceInfo.SoftwareVersion",
+			"Device.DeviceInfo.HardwareVersion",
+			"Device.Services.FAPService.1.FAPControl.NR.CellConfig.",
+		}
+		if err := opSender.SendGetParameterValues(sn, criticalParams, "reconnect_gpv_"+sn); err != nil {
+			logger.Errorf("device %s: failed to send reconnect GPV: %v", sn, err)
+		}
+	})
+
+	// (c) Log the reconnection event
+	logger.Infof("device %s: reconnection postprocessing complete, targeted GPV triggered", sn)
 }
