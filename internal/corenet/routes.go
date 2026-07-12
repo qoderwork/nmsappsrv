@@ -14,5 +14,5 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.PUT("/core-networks/:id/data", h.SaveCoreNetworkData)
 	rg.GET("/core-networks/:id/kpis", h.GetCoreNetworkKpis)
 	rg.GET("/core-networks/:id/statistics", h.GetStatisticData)
-	rg.GET("/core-network-logs", h.ListOperationLogs)
+	rg.GET("/core-networks/:id/logs", h.ListOperationLogs)
 }

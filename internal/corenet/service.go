@@ -55,9 +55,12 @@ func (s *service) UpdateCoreNetwork(cn *CoreNetwork) error {
 	return s.repo.Save(cn)
 }
 
-// DeleteCoreNetwork removes a core network by ID.
+// DeleteCoreNetwork removes a core network by ID, cascading to its data record.
 func (s *service) DeleteCoreNetwork(id int) error {
-	return s.repo.DeleteByID(id)
+	if err := s.repo.DeleteByID(id); err != nil {
+		return err
+	}
+	return s.repo.DeleteCoreNetworkData(id)
 }
 
 // GetCoreNetworkData returns the data record for a core network.

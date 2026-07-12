@@ -24,6 +24,7 @@ type Repository interface {
 	FindCoreNetworks(tenancyId int) ([]CoreNetwork, error)
 	FindCoreNetworkData(coreNetworkId int) (*CoreNetworkData, error)
 	SaveCoreNetworkData(data *CoreNetworkData) error
+	DeleteCoreNetworkData(coreNetworkId int) error
 	FindCoreNetworkKpis(coreNetworkId int, startTime, endTime time.Time) ([]CoreNetworkKpi, error)
 	FindCoreNetworkStatisticData(coreNetworkId int, startTime, endTime time.Time) ([]CoreNetworkStatisticData, error)
 	CreateOperationLog(log *CoreNetworkOperationLog) error
@@ -76,10 +77,25 @@ func (r *repository) SaveCoreNetworkData(data *CoreNetworkData) error {
 	return r.db.Create(data).Error
 }
 
+// DeleteCoreNetworkData removes the data record(s) for the given core network.
+// Java cascades CoreNetworkData deletion when a CoreNetwork is deleted.
+func (r *repository) DeleteCoreNetworkData(coreNetworkId int) error {
+	return r.db.Where("core_network_id = ?", coreNetworkId).Delete(&CoreNetworkData{}).Error
+}
+
 // FindCoreNetworkKpis returns KPI records within the given time range.
+// Java tags each KPI row with rm_uid = the associated device's serial number
+// (CoreNetworkKpiSaveThread writes task.getNe().getRmUid()). The core network's
+// device is resolved via core_network.element_id -> cpe_element.ne_neid, so we
+// match KPIs by that serial. The end time is an open interval (<), matching
+// Java's `lessThan` semantics (CoreNetworkKPIManagementServiceImpl).
 func (r *repository) FindCoreNetworkKpis(coreNetworkId int, startTime, endTime time.Time) ([]CoreNetworkKpi, error) {
 	var kpis []CoreNetworkKpi
-	if err := r.db.Where("rm_uid = ? AND start_time >= ? AND start_time <= ?", coreNetworkId, startTime, endTime).Find(&kpis).Error; err != nil {
+	err := r.db.
+		Where("rm_uid = (SELECT ce.serial_number FROM cpe_element ce JOIN core_network cn ON ce.ne_neid = cn.element_id WHERE cn.id = ?)", coreNetworkId).
+		Where("start_time >= ? AND start_time < ?", startTime, endTime).
+		Find(&kpis).Error
+	if err != nil {
 		logger.Errorf("FindCoreNetworkKpis error: %v", err)
 		return nil, err
 	}
@@ -112,7 +128,7 @@ func (r *repository) FindOperationLogs(coreNetworkId int, offset, limit int) ([]
 		logger.Errorf("FindOperationLogs count error: %v", err)
 		return nil, 0, err
 	}
-	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+	if err := query.Order("operation_time DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
 		logger.Errorf("FindOperationLogs query error: %v", err)
 		return nil, 0, err
 	}
