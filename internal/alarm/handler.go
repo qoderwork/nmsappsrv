@@ -98,6 +98,45 @@ func (h *Handler) BatchClearAlarms(c *gin.Context) {
 	})
 }
 
+// ConfirmAlarm handles POST /alarms/:id/confirm
+func (h *Handler) ConfirmAlarm(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
+		return
+	}
+	if err := h.svc.ConfirmAlarm(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// UnconfirmAlarm handles POST /alarms/:id/unconfirm
+func (h *Handler) UnconfirmAlarm(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
+		return
+	}
+	if err := h.svc.UnconfirmAlarm(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// GetSeverityCount handles GET /alarms/severity-count
+func (h *Handler) GetSeverityCount(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+	data, err := h.svc.GetSeverityCount(licenseId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
 // ---------------------------------------------------------------------------
 // AlarmLibrary endpoints
 // ---------------------------------------------------------------------------

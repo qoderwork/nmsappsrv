@@ -29,6 +29,29 @@ type Alarm struct {
 	Comment               *string    `gorm:"column:comment;type:longtext" json:"comment"`
 }
 
+// Alarm status values, mirroring nms-serv's alarm_status 4-state model.
+// nms-serv encodes both "cleared/history" and "acknowledged" into a single
+// integer, which is the contract the REST clients depend on.
+const (
+	AlarmStatusActiveUnconfirmed  = 1 // Active, not acknowledged
+	AlarmStatusHistoryUnconfirmed = 2 // Cleared (history), not acknowledged
+	AlarmStatusActiveConfirmed    = 3 // Active, acknowledged
+	AlarmStatusHistoryConfirmed   = 4 // Cleared (history), acknowledged
+)
+
+// Alarm type values, mirroring nms-serv's alarm_type field.
+const (
+	AlarmTypeActive  = 1 // ACTIVE
+	AlarmTypeHistory = 2 // HISTORY
+)
+
+// SeverityCount is one row of the per-severity active-alarm tally returned by
+// GetSeverityCount, mirroring nms-serv's getCountOfSeverity response.
+type SeverityCount struct {
+	Severity   string `json:"severity"`
+	AlarmCount int64  `json:"alarmCount"`
+}
+
 func (Alarm) TableName() string { return "alarm" }
 
 // AlarmFilter 对应 alarm_filter 表

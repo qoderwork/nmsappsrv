@@ -34,6 +34,9 @@ type mockService struct {
 	createAlarmFilterFn     func(f *AlarmFilter) error
 	updateAlarmFilterFn     func(f *AlarmFilter) error
 	deleteAlarmFilterFn     func(id int) error
+	confirmAlarmFn          func(id int64) error
+	unconfirmAlarmFn        func(id int64) error
+	getSeverityCountFn      func(licenseId int) ([]SeverityCount, error)
 }
 
 func (m *mockService) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
@@ -134,6 +137,27 @@ func (m *mockService) DeleteAlarmFilter(id int) error {
 	panic("mockService.DeleteAlarmFilter not implemented")
 }
 
+func (m *mockService) ConfirmAlarm(id int64) error {
+	if m.confirmAlarmFn != nil {
+		return m.confirmAlarmFn(id)
+	}
+	panic("mockService.ConfirmAlarm not implemented")
+}
+
+func (m *mockService) UnconfirmAlarm(id int64) error {
+	if m.unconfirmAlarmFn != nil {
+		return m.unconfirmAlarmFn(id)
+	}
+	panic("mockService.UnconfirmAlarm not implemented")
+}
+
+func (m *mockService) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
+	if m.getSeverityCountFn != nil {
+		return m.getSeverityCountFn(licenseId)
+	}
+	panic("mockService.GetSeverityCount not implemented")
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -149,6 +173,9 @@ func newTestRouter(h *Handler) *gin.Engine {
 	r.PUT("/alarms/:id/clear", h.ClearAlarm)
 	r.GET("/alarms", h.ListAlarms)
 	r.PUT("/alarms/batch-clear", h.BatchClearAlarms)
+	r.POST("/alarms/:id/confirm", h.ConfirmAlarm)
+	r.POST("/alarms/:id/unconfirm", h.UnconfirmAlarm)
+	r.GET("/alarms/severity-count", h.GetSeverityCount)
 	return r
 }
 
@@ -313,4 +340,97 @@ func TestHandler_BatchClearAlarms_Success(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_ConfirmAlarm_Success(t *testing.T) {
+	var capturedID int64
+	svc := &mockService{
+		confirmAlarmFn: func(id int64) error {
+			capturedID = id
+			return nil
+		},
+	}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPost, "/alarms/5/confirm", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, int64(5), capturedID)
+}
+
+func TestHandler_ConfirmAlarm_NotFound(t *testing.T) {
+	svc := &mockService{
+		confirmAlarmFn: func(id int64) error {
+			return apperror.ErrAlarmNotFound
+		},
+	}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPost, "/alarms/404/confirm", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandler_ConfirmAlarm_InvalidID(t *testing.T) {
+	svc := &mockService{}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPost, "/alarms/not-a-number/confirm", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandler_UnconfirmAlarm_Success(t *testing.T) {
+	var capturedID int64
+	svc := &mockService{
+		unconfirmAlarmFn: func(id int64) error {
+			capturedID = id
+			return nil
+		},
+	}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodPost, "/alarms/9/unconfirm", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, int64(9), capturedID)
+}
+
+func TestHandler_GetSeverityCount_Success(t *testing.T) {
+	svc := &mockService{
+		getSeverityCountFn: func(licenseId int) ([]SeverityCount, error) {
+			return []SeverityCount{
+				{Severity: "Critical", AlarmCount: 3},
+				{Severity: "Major", AlarmCount: 0},
+				{Severity: "Minor", AlarmCount: 0},
+				{Severity: "Warning", AlarmCount: 0},
+			}, nil
+		},
+	}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/alarms/severity-count", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := parseResponse(w)
+	assert.Equal(t, 200, resp.Code)
+
+	data, ok := resp.Data.([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, data, 4)
 }

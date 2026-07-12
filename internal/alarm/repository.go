@@ -48,20 +48,25 @@ func (r *Repository) FindAlarms(licenseId int, severity string, alarmType int, o
 		logger.Errorf("FindAlarms count error: %v", err)
 		return nil, 0, err
 	}
-	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&alarms).Error; err != nil {
+	if err := query.Order("event_time DESC, id DESC").Offset(offset).Limit(limit).Find(&alarms).Error; err != nil {
 		logger.Errorf("FindAlarms query error: %v", err)
 		return nil, 0, err
 	}
 	return alarms, total, nil
 }
 
-// ClearAlarm marks an alarm as cleared by setting alarm_status to 0 and
-// recording the cleared_time.
+// ClearAlarm marks an alarm as cleared, mirroring nms-serv clearAlarm:
+// alarm_status migrates 1->2 (active) or 3->4 (history), alarm_type is set to
+// HISTORY, and cleared_time + update_time are recorded. If the alarm is
+// already cleared (status 2 or 4) its status is left unchanged while the
+// history flag and timestamps are still refreshed.
 func (r *Repository) ClearAlarm(id int64, clearedTime time.Time) error {
 	return r.db.Model(&Alarm{}).Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"alarm_status": 0,
+			"alarm_status": gorm.Expr("CASE WHEN alarm_status = 1 THEN 2 WHEN alarm_status = 3 THEN 4 ELSE alarm_status END"),
+			"alarm_type":   AlarmTypeHistory,
 			"cleared_time": clearedTime,
+			"update_time":  clearedTime,
 		}).Error
 }
 
@@ -75,9 +80,11 @@ func (r *Repository) BatchClearAlarms(ids []int64, clearUser string, clearedTime
 		for _, id := range ids {
 			result := tx.Model(&Alarm{}).Where("id = ?", id).
 				Updates(map[string]interface{}{
-					"alarm_status": 0,
+					"alarm_status": gorm.Expr("CASE WHEN alarm_status = 1 THEN 2 WHEN alarm_status = 3 THEN 4 ELSE alarm_status END"),
+					"alarm_type":   AlarmTypeHistory,
 					"cleared_time": clearedTime,
 					"clear_user":   clearUser,
+					"update_time":  clearedTime,
 				})
 			if result.Error != nil {
 				return result.Error
@@ -198,4 +205,44 @@ func (r *Repository) UpdateAlarmFilter(f *AlarmFilter) error {
 // DeleteAlarmFilter removes an alarm filter by ID.
 func (r *Repository) DeleteAlarmFilter(id int) error {
 	return r.db.Where("id = ?", id).Delete(&AlarmFilter{}).Error
+}
+
+// SetAlarmStatus updates only the alarm_status and update_time columns. It is
+// used by ConfirmAlarm/UnconfirmAlarm to drive the alarm_status state machine.
+func (r *Repository) SetAlarmStatus(id int64, status int, updateTime time.Time) error {
+	return r.db.Model(&Alarm{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"alarm_status": status,
+			"update_time":  updateTime,
+		}).Error
+}
+
+// CountBySeverity returns the per-severity count of ACTIVE alarms
+// (alarm_type = AlarmTypeActive). It mirrors nms-serv getCountOfSeverity,
+// which groups only active alarms by severity.
+func (r *Repository) CountBySeverity(licenseId int) (map[string]int64, error) {
+	type statRow struct {
+		Severity string
+		Cnt      int64
+	}
+	var rows []statRow
+	query := r.db.Model(&Alarm{}).
+		Select("severity, COUNT(*) as cnt").
+		Where("alarm_type = ?", AlarmTypeActive)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Group("severity").Scan(&rows).Error; err != nil {
+		logger.Errorf("CountBySeverity error: %v", err)
+		return nil, err
+	}
+	out := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		key := row.Severity
+		if key == "" {
+			key = "(unknown)"
+		}
+		out[key] = row.Cnt
+	}
+	return out, nil
 }

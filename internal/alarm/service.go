@@ -15,7 +15,10 @@ type Service interface {
 	ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
 	GetAlarm(id int64) (*Alarm, error)
 	ClearAlarm(id int64) error
+	ConfirmAlarm(id int64) error
+	UnconfirmAlarm(id int64) error
 	BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error)
+	GetSeverityCount(licenseId int) ([]SeverityCount, error)
 	CreateAlarm(a *Alarm) error
 	CheckAlarmSuppression(alarm *Alarm) (bool, string)
 	ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error)
@@ -93,6 +96,15 @@ func (s *service) BatchClearAlarms(alarmIds []int64, clearUser string) (int64, [
 // the alarm matches an active filter it is still created but marked as
 // suppressed so the creation is not silently lost.
 func (s *service) CreateAlarm(a *Alarm) error {
+	// Align new-alarm defaults with nms-serv: Active + unacknowledged.
+	if a.AlarmStatus == nil {
+		status := AlarmStatusActiveUnconfirmed
+		a.AlarmStatus = &status
+	}
+	if a.AlarmType == nil {
+		t := AlarmTypeActive
+		a.AlarmType = &t
+	}
 	// Check suppression before inserting.
 	suppressed, reason := s.CheckAlarmSuppression(a)
 	if suppressed {
@@ -331,4 +343,71 @@ func (s *service) DeleteAlarmFilter(id int) error {
 		return apperror.Wrap(err, "DELETE_ALARM_FILTER_FAILED", 500, "failed to delete alarm filter")
 	}
 	return nil
+}
+
+// ConfirmAlarm acknowledges an alarm, mirroring nms-serv confirmAlarm:
+// status 1->3 (active) or 2->4 (history). Alarms that are already
+// acknowledged (3/4) are left unchanged (no-op), matching Java behaviour.
+func (s *service) ConfirmAlarm(id int64) error {
+	a, err := s.repo.FindByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.ErrAlarmNotFound
+		}
+		return apperror.Wrap(err, "CONFIRM_ALARM_FAILED", 500, "failed to confirm alarm")
+	}
+	var next int
+	switch {
+	case a.AlarmStatus != nil && *a.AlarmStatus == AlarmStatusActiveUnconfirmed:
+		next = AlarmStatusActiveConfirmed
+	case a.AlarmStatus != nil && *a.AlarmStatus == AlarmStatusHistoryUnconfirmed:
+		next = AlarmStatusHistoryConfirmed
+	default:
+		return nil // already confirmed or status unknown -> no-op
+	}
+	if err := s.repo.SetAlarmStatus(id, next, time.Now()); err != nil {
+		return apperror.Wrap(err, "CONFIRM_ALARM_FAILED", 500, "failed to confirm alarm")
+	}
+	return nil
+}
+
+// UnconfirmAlarm reverses acknowledgement, mirroring nms-serv unconfirmAlarm:
+// status 3->1 (active) or 4->2 (history). Unacknowledged alarms are a no-op.
+func (s *service) UnconfirmAlarm(id int64) error {
+	a, err := s.repo.FindByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.ErrAlarmNotFound
+		}
+		return apperror.Wrap(err, "UNCONFIRM_ALARM_FAILED", 500, "failed to unconfirm alarm")
+	}
+	var next int
+	switch {
+	case a.AlarmStatus != nil && *a.AlarmStatus == AlarmStatusActiveConfirmed:
+		next = AlarmStatusActiveUnconfirmed
+	case a.AlarmStatus != nil && *a.AlarmStatus == AlarmStatusHistoryConfirmed:
+		next = AlarmStatusHistoryUnconfirmed
+	default:
+		return nil // already unacknowledged or status unknown -> no-op
+	}
+	if err := s.repo.SetAlarmStatus(id, next, time.Now()); err != nil {
+		return apperror.Wrap(err, "UNCONFIRM_ALARM_FAILED", 500, "failed to unconfirm alarm")
+	}
+	return nil
+}
+
+// GetSeverityCount returns the per-severity tally of ACTIVE alarms, mirroring
+// nms-serv getCountOfSeverity. All four severities are always returned, with a
+// zero count for any that currently have no active alarms.
+func (s *service) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
+	counts, err := s.repo.CountBySeverity(licenseId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "SEVERITY_COUNT_FAILED", 500, "failed to count alarms by severity")
+	}
+	severities := []string{"Critical", "Major", "Minor", "Warning"}
+	out := make([]SeverityCount, 0, len(severities))
+	for _, sev := range severities {
+		out = append(out, SeverityCount{Severity: sev, AlarmCount: counts[sev]})
+	}
+	return out, nil
 }
