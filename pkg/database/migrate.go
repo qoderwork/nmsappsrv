@@ -18,8 +18,10 @@ import (
 	"nmsappsrv/internal/paramcompare"
 	"nmsappsrv/internal/parammonitor"
 	"nmsappsrv/internal/pm"
+	"nmsappsrv/internal/pmfile"
 	"nmsappsrv/internal/restapi"
 	"nmsappsrv/internal/site"
+	"nmsappsrv/internal/tcpdump"
 	sshmod "nmsappsrv/internal/ssh"
 	"nmsappsrv/internal/snmp"
 	"nmsappsrv/internal/systemsettings"
@@ -203,6 +205,12 @@ func AutoMigrateAll(db *gorm.DB) error {
 
 		// heartbeat (1)
 		&heartbeat.HeartbeatRecord{},
+		// tcpdump (1)
+		&tcpdump.TcpdumpTask{},
+
+		// pmfile (2)
+		&pmfile.PMFile{},
+		&pmfile.PMKPIMeasurement{},
 	}
 
 	logger.Infof("auto migrating %d model tables...", len(models))

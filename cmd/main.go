@@ -37,6 +37,7 @@ import (
 	"nmsappsrv/internal/parammonitor"
 	"nmsappsrv/internal/platform"
 	"nmsappsrv/internal/pm"
+	"nmsappsrv/internal/pmfile"
 	"nmsappsrv/internal/reboot"
 	"nmsappsrv/internal/reset"
 	"nmsappsrv/internal/resources"
@@ -48,10 +49,13 @@ import (
 	sshmod "nmsappsrv/internal/ssh"
 	"nmsappsrv/internal/systemsettings"
 	"nmsappsrv/internal/tenancy"
+	"nmsappsrv/internal/tcpdump"
+	"nmsappsrv/internal/topology"
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/upgrade"
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
+	"nmsappsrv/internal/webssh"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/metrics"
@@ -266,6 +270,11 @@ func main() {
 	tenancyH := tenancy.NewHandler(db)
 	cacertH := cacert.NewHandler(db)
 	dashboardH := dashboard.NewHandler(db)
+	// tcpdump and PM file modules
+	tcpdumpH := tcpdump.NewHandler(db)
+	pmfileH := pmfile.NewHandler(db)
+	// Topology management module
+	topologyH := topology.NewHandler(db)
 
 	// ========== Lifecycle Manager ==========
 	// workerTask adapts the project's Start/Stop worker convention to lifecycle.Task.
@@ -309,6 +318,9 @@ func main() {
 
 	// WebSocket route (no auth required)
 	router.GET("/ws", wsH.ServeWS)
+
+	// WebSSH WebSocket route (SSH auth handled server-side via system_config)
+	webssh.RegisterRoutes(router.Group(""), db)
 
 	// 启动SSH Access Timer后台过期检查
 	sshH.StartExpiredChecker()
@@ -365,6 +377,9 @@ func main() {
 			cacert.RegisterRoutes(auth, cacertH)
 			dashboard.RegisterRoutes(auth, dashboardH)
 			heartbeat.RegisterRoutes(auth, heartbeatH)
+			tcpdump.RegisterRoutes(auth, tcpdumpH)
+			pmfile.RegisterRoutes(auth, pmfileH)
+			topology.RegisterRoutes(auth, topologyH)
 		}
 	}
 
@@ -445,6 +460,9 @@ func main() {
 
 	// Alarm email notifier (subscribes to channel:alarm:notify)
 	mgr.Add(workerTask("alarm-notifier", alarmNotifier.Start, alarmNotifier.Stop))
+	// PM file processor (consumes queue:pm and parses uploaded PM files)
+	pmfileProcessor := pmfile.NewProcessor(db)
+	mgr.Add(workerTask("pmfile-processor", pmfileProcessor.Start, pmfileProcessor.Stop))
 
 	// Parameter monitor threshold checker
 	mgr.Add(workerTask("param-threshold",
