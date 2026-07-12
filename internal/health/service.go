@@ -16,24 +16,38 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service provides health check operations
-type Service struct {
-	repo    *Repository
+// Service defines the business-logic contract for health checks.
+type Service interface {
+	HealthCheck() HealthStatus
+	GetMysqlInfo() (*MysqlInfo, error)
+	GetRedisInfo() (*RedisInfo, error)
+	GetQueueInfo() []QueueInfo
+	ReportHAStatus(status HAComponentStatus) error
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo    Repository
 	haCache sync.Map
 }
 
-// NewService creates a new Service
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+// NewService creates a Service backed by a fresh Repository.
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // HealthCheck returns basic health status
-func (s *Service) HealthCheck() HealthStatus {
+func (s *service) HealthCheck() HealthStatus {
 	return newHealthStatus()
 }
 
 // GetMysqlInfo returns MySQL health metrics
-func (s *Service) GetMysqlInfo() (*MysqlInfo, error) {
+func (s *service) GetMysqlInfo() (*MysqlInfo, error) {
 	metrics, err := s.repo.GetMysqlGlobalStatus()
 	if err != nil {
 		return nil, err
@@ -52,7 +66,7 @@ func (s *Service) GetMysqlInfo() (*MysqlInfo, error) {
 }
 
 // GetRedisInfo returns Redis health metrics
-func (s *Service) GetRedisInfo() (*RedisInfo, error) {
+func (s *service) GetRedisInfo() (*RedisInfo, error) {
 	ctx := context.Background()
 	info, err := redis.RDB.Info(ctx, "all").Result()
 	if err != nil {
@@ -84,7 +98,7 @@ func (s *Service) GetRedisInfo() (*RedisInfo, error) {
 }
 
 // GetQueueInfo returns Redis queue lengths
-func (s *Service) GetQueueInfo() []QueueInfo {
+func (s *service) GetQueueInfo() []QueueInfo {
 	ctx := context.Background()
 	queues := []string{
 		mq.OperationQueue,
@@ -117,7 +131,7 @@ func (s *Service) GetQueueInfo() []QueueInfo {
 }
 
 // ReportHAStatus processes HA component status report
-func (s *Service) ReportHAStatus(status HAComponentStatus) error {
+func (s *service) ReportHAStatus(status HAComponentStatus) error {
 	key := fmt.Sprintf("%s:%s", status.Hostname, status.ComponentName)
 
 	// Store in memory cache
@@ -131,7 +145,7 @@ func (s *Service) ReportHAStatus(status HAComponentStatus) error {
 }
 
 // persistHAStatus saves HA status to file
-func (s *Service) persistHAStatus() {
+func (s *service) persistHAStatus() {
 	data := make(map[string]HAComponentStatus)
 	s.haCache.Range(func(key, value interface{}) bool {
 		if status, ok := value.(HAComponentStatus); ok {

@@ -18,7 +18,7 @@ import (
 //   - Config management (behind web UI auth): GetConfig, SaveConfig, ExportConfig, UploadConfig
 //   - Device TR-069 communication (no auth, device-facing): HandleInitServer
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a Handler backed by a fresh Service.

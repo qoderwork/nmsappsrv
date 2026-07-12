@@ -22,14 +22,32 @@ import (
 	"nmsappsrv/pkg/utils"
 )
 
-// Service provides platform settings operations
-type Service struct {
-	repo   *Repository
+// Service defines the business-logic contract for platform operations.
+type Service interface {
+	GetTime() int64
+	GetSupportedZone() []string
+	GetLogo(licenseLogo string) string
+	GetLogConfig() (*LogConfig, error)
+	UpdateLogConfig(cfg *LogConfig) error
+	GetFTPTransferLogConfig() (*FTPTransferLogConfig, error)
+	UpdateFTPTransferLogConfig(cfg *FTPTransferLogConfig) error
+	GetHECConfig() (*HECConfig, error)
+	UpdateHECConfig(cfg *HECConfig) error
+	ListNMSSecret() (*NMSSecret, error)
+	UpdateNMSSecret(secret *NMSSecret) error
+	StartLogCollection() (string, error)
+	GetLogCollectionStatus(taskId string) (status, filePath string, err error)
+	DownloadCollectedLogs(taskId string) (string, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo   Repository
 	aesKey []byte // 32-byte AES-256 key
 }
 
 // NewService creates a new Service
-func NewService(repo *Repository, aesKeyHex string) *Service {
+func NewService(repo Repository, aesKeyHex string) Service {
 	key := make([]byte, 32)
 	if aesKeyHex != "" {
 		decoded, err := hex.DecodeString(aesKeyHex)
@@ -37,23 +55,23 @@ func NewService(repo *Repository, aesKeyHex string) *Service {
 			copy(key, decoded)
 		}
 	}
-	return &Service{repo: repo, aesKey: key}
+	return &service{repo: repo, aesKey: key}
 }
 
 // GetTime returns current server time in milliseconds
-func (s *Service) GetTime() int64 {
+func (s *service) GetTime() int64 {
 	return time.Now().UnixMilli()
 }
 
 // GetSupportedZone returns all available timezone IDs
-func (s *Service) GetSupportedZone() []string {
+func (s *service) GetSupportedZone() []string {
 	// Go doesn't have a direct equivalent of ZoneId.getAvailableZoneIds()
 	// Return a comprehensive list of common timezones
 	return commonTimezones
 }
 
 // GetLogo returns the logo base64 string from license/tenancy
-func (s *Service) GetLogo(licenseLogo string) string {
+func (s *service) GetLogo(licenseLogo string) string {
 	if licenseLogo != "" {
 		return licenseLogo
 	}
@@ -64,7 +82,7 @@ func (s *Service) GetLogo(licenseLogo string) string {
 // ---------- Log Config ----------
 
 // GetLogConfig returns the current log level configuration
-func (s *Service) GetLogConfig() (*LogConfig, error) {
+func (s *service) GetLogConfig() (*LogConfig, error) {
 	value, err := s.repo.GetSystemConfig("platform_log_config")
 	if err != nil {
 		return nil, err
@@ -83,7 +101,7 @@ func (s *Service) GetLogConfig() (*LogConfig, error) {
 }
 
 // UpdateLogConfig updates the log level configuration
-func (s *Service) UpdateLogConfig(cfg *LogConfig) error {
+func (s *service) UpdateLogConfig(cfg *LogConfig) error {
 	if !isValidLogLevel(cfg.Level) {
 		return apperror.ErrInvalidInput.WithMessage("invalid log level: " + cfg.Level)
 	}
@@ -97,7 +115,7 @@ func (s *Service) UpdateLogConfig(cfg *LogConfig) error {
 // ---------- FTP Transfer Log Config ----------
 
 // GetFTPTransferLogConfig returns the FTP transfer log config with decrypted password
-func (s *Service) GetFTPTransferLogConfig() (*FTPTransferLogConfig, error) {
+func (s *service) GetFTPTransferLogConfig() (*FTPTransferLogConfig, error) {
 	value, err := s.repo.GetSystemConfig("log_ftp_transfer_config")
 	if err != nil {
 		return nil, err
@@ -122,7 +140,7 @@ func (s *Service) GetFTPTransferLogConfig() (*FTPTransferLogConfig, error) {
 }
 
 // UpdateFTPTransferLogConfig updates the FTP transfer log config with encrypted password
-func (s *Service) UpdateFTPTransferLogConfig(cfg *FTPTransferLogConfig) error {
+func (s *service) UpdateFTPTransferLogConfig(cfg *FTPTransferLogConfig) error {
 	if cfg.Host == "" || cfg.Username == "" || cfg.Password == "" || cfg.UploadPath == "" || cfg.Port == nil {
 		return apperror.ErrInvalidInput.WithMessage("host, username, password, uploadPath and port are required")
 	}
@@ -161,7 +179,7 @@ func (s *Service) UpdateFTPTransferLogConfig(cfg *FTPTransferLogConfig) error {
 // ---------- HEC Config ----------
 
 // GetHECConfig returns the HEC configuration
-func (s *Service) GetHECConfig() (*HECConfig, error) {
+func (s *service) GetHECConfig() (*HECConfig, error) {
 	value, err := s.repo.GetSystemConfig("hec_config")
 	if err != nil {
 		return nil, err
@@ -179,7 +197,7 @@ func (s *Service) GetHECConfig() (*HECConfig, error) {
 }
 
 // UpdateHECConfig updates the HEC configuration
-func (s *Service) UpdateHECConfig(cfg *HECConfig) error {
+func (s *service) UpdateHECConfig(cfg *HECConfig) error {
 	if cfg.URL == "" || cfg.Token == "" {
 		return apperror.ErrInvalidInput.WithMessage("url and token are required")
 	}
@@ -193,7 +211,7 @@ func (s *Service) UpdateHECConfig(cfg *HECConfig) error {
 // ---------- NMS Secret ----------
 
 // ListNMSSecret returns NMS secret settings
-func (s *Service) ListNMSSecret() (*NMSSecret, error) {
+func (s *service) ListNMSSecret() (*NMSSecret, error) {
 	value, err := s.repo.GetSystemConfig("nms_secret")
 	if err != nil {
 		return nil, err
@@ -226,7 +244,7 @@ func (s *Service) ListNMSSecret() (*NMSSecret, error) {
 }
 
 // UpdateNMSSecret updates NMS secret settings
-func (s *Service) UpdateNMSSecret(secret *NMSSecret) error {
+func (s *service) UpdateNMSSecret(secret *NMSSecret) error {
 	if secret.EmailSecret == "" {
 		return apperror.ErrInvalidInput.WithMessage("emailSecret is required")
 	}
@@ -242,7 +260,7 @@ func (s *Service) UpdateNMSSecret(secret *NMSSecret) error {
 
 // ---------- AES-GCM encryption ----------
 
-func (s *Service) encrypt(plaintext string) string {
+func (s *service) encrypt(plaintext string) string {
 	if plaintext == "" {
 		return ""
 	}
@@ -260,7 +278,7 @@ func (s *Service) encrypt(plaintext string) string {
 	return hex.EncodeToString(ciphertext)
 }
 
-func (s *Service) decrypt(ciphertext string) string {
+func (s *service) decrypt(ciphertext string) string {
 	if ciphertext == "" {
 		return ""
 	}
@@ -338,7 +356,7 @@ const logDownloadTTL = 30 * time.Minute
 // StartLogCollection generates a task ID, stores "collecting" status in Redis,
 // and launches a background goroutine that zips all .log files from the platform
 // log directory. Returns the task ID immediately.
-func (s *Service) StartLogCollection() (string, error) {
+func (s *service) StartLogCollection() (string, error) {
 	taskId := fmt.Sprintf("%d", time.Now().UnixNano())
 	key := logDownloadKeyPrefix + taskId
 
@@ -357,7 +375,7 @@ func (s *Service) StartLogCollection() (string, error) {
 
 // collectLogs walks the platform log directory, creates a ZIP of all .log files,
 // and updates Redis status accordingly.
-func (s *Service) collectLogs(taskId string) {
+func (s *service) collectLogs(taskId string) {
 	ctx := context.Background()
 	key := logDownloadKeyPrefix + taskId
 
@@ -455,7 +473,7 @@ func (s *Service) collectLogs(taskId string) {
 	s.updateLogStatus(ctx, key, "ready", zipPath, "")
 }
 
-func (s *Service) updateLogStatus(ctx context.Context, key, status, filePath, errMsg string) {
+func (s *service) updateLogStatus(ctx context.Context, key, status, filePath, errMsg string) {
 	st := logDownloadStatus{Status: status, FilePath: filePath, Error: errMsg}
 	data, _ := json.Marshal(st)
 	if err := redis.Set(ctx, key, string(data), logDownloadTTL); err != nil {
@@ -464,7 +482,7 @@ func (s *Service) updateLogStatus(ctx context.Context, key, status, filePath, er
 }
 
 // GetLogCollectionStatus reads the current status of a log collection task from Redis.
-func (s *Service) GetLogCollectionStatus(taskId string) (status, filePath string, err error) {
+func (s *service) GetLogCollectionStatus(taskId string) (status, filePath string, err error) {
 	key := logDownloadKeyPrefix + taskId
 	val, err := redis.Get(context.Background(), key)
 	if err != nil {
@@ -479,7 +497,7 @@ func (s *Service) GetLogCollectionStatus(taskId string) (status, filePath string
 }
 
 // DownloadCollectedLogs checks that the task is "ready" and returns the file path.
-func (s *Service) DownloadCollectedLogs(taskId string) (string, error) {
+func (s *service) DownloadCollectedLogs(taskId string) (string, error) {
 	status, filePath, err := s.GetLogCollectionStatus(taskId)
 	if err != nil {
 		return "", err
@@ -515,4 +533,9 @@ var commonTimezones = []string{
 	"Europe/Stockholm", "Europe/Vienna", "Europe/Warsaw", "Europe/Zurich",
 	"Pacific/Auckland", "Pacific/Fiji", "Pacific/Guam", "Pacific/Honolulu", "Pacific/Midway",
 	"UTC",
+}
+
+// newService creates a Service backed by the given Repository (test/mock helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

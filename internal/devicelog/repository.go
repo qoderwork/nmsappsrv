@@ -7,26 +7,62 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides data access for device log entities.
+// Repository defines the data-access contract for device log entities.
 // It embeds BaseRepository[NeLog, int64] for standard CRUD on NeLog,
 // and retains module-specific methods for custom queries.
-type Repository struct {
+type Repository interface {
+	// Generic CRUD delegated to BaseRepository[NeLog, int64].
+	Create(entity *NeLog) error
+	Save(entity *NeLog) error
+	FindByID(id int64) (*NeLog, error)
+	DeleteByID(id int64) error
+	DeleteByIDs(ids []int64) error
+	SoftDelete(id int64) error
+	UpdateFields(id int64, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]NeLog, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[NeLog], error)
+
+	// Module-specific methods.
+	DeleteByElementId(elementId int64) error
+	FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error)
+	FindAllByElementId(elementId int64) ([]NeLog, error)
+	FindByFilter(elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error)
+	FindDeviceRootNode(elementId int64) (*string, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[NeLog, int64]
 	db *gorm.DB
 }
 
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[NeLog, int64](db, "id"),
 		db:             db,
 	}
 }
 
-func (r *Repository) DeleteByElementId(elementId int64) error {
+// FindDeviceRootNode returns the TR-069 root_node of a device (or nil if not found).
+func (r *repository) FindDeviceRootNode(elementId int64) (*string, error) {
+	var device struct {
+		RootNode *string `gorm:"column:root_node"`
+	}
+	if err := r.db.Table("cpe_element").
+		Where("ne_neid = ? AND deleted = ?", elementId, false).
+		First(&device).Error; err != nil {
+		return nil, err
+	}
+	return device.RootNode, nil
+}
+
+func (r *repository) DeleteByElementId(elementId int64) error {
 	return r.db.Where("element_id = ?", elementId).Delete(&NeLog{}).Error
 }
 
-func (r *Repository) FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error) {
+func (r *repository) FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error) {
 	var logs []NeLog
 	var total int64
 
@@ -42,7 +78,7 @@ func (r *Repository) FindByElementId(elementId int64, offset, limit int) ([]NeLo
 	return logs, total, nil
 }
 
-func (r *Repository) FindAllByElementId(elementId int64) ([]NeLog, error) {
+func (r *repository) FindAllByElementId(elementId int64) ([]NeLog, error) {
 	var logs []NeLog
 	err := r.db.Where("element_id = ?", elementId).Find(&logs).Error
 	if err != nil {
@@ -51,7 +87,7 @@ func (r *Repository) FindAllByElementId(elementId int64) ([]NeLog, error) {
 	return logs, nil
 }
 
-func (r *Repository) FindByFilter(elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error) {
+func (r *repository) FindByFilter(elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error) {
 	var results []LogCollectionResultVo
 	var total int64
 

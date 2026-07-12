@@ -16,14 +16,29 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Service contains diagnostics business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for diagnostics.
+type Service interface {
+	TriggerPing(req *PingRequest, username string) error
+	TriggerTraceRoute(req *TraceRouteRequest, username string) error
+	TriggerDownload(req *DownloadRequest, username string, fileServerIp string) error
+	TriggerUpload(req *UploadRequest, username string, fileServerIp string) error
+	GetDiagnosticsStatus(elementId int64) bool
+	GetDiagnosticsResult(elementId int64) (*DiagnosticsResultVO, error)
 }
 
-// NewService creates a new diagnostics service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+// NewService creates a Service backed by a fresh Repository.
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ---------- TR-069 parameter name constants ----------
@@ -35,7 +50,7 @@ var (
 // ---------- Dispatch helper ----------
 
 // dispatchDiagnostics builds params, creates EventLog, pushes to Redis queue, sets diagnostics status.
-func (s *Service) dispatchDiagnostics(elementId int64, rootNode string, username string, params []paramVo, diagType string) error {
+func (s *service) dispatchDiagnostics(elementId int64, rootNode string, username string, params []paramVo, diagType string) error {
 	// Query param type info from DB
 	paramNames := make([]string, len(params))
 	for i, p := range params {
@@ -88,7 +103,7 @@ func (s *Service) dispatchDiagnostics(elementId int64, rootNode string, username
 
 // ---------- Trigger diagnostics ----------
 
-func (s *Service) TriggerPing(req *PingRequest, username string) error {
+func (s *service) TriggerPing(req *PingRequest, username string) error {
 	rootNode, err := s.repo.FindElementRootNode(req.ElementId)
 	if err != nil {
 		return err
@@ -119,7 +134,7 @@ func (s *Service) TriggerPing(req *PingRequest, username string) error {
 	return s.dispatchDiagnostics(req.ElementId, rootNode, username, params, "ping")
 }
 
-func (s *Service) TriggerTraceRoute(req *TraceRouteRequest, username string) error {
+func (s *service) TriggerTraceRoute(req *TraceRouteRequest, username string) error {
 	rootNode, err := s.repo.FindElementRootNode(req.ElementId)
 	if err != nil {
 		return err
@@ -150,7 +165,7 @@ func (s *Service) TriggerTraceRoute(req *TraceRouteRequest, username string) err
 	return s.dispatchDiagnostics(req.ElementId, rootNode, username, params, "trace")
 }
 
-func (s *Service) TriggerDownload(req *DownloadRequest, username string, fileServerIp string) error {
+func (s *service) TriggerDownload(req *DownloadRequest, username string, fileServerIp string) error {
 	rootNode, err := s.repo.FindElementRootNode(req.ElementId)
 	if err != nil {
 		return err
@@ -179,7 +194,7 @@ func (s *Service) TriggerDownload(req *DownloadRequest, username string, fileSer
 	return s.dispatchDiagnostics(req.ElementId, rootNode, username, params, "download")
 }
 
-func (s *Service) TriggerUpload(req *UploadRequest, username string, fileServerIp string) error {
+func (s *service) TriggerUpload(req *UploadRequest, username string, fileServerIp string) error {
 	rootNode, err := s.repo.FindElementRootNode(req.ElementId)
 	if err != nil {
 		return err
@@ -217,7 +232,7 @@ func (s *Service) TriggerUpload(req *UploadRequest, username string, fileServerI
 
 // ---------- Query results ----------
 
-func (s *Service) GetDiagnosticsStatus(elementId int64) bool {
+func (s *service) GetDiagnosticsStatus(elementId int64) bool {
 	ctx := context.Background()
 	val, err := redis.Get(ctx, fmt.Sprintf("cpe_in_diagnostics_%d", elementId))
 	if err != nil {
@@ -226,7 +241,7 @@ func (s *Service) GetDiagnosticsStatus(elementId int64) bool {
 	return val == "yes"
 }
 
-func (s *Service) GetDiagnosticsResult(elementId int64) (*DiagnosticsResultVO, error) {
+func (s *service) GetDiagnosticsResult(elementId int64) (*DiagnosticsResultVO, error) {
 	rootNode, err := s.repo.FindElementRootNode(elementId)
 	if err != nil {
 		return nil, err
@@ -246,7 +261,7 @@ func (s *Service) GetDiagnosticsResult(elementId int64) (*DiagnosticsResultVO, e
 
 // ---------- Result builders ----------
 
-func (s *Service) buildPingResult(elementId int64, rootNode string, ctx context.Context) *PingResultVO {
+func (s *service) buildPingResult(elementId int64, rootNode string, ctx context.Context) *PingResultVO {
 	params, err := s.repo.FindParamsByElementIdAndNameLike(elementId, rootNode+".IPPingDiagnostics.%")
 	if err != nil {
 		logger.Errorf("find ping params: %v", err)
@@ -280,7 +295,7 @@ func (s *Service) buildPingResult(elementId int64, rootNode string, ctx context.
 	return ping
 }
 
-func (s *Service) buildDownloadResult(elementId int64, rootNode string, ctx context.Context) *DownloadResultVO {
+func (s *service) buildDownloadResult(elementId int64, rootNode string, ctx context.Context) *DownloadResultVO {
 	params, err := s.repo.FindParamsByElementIdAndNameLike(elementId, rootNode+".DownloadDiagnostics.%")
 	if err != nil {
 		logger.Errorf("find download params: %v", err)
@@ -317,7 +332,7 @@ func (s *Service) buildDownloadResult(elementId int64, rootNode string, ctx cont
 	return dl
 }
 
-func (s *Service) buildUploadResult(elementId int64, rootNode string, ctx context.Context) *UploadResultVO {
+func (s *service) buildUploadResult(elementId int64, rootNode string, ctx context.Context) *UploadResultVO {
 	params, err := s.repo.FindParamsByElementIdAndNameLike(elementId, rootNode+".UploadDiagnostics.%")
 	if err != nil {
 		logger.Errorf("find upload params: %v", err)
@@ -354,7 +369,7 @@ func (s *Service) buildUploadResult(elementId int64, rootNode string, ctx contex
 	return ul
 }
 
-func (s *Service) buildTraceResult(elementId int64, rootNode string, ctx context.Context) *TraceResultVO {
+func (s *service) buildTraceResult(elementId int64, rootNode string, ctx context.Context) *TraceResultVO {
 	params, err := s.repo.FindParamsByElementIdAndNameLike(elementId, rootNode+".TraceRouteDiagnostics.%")
 	if err != nil {
 		logger.Errorf("find trace params: %v", err)

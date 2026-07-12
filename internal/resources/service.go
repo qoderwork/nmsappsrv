@@ -12,18 +12,27 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-// Service provides resource monitoring operations
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for resource monitoring
+type Service interface {
+	GetCpuAndMemUsage() ResourcesVO
+	GetTableStatus() ([]TableStatusVO, error)
+	GetDiskUsage() []DiskUsageVO
+	GetThreshold() (*ThresholdConfig, error)
+	UpdateThreshold(cfg *ThresholdConfig) error
+}
+
+// service is the concrete implementation of Service
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new Service
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // GetCpuAndMemUsage returns current CPU and memory usage
-func (s *Service) GetCpuAndMemUsage() ResourcesVO {
+func (s *service) GetCpuAndMemUsage() ResourcesVO {
 	cpuUsage := 0.0
 	memUsage := 0.0
 
@@ -49,12 +58,12 @@ func (s *Service) GetCpuAndMemUsage() ResourcesVO {
 }
 
 // GetTableStatus returns MySQL table sizes
-func (s *Service) GetTableStatus() ([]TableStatusVO, error) {
+func (s *service) GetTableStatus() ([]TableStatusVO, error) {
 	return s.repo.GetTableStatus()
 }
 
 // GetDiskUsage returns disk partition usage
-func (s *Service) GetDiskUsage() []DiskUsageVO {
+func (s *service) GetDiskUsage() []DiskUsageVO {
 	result := []DiskUsageVO{}
 
 	partitions, err := disk.Partitions(false)
@@ -97,7 +106,7 @@ func formatBytes(b uint64) string {
 }
 
 // GetThreshold returns alarm threshold configuration
-func (s *Service) GetThreshold() (*ThresholdConfig, error) {
+func (s *service) GetThreshold() (*ThresholdConfig, error) {
 	value, err := s.repo.GetSystemConfig("sysThreshold")
 	if err != nil {
 		return nil, err
@@ -123,10 +132,15 @@ func (s *Service) GetThreshold() (*ThresholdConfig, error) {
 }
 
 // UpdateThreshold updates alarm threshold configuration
-func (s *Service) UpdateThreshold(cfg *ThresholdConfig) error {
+func (s *service) UpdateThreshold(cfg *ThresholdConfig) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 	return s.repo.SaveSystemConfig("sysThreshold", string(data))
+}
+
+// newService creates a Service backed by the given mock Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

@@ -19,19 +19,30 @@ const (
 	redisCacheTTL   = 24 * time.Hour
 )
 
-// Service manages device authentication configuration.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for device auth configuration.
+type Service interface {
+	GetConfig(licenseId string) (*DeviceAuthConfig, error)
+	SaveConfig(cfg *DeviceAuthConfig) error
 }
 
-// NewService creates a new device auth config service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+// NewService creates a Service backed by a fresh Repository.
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // GetConfig loads the device auth config for a tenant.
 // Checks Redis cache first, falls back to DB.
-func (s *Service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
+func (s *service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
 	// Try Redis cache
 	redisKey := redisKeyPrefix + licenseId
 	ctx := context.Background()
@@ -69,7 +80,7 @@ func (s *Service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
 }
 
 // SaveConfig saves the device auth config to DB and updates Redis for all tenants.
-func (s *Service) SaveConfig(cfg *DeviceAuthConfig) error {
+func (s *service) SaveConfig(cfg *DeviceAuthConfig) error {
 	jsonBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return err

@@ -11,12 +11,12 @@ import (
 // BackupScheduler bridges stored backup schedule definitions to the unified
 // cron scheduler, checking daily which schedules are due for execution.
 type BackupScheduler struct {
-	repo *Repository
-	svc  *Service
+	repo Repository
+	svc  Service
 }
 
 // NewBackupScheduler creates a new BackupScheduler.
-func NewBackupScheduler(repo *Repository, svc *Service) *BackupScheduler {
+func NewBackupScheduler(repo Repository, svc Service) *BackupScheduler {
 	return &BackupScheduler{repo: repo, svc: svc}
 }
 

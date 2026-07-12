@@ -10,18 +10,31 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for Dashboard module
-type Repository struct {
+// Repository defines the data-access contract for Dashboard module.
+type Repository interface {
+	ListDevicesByMode(ctx context.Context, mode string, tenancyId *int) ([]map[string]interface{}, error)
+	ListAllDevices(ctx context.Context, tenancyId *int) ([]map[string]interface{}, error)
+	ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]map[string]interface{}, error)
+	GetDeviceByIds(ctx context.Context, ids []int64) ([]map[string]interface{}, error)
+	QueryOnlineStatistics(ctx context.Context, elementIds []int64, startTime, endTime time.Time, deviceType string) ([]map[string]interface{}, error)
+	QueryDashboardPmData(ctx context.Context, tenancyId *int, startTime, endTime time.Time) ([]map[string]interface{}, error)
+	QueryDeviceGroupsByIds(ctx context.Context, groupIds []string) ([]map[string]interface{}, error)
+	QueryGroupElementIds(ctx context.Context, groupId string) ([]int64, error)
+	QueryDeviceStatisticForGroup(ctx context.Context, elementIds []int64, startTime, endTime time.Time) ([]map[string]interface{}, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
-// NewRepository creates a new Repository
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // ListDevicesByMode returns devices filtered by mode and tenancyId
-func (r *Repository) ListDevicesByMode(ctx context.Context, mode string, tenancyId *int) ([]map[string]interface{}, error) {
+func (r *repository) ListDevicesByMode(ctx context.Context, mode string, tenancyId *int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	q := r.db.WithContext(ctx).Table("cpe_element").
@@ -48,7 +61,7 @@ func (r *Repository) ListDevicesByMode(ctx context.Context, mode string, tenancy
 }
 
 // ListAllDevices returns all non-deleted devices with type info
-func (r *Repository) ListAllDevices(ctx context.Context, tenancyId *int) ([]map[string]interface{}, error) {
+func (r *repository) ListAllDevices(ctx context.Context, tenancyId *int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	q := r.db.WithContext(ctx).Table("cpe_element").
@@ -64,7 +77,7 @@ func (r *Repository) ListAllDevices(ctx context.Context, tenancyId *int) ([]map[
 }
 
 // ListPDCPTraffic returns PDCP traffic statistics grouped by PLMN
-func (r *Repository) ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]map[string]interface{}, error) {
+func (r *repository) ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	sql := `SELECT plmn, SUM(dl_traffic), SUM(ul_traffic) FROM pdcp_traffic WHERE `
@@ -95,7 +108,7 @@ func (r *Repository) ListPDCPTraffic(ctx context.Context, startTime, endTime str
 }
 
 // GetDeviceByIds returns devices by their IDs
-func (r *Repository) GetDeviceByIds(ctx context.Context, ids []int64) ([]map[string]interface{}, error) {
+func (r *repository) GetDeviceByIds(ctx context.Context, ids []int64) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 	err := r.db.WithContext(ctx).Table("cpe_element").
 		Select("ne_neid, serial_number").
@@ -106,7 +119,7 @@ func (r *Repository) GetDeviceByIds(ctx context.Context, ids []int64) ([]map[str
 
 // QueryOnlineStatistics queries device_statistic joined with cpe_element to get online/offline
 // records for devices of a given type within a time range.
-func (r *Repository) QueryOnlineStatistics(ctx context.Context, elementIds []int64, startTime, endTime time.Time, deviceType string) ([]map[string]interface{}, error) {
+func (r *repository) QueryOnlineStatistics(ctx context.Context, elementIds []int64, startTime, endTime time.Time, deviceType string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	// Determine the device_type and generation filter for cpe_element
@@ -149,7 +162,7 @@ func (r *Repository) QueryOnlineStatistics(ctx context.Context, elementIds []int
 }
 
 // QueryDashboardPmData queries dashboard_pm_statistic_data for a time range and optional tenancyId
-func (r *Repository) QueryDashboardPmData(ctx context.Context, tenancyId *int, startTime, endTime time.Time) ([]map[string]interface{}, error) {
+func (r *repository) QueryDashboardPmData(ctx context.Context, tenancyId *int, startTime, endTime time.Time) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	q := r.db.WithContext(ctx).Table("dashboard_pm_statistic_data").
@@ -167,7 +180,7 @@ func (r *Repository) QueryDashboardPmData(ctx context.Context, tenancyId *int, s
 }
 
 // QueryDeviceGroupsByIds queries device_group by group IDs
-func (r *Repository) QueryDeviceGroupsByIds(ctx context.Context, groupIds []string) ([]map[string]interface{}, error) {
+func (r *repository) QueryDeviceGroupsByIds(ctx context.Context, groupIds []string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	err := r.db.WithContext(ctx).Table("device_group").
@@ -179,7 +192,7 @@ func (r *Repository) QueryDeviceGroupsByIds(ctx context.Context, groupIds []stri
 }
 
 // QueryGroupElementIds queries element IDs belonging to a device group via group_has_element join
-func (r *Repository) QueryGroupElementIds(ctx context.Context, groupId string) ([]int64, error) {
+func (r *repository) QueryGroupElementIds(ctx context.Context, groupId string) ([]int64, error) {
 	var elementIds []int64
 
 	err := r.db.WithContext(ctx).Table("group_has_element").
@@ -191,7 +204,7 @@ func (r *Repository) QueryGroupElementIds(ctx context.Context, groupId string) (
 
 // QueryDeviceStatisticForGroup queries device_statistic for elements in a group within a time range.
 // Returns rows with statistic_time, online, element_id.
-func (r *Repository) QueryDeviceStatisticForGroup(ctx context.Context, elementIds []int64, startTime, endTime time.Time) ([]map[string]interface{}, error) {
+func (r *repository) QueryDeviceStatisticForGroup(ctx context.Context, elementIds []int64, startTime, endTime time.Time) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	if len(elementIds) == 0 {

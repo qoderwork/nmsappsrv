@@ -12,7 +12,7 @@ import (
 
 // Handler exposes PM HTTP endpoints.
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new PM handler.

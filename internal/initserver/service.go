@@ -11,25 +11,38 @@ import (
 	"nmsappsrv/pkg/logger"
 )
 
-// Service contains init-server business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for init-server management.
+type Service interface {
+	GetConfig() (*InitServerConfig, error)
+	SaveConfig(cfg *InitServerConfig) error
+	DealInitRequest(soapBody string, sn string) (responseSoap string, deviceSN string, err error)
+	GenerateInitSoap(sn string) (string, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 	mu   sync.Mutex
 }
 
-// NewService creates a new init-server service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+// NewService creates a Service backed by a fresh Repository.
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // GetConfig reads the init-server config from system_config.
-func (s *Service) GetConfig() (*InitServerConfig, error) {
+func (s *service) GetConfig() (*InitServerConfig, error) {
 	return s.loadConfig()
 }
 
 // SaveConfig persists the init-server config to system_config.
 // Per Java behavior, saving resets initServerEnable to "Disable".
-func (s *Service) SaveConfig(cfg *InitServerConfig) error {
+func (s *service) SaveConfig(cfg *InitServerConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg.InitServerEnable = "Disable"
@@ -45,7 +58,7 @@ func (s *Service) SaveConfig(cfg *InitServerConfig) error {
 //
 // Returns the SOAP response string to send back to the device.
 // The sn return value carries the extracted/confirmed device serial number.
-func (s *Service) DealInitRequest(soapBody string, sn string) (responseSoap string, deviceSN string, err error) {
+func (s *service) DealInitRequest(soapBody string, sn string) (responseSoap string, deviceSN string, err error) {
 	if soapBody == "" {
 		// Device connected with empty body — send init parameters
 		response, err := s.sendInitSoap(sn)
@@ -67,7 +80,7 @@ func (s *Service) DealInitRequest(soapBody string, sn string) (responseSoap stri
 // GenerateInitSoap builds a SetParameterValues SOAP message with all configured
 // init parameters for the given device serial number.
 // Exported for potential reuse by other modules (e.g., ZTP worker).
-func (s *Service) GenerateInitSoap(sn string) (string, error) {
+func (s *service) GenerateInitSoap(sn string) (string, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return "", fmt.Errorf("load initserver config: %w", err)
@@ -80,13 +93,13 @@ func (s *Service) GenerateInitSoap(sn string) (string, error) {
 // ---------- internal methods ----------
 
 // sendInitSoap loads config and builds the SPV SOAP for device initialization.
-func (s *Service) sendInitSoap(sn string) (string, error) {
+func (s *service) sendInitSoap(sn string) (string, error) {
 	return s.GenerateInitSoap(sn)
 }
 
 // handleInform parses an Inform message, extracts the device SN from DeviceId,
 // and returns an InformResponse SOAP message along with the extracted SN.
-func (s *Service) handleInform(soapBody string) (string, string, error) {
+func (s *service) handleInform(soapBody string) (string, string, error) {
 	inf, err := soap.ParseInform(soapBody)
 	if err != nil {
 		return "", "", fmt.Errorf("parse Inform: %w", err)
@@ -204,7 +217,7 @@ func boolToSoap(v string) string {
 // ---------- repository helpers ----------
 
 // loadConfig reads InitServerConfig from system_config table (key="initserver").
-func (s *Service) loadConfig() (*InitServerConfig, error) {
+func (s *service) loadConfig() (*InitServerConfig, error) {
 	key := "initserver"
 	sc, err := s.repo.FindByID(key)
 	if err != nil {
@@ -225,7 +238,7 @@ func (s *Service) loadConfig() (*InitServerConfig, error) {
 
 // saveConfig writes InitServerConfig as JSON to system_config table.
 // Creates the record if it doesn't exist, updates if it does.
-func (s *Service) saveConfig(cfg *InitServerConfig) error {
+func (s *service) saveConfig(cfg *InitServerConfig) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err

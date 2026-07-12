@@ -7,18 +7,27 @@ import (
 	"nmsappsrv/pkg/apperror"
 )
 
-// Service provides tenancy management operations
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for tenancy management.
+type Service interface {
+	AddTenancy(req *AddTenancyRequest) (int, error)
+	UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error)
+	ListTenancies(query *ListTenancyQuery) ([]TenancyVO, int64, error)
+	DeleteTenancy(id int) error
+	ViewTenancy(id int) (*ViewTenancyResponse, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new Service
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // AddTenancy creates a new tenancy
-func (s *Service) AddTenancy(req *AddTenancyRequest) (int, error) {
+func (s *service) AddTenancy(req *AddTenancyRequest) (int, error) {
 	if req.LicenseName == "" {
 		return 0, apperror.ErrInvalidInput.WithMessage("tenancy name cannot be null")
 	}
@@ -74,7 +83,7 @@ func (s *Service) AddTenancy(req *AddTenancyRequest) (int, error) {
 }
 
 // UpdateTenancy updates an existing tenancy
-func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error) {
+func (s *service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error) {
 	if req.LicenseName == "" {
 		return nil, apperror.ErrInvalidInput.WithMessage("tenancy name cannot be null")
 	}
@@ -128,7 +137,7 @@ func (s *Service) UpdateTenancy(req *UpdateTenancyRequest) (*tenancyModel, error
 }
 
 // ListTenancies returns paginated tenancies
-func (s *Service) ListTenancies(query *ListTenancyQuery) ([]TenancyVO, int64, error) {
+func (s *service) ListTenancies(query *ListTenancyQuery) ([]TenancyVO, int64, error) {
 	page := query.Page
 	pageSize := query.PageSize
 	if page < 1 {
@@ -166,7 +175,7 @@ func (s *Service) ListTenancies(query *ListTenancyQuery) ([]TenancyVO, int64, er
 }
 
 // DeleteTenancy deletes a tenancy by ID
-func (s *Service) DeleteTenancy(id int) error {
+func (s *service) DeleteTenancy(id int) error {
 	if id == 0 {
 		return apperror.ErrInvalidInput.WithMessage("default tenancy cannot be deleted")
 	}
@@ -174,7 +183,7 @@ func (s *Service) DeleteTenancy(id int) error {
 }
 
 // ViewTenancy returns a tenancy by ID
-func (s *Service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
+func (s *service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
 	t, err := s.repo.FindByID(id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -198,4 +207,9 @@ func (s *Service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
 		GnbQuantity:          t.GnbQuantity,
 		CpeQuantity:          t.CpeQuantity,
 	}, nil
+}
+
+// newService creates a Service backed by the given Repository (test/mock helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

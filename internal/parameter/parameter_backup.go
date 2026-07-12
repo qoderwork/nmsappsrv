@@ -18,13 +18,13 @@ import (
 // TriggerBackup triggers a parameter backup for the given device by sending
 // GPV for all basic parameter paths. When the GPV response comes back, the
 // normal processGetParameterValuesResponse saves the values.
-func (s *Service) TriggerBackup(elementId int64, username string) error {
+func (s *service) TriggerBackup(elementId int64, username string) error {
 	// 1. Resolve device SN and type
 	var deviceInfo struct {
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceType   string `gorm:"column:device_type"`
 	}
-	if err := s.repo.db.Table("cpe_element").
+	if err := s.repo.DB().Table("cpe_element").
 		Select("serial_number, device_type").
 		Where("ne_neid = ? AND deleted = ?", elementId, false).
 		Scan(&deviceInfo).Error; err != nil {
@@ -72,7 +72,7 @@ func (s *Service) TriggerBackup(elementId int64, username string) error {
 		"is_backup":      true,
 		"issue_time":     now.Format(time.RFC3339),
 	})
-	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+	s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 		Updates(map[string]interface{}{
 			"command_track_data": string(trackData),
 			"command_issue_time": now,
@@ -94,7 +94,7 @@ func (s *Service) TriggerBackup(elementId int64, username string) error {
 	// 8. Push SOAP XML to device queue
 	queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
 	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
-		s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+		s.repo.DB().Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
 		return fmt.Errorf("push to device queue: %w", err)
 	}
 	redis.Expire(ctx, queueKey, 24*time.Hour)
@@ -109,6 +109,6 @@ func (s *Service) TriggerBackup(elementId int64, username string) error {
 // ---------------------------------------------------------------------------
 
 // ListBackupLogs returns all backup logs for the given element.
-func (s *Service) ListBackupLogs(elementId int64) ([]ParameterBackupLog, error) {
+func (s *service) ListBackupLogs(elementId int64) ([]ParameterBackupLog, error) {
 	return s.repo.FindParameterBackupLogs(elementId)
 }

@@ -6,18 +6,51 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for license entities.
-type Repository struct {
+// Repository defines the data-access contract for license entities.
+type Repository interface {
+	// Generic CRUD (from BaseRepository[License, int]).
+	Create(entity *License) error
+	Save(entity *License) error
+	FindByID(id int) (*License, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]License, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[License], error)
+
+	// Custom queries.
+	FindAllLicenses() ([]License, error)
+	FindSASConfig(licenseId int) (*SASConfig, error)
+	SaveSASConfig(cfg *SASConfig) error
+	FindEntraEndpoints() ([]EntraEndpoint, error)
+	CreateEntraEndpoint(e *EntraEndpoint) error
+	UpdateEntraEndpoint(e *EntraEndpoint) error
+	DeleteEntraEndpoint(id string) error
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[License, int] // embed generic CRUD
 	db *gorm.DB                             // keep for custom queries
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[License, int](db, "id"),
 		db:             db,
 	}
+}
+
+// ---------------------------------------------------------------------------
+// License
+// ---------------------------------------------------------------------------
+
+// FindAllLicenses returns all licenses.
+func (r *repository) FindAllLicenses() ([]License, error) {
+	return r.BaseRepository.FindAll(r.DB)
 }
 
 // ---------------------------------------------------------------------------
@@ -25,7 +58,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // FindSASConfig returns the SAS configuration for the given license.
-func (r *Repository) FindSASConfig(licenseId int) (*SASConfig, error) {
+func (r *repository) FindSASConfig(licenseId int) (*SASConfig, error) {
 	var cfg SASConfig
 	if err := r.db.Where("license_id = ?", licenseId).First(&cfg).Error; err != nil {
 		return nil, err
@@ -34,7 +67,7 @@ func (r *Repository) FindSASConfig(licenseId int) (*SASConfig, error) {
 }
 
 // SaveSASConfig creates or updates a SAS configuration row (upsert).
-func (r *Repository) SaveSASConfig(cfg *SASConfig) error {
+func (r *repository) SaveSASConfig(cfg *SASConfig) error {
 	var existing SASConfig
 	err := r.db.Where("license_id = ?", cfg.LicenseId).First(&existing).Error
 	if err != nil {
@@ -51,7 +84,7 @@ func (r *Repository) SaveSASConfig(cfg *SASConfig) error {
 // ---------------------------------------------------------------------------
 
 // FindEntraEndpoints returns all Entra endpoints.
-func (r *Repository) FindEntraEndpoints() ([]EntraEndpoint, error) {
+func (r *repository) FindEntraEndpoints() ([]EntraEndpoint, error) {
 	var endpoints []EntraEndpoint
 	if err := r.db.Find(&endpoints).Error; err != nil {
 		return nil, err
@@ -60,16 +93,16 @@ func (r *Repository) FindEntraEndpoints() ([]EntraEndpoint, error) {
 }
 
 // CreateEntraEndpoint inserts a new Entra endpoint.
-func (r *Repository) CreateEntraEndpoint(e *EntraEndpoint) error {
+func (r *repository) CreateEntraEndpoint(e *EntraEndpoint) error {
 	return r.db.Create(e).Error
 }
 
 // UpdateEntraEndpoint saves changes to an existing Entra endpoint.
-func (r *Repository) UpdateEntraEndpoint(e *EntraEndpoint) error {
+func (r *repository) UpdateEntraEndpoint(e *EntraEndpoint) error {
 	return r.db.Save(e).Error
 }
 
 // DeleteEntraEndpoint removes an Entra endpoint by ID.
-func (r *Repository) DeleteEntraEndpoint(id string) error {
+func (r *repository) DeleteEntraEndpoint(id string) error {
 	return r.db.Where("id = ?", id).Delete(&EntraEndpoint{}).Error
 }

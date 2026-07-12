@@ -13,20 +13,40 @@ import (
 	redisclient "nmsappsrv/pkg/redis"
 )
 
-// Service handles business logic for CA certificate module
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for CA certificate module.
+type Service interface {
+	ListCaFiles(ctx context.Context, page, pageSize int) ([]map[string]interface{}, int64, error)
+	DeleteCaFiles(ctx context.Context, ids []int) error
+	ListAllCaFiles(ctx context.Context) ([]map[string]interface{}, error)
+	GetCaFileByID(ctx context.Context, id int) (*CaFile, error)
+	CreateCaFileRecord(ctx context.Context, fileName, url, description, createBy string) error
+	GetCaFilePath() string
+	SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string) error
+	ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]map[string]interface{}, int64, error)
+	GetCaTaskDetail(ctx context.Context, id int) (map[string]interface{}, error)
+	DeleteCaTasks(ctx context.Context, ids []int) error
+	ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pageSize int) ([]map[string]interface{}, int64, error)
 }
 
-// NewService creates a new Service
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+// NewService creates a Service backed by the given Repository.
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ---------- CaFile operations ----------
 
 // ListCaFiles returns paginated CA file list
-func (s *Service) ListCaFiles(ctx context.Context, page, pageSize int) ([]map[string]interface{}, int64, error) {
+func (s *service) ListCaFiles(ctx context.Context, page, pageSize int) ([]map[string]interface{}, int64, error) {
 	files, total, err := s.repo.ListCaFiles(ctx, page, pageSize)
 	if err != nil {
 		return nil, 0, err
@@ -48,12 +68,12 @@ func (s *Service) ListCaFiles(ctx context.Context, page, pageSize int) ([]map[st
 }
 
 // DeleteCaFiles soft-deletes CA files by IDs
-func (s *Service) DeleteCaFiles(ctx context.Context, ids []int) error {
+func (s *service) DeleteCaFiles(ctx context.Context, ids []int) error {
 	return s.repo.DeleteCaFiles(ctx, ids)
 }
 
 // ListAllCaFiles returns all non-deleted CA files (for dropdown)
-func (s *Service) ListAllCaFiles(ctx context.Context) ([]map[string]interface{}, error) {
+func (s *service) ListAllCaFiles(ctx context.Context) ([]map[string]interface{}, error) {
 	files, err := s.repo.ListAllCaFiles(ctx)
 	if err != nil {
 		return nil, err
@@ -70,12 +90,12 @@ func (s *Service) ListAllCaFiles(ctx context.Context) ([]map[string]interface{},
 }
 
 // GetCaFileByID returns a single CA file by ID
-func (s *Service) GetCaFileByID(ctx context.Context, id int) (*CaFile, error) {
+func (s *service) GetCaFileByID(ctx context.Context, id int) (*CaFile, error) {
 	return s.repo.FindByID(id)
 }
 
 // CreateCaFileRecord creates a CA file record after upload
-func (s *Service) CreateCaFileRecord(ctx context.Context, fileName, url, description, createBy string) error {
+func (s *service) CreateCaFileRecord(ctx context.Context, fileName, url, description, createBy string) error {
 	now := time.Now()
 	file := &CaFile{
 		FileName:    &fileName,
@@ -89,7 +109,7 @@ func (s *Service) CreateCaFileRecord(ctx context.Context, fileName, url, descrip
 }
 
 // GetCaFilePath returns the configured CA file storage path
-func (s *Service) GetCaFilePath() string {
+func (s *service) GetCaFilePath() string {
 	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
 		// In production, this would be from a dedicated caFilePath config
 		// For now return a default path
@@ -101,7 +121,7 @@ func (s *Service) GetCaFilePath() string {
 // ---------- CaTask operations ----------
 
 // SaveCaTask creates a CA deployment task and dispatches TR-069 commands to devices
-func (s *Service) SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string) error {
+func (s *service) SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string) error {
 	// Validate CA file exists
 	caFile, err := s.repo.FindByID(caFileId)
 	if err != nil {
@@ -190,7 +210,7 @@ func (s *Service) SaveCaTask(ctx context.Context, taskName string, caFileId int,
 }
 
 // ListCaTasks returns paginated CA task list
-func (s *Service) ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]map[string]interface{}, int64, error) {
+func (s *service) ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]map[string]interface{}, int64, error) {
 	tasks, total, err := s.repo.ListCaTasks(ctx, page, pageSize, tenancyId)
 	if err != nil {
 		return nil, 0, err
@@ -211,7 +231,7 @@ func (s *Service) ListCaTasks(ctx context.Context, page, pageSize int, tenancyId
 }
 
 // GetCaTaskDetail returns a single CA task detail
-func (s *Service) GetCaTaskDetail(ctx context.Context, id int) (map[string]interface{}, error) {
+func (s *service) GetCaTaskDetail(ctx context.Context, id int) (map[string]interface{}, error) {
 	task, err := s.repo.GetCaTaskByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -227,14 +247,14 @@ func (s *Service) GetCaTaskDetail(ctx context.Context, id int) (map[string]inter
 }
 
 // DeleteCaTasks deletes CA tasks by IDs
-func (s *Service) DeleteCaTasks(ctx context.Context, ids []int) error {
+func (s *service) DeleteCaTasks(ctx context.Context, ids []int) error {
 	return s.repo.DeleteCaTasks(ctx, ids)
 }
 
 // ---------- DeviceSendCaLog operations ----------
 
 // ListDeviceSendCaLogs returns paginated device CA delivery logs
-func (s *Service) ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pageSize int) ([]map[string]interface{}, int64, error) {
+func (s *service) ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pageSize int) ([]map[string]interface{}, int64, error) {
 	logs, total, err := s.repo.ListDeviceSendCaLogs(ctx, taskId, page, pageSize)
 	if err != nil {
 		return nil, 0, err
@@ -259,13 +279,13 @@ func (s *Service) ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pa
 // ---------- Internal helpers ----------
 
 // getDevicesInGroup returns device IDs belonging to a group
-func (s *Service) getDevicesInGroup(ctx context.Context, groupId string) ([]int64, error) {
+func (s *service) getDevicesInGroup(ctx context.Context, groupId string) ([]int64, error) {
 	// Query group_has_element table for devices in this group
 	type GroupElement struct {
 		ElementId int64 `gorm:"column:element_id"`
 	}
 	var elements []GroupElement
-	err := s.repo.db.WithContext(ctx).
+	err := s.repo.DB().WithContext(ctx).
 		Table("group_has_element").
 		Where("group_id = ?", groupId).
 		Select("element_id").
@@ -282,7 +302,7 @@ func (s *Service) getDevicesInGroup(ctx context.Context, groupId string) ([]int6
 }
 
 // createEventLog creates an event_log entry and returns the auto-generated ID
-func (s *Service) createEventLog(ctx context.Context, eventType string, deviceId int64, user string) (int64, error) {
+func (s *service) createEventLog(ctx context.Context, eventType string, deviceId int64, user string) (int64, error) {
 	row := struct {
 		Id               int64     `gorm:"primaryKey;autoIncrement"`
 		EventType        string    `gorm:"column:event_type;type:varchar(255)"`
@@ -298,14 +318,14 @@ func (s *Service) createEventLog(ctx context.Context, eventType string, deviceId
 		ElementId:     deviceId,
 		Status:        1, // pending
 	}
-	if err := s.repo.db.WithContext(ctx).Table("event_log").Create(&row).Error; err != nil {
+	if err := s.repo.DB().WithContext(ctx).Table("event_log").Create(&row).Error; err != nil {
 		return 0, err
 	}
 	return row.Id, nil
 }
 
 // buildCaOperationMessage builds the TR-069 operation message for CA file download
-func (s *Service) buildCaOperationMessage(deviceId int64, fileId int, fileName, filePath, username string, eventLogId int64) map[string]interface{} {
+func (s *service) buildCaOperationMessage(deviceId int64, fileId int, fileName, filePath, username string, eventLogId int64) map[string]interface{} {
 	// Get file server IP from config
 	fileServerIp := "http://localhost" // default; should come from config
 	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
@@ -343,13 +363,13 @@ func (s *Service) buildCaOperationMessage(deviceId int64, fileId int, fileName, 
 }
 
 // getDeviceInfo retrieves device name and serial number from cpe_element table
-func (s *Service) getDeviceInfo(ctx context.Context, deviceId int64) (string, string) {
+func (s *service) getDeviceInfo(ctx context.Context, deviceId int64) (string, string) {
 	type DeviceInfo struct {
 		DeviceName   *string `gorm:"column:device_name"`
 		SerialNumber *string `gorm:"column:serial_number"`
 	}
 	var info DeviceInfo
-	err := s.repo.db.WithContext(ctx).
+	err := s.repo.DB().WithContext(ctx).
 		Table("cpe_element").
 		Where("ne_neid = ?", deviceId).
 		Select("device_name, serial_number").

@@ -4,14 +4,56 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
-type Service struct {
-	repo *Repository
+type Service interface {
+	ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo, int64, error)
+	GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error)
+	AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDeviceVo, error)
+	ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDeviceRequest) error
+	ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequest) error
+	DeleteDevice(c *gin.Context, id int64) error
+	GetDeviceParams(c *gin.Context, elementId int64) ([]RestParameterVo, error)
+	SetDeviceParams(c *gin.Context, elementId int64, req *SetRestParameterRequest) error
+	PresetDeviceParams(c *gin.Context, elementId int64, req *PresetParameterRequest) (*RequestStatusVo, error)
+	GetRequestStatus(requestId string) (*RequestStatusVo, error)
+	ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, int64, error)
+	SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarmVo, error)
+	ClearAlarms(c *gin.Context, req *ClearAlarmRequest) error
+	UploadUpgradeFile(c *gin.Context, fileName string, filePath string, fileSize int64) (*RestUpgradeFileVo, error)
+	ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpgradeFileVo, int64, error)
+	DeleteUpgradeFile(c *gin.Context, id int) error
+	CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest) (*RestUpgradeTaskVo, error)
+	GetUpgradeTask(c *gin.Context, id int) (*RestUpgradeTaskVo, error)
+	ListUpgradeTasks(c *gin.Context, offset, limit int) ([]RestUpgradeTaskVo, int64, error)
+	ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, error)
+	GetTBGBySN(sn string) (*TBGVo, error)
+	GetTBGByWanMac(mac string) (*TBGVo, error)
+	AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error)
+	ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error
+	DeleteTBGs(c *gin.Context, req *DeleteTBGRequest) error
+	ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo, error)
+	GetDeviceOnlineStatus(c *gin.Context, elementId int64) (*DeviceOnlineStatusVo, error)
+	GetACSSettings(c *gin.Context) (*RestACSConfigVo, error)
+	UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequest) error
+	SnmpGet(c *gin.Context, req *SnmpGetRequest) error
+	SnmpSet(c *gin.Context, req *SnmpSetRequest) error
+	ListSnmpOperationLogs(c *gin.Context, offset, limit int) ([]SnmpOperationLogVo, int64, error)
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+type service struct {
+	repo Repository
+}
+
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
+}
+
+// newService builds a Service from an injected Repository (used by tests).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ============================

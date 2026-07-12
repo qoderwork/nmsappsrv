@@ -3,30 +3,91 @@ package misc
 import (
 	"time"
 
+	"nmsappsrv/internal/device"
 	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for miscellaneous entities.
-// The embedded BaseRepository provides generic CRUD for NorthReport,
-// the most CRUD-intensive model in this package.
-type Repository struct {
+// Repository defines the data-access contract for miscellaneous entities.
+// The embedded BaseRepository provides generic CRUD for NorthReport.
+type Repository interface {
+	// Generic CRUD (BaseRepository[NorthReport, int]).
+	Create(entity *NorthReport) error
+	Save(entity *NorthReport) error
+	FindByID(id int) (*NorthReport, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]NorthReport, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[NorthReport], error)
+
+	// Custom methods.
+	FindBackupOrRestoreTasks(tenancyId int, offset, limit int) ([]BackupOrRestoreTask, int64, error)
+	CreateBackupOrRestoreTask(t *BackupOrRestoreTask) error
+	FindBatchConfigLogs(tenancyId int, offset, limit int) ([]BatchConfigurationLog, int64, error)
+	FindMRData(elementId int64, offset, limit int) ([]MRData, int64, error)
+	FindZTPLogs(elementId int64) ([]ZTPLog, error)
+	CreateZTPLog(log *ZTPLog) error
+	FindNorthReports(licenseId int) ([]NorthReport, error)
+	CreateNorthReport(report *NorthReport) error
+	UpdateNorthReport(report *NorthReport) error
+	DeleteNorthReport(id int) error
+	FindRadius(tenancyId int) ([]Radius, error)
+	SaveRadius(rad *Radius) error
+	DeleteRadius(id int) error
+	CreateOperatorLog(log *SystemOperatorLog) error
+	FindOperatorLogs(tenancyId int, offset, limit int) ([]SystemOperatorLog, int64, error)
+	FindUploadFiles(offset, limit int) ([]UploadFile, int64, error)
+	CreateUploadFile(f *UploadFile) error
+	DeleteUploadFile(id string) error
+	FindErrorInfos(tenancyId int) ([]ErrorInfo, error)
+	CreateErrorInfo(e *ErrorInfo) error
+	CreateBatchAddObjectTask(t *BatchAddObjectTask) error
+	FindBatchAddObjectTasks(tenancyId int, offset, limit int) ([]BatchAddObjectTask, int64, error)
+	CreateBatchAddObjectTaskLog(log *BatchAddObjectTaskLog) error
+	BatchAddObjectTaskProgress(taskId int) (total int64, success int64, err error)
+	BatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskDetailVo, error)
+	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
+	DB() *gorm.DB
+	FindBackupRestoreTaskById(id int) (*BackupOrRestoreTask, error)
+	UpdateBackupRestoreTask(t *BackupOrRestoreTask) error
+	CheckDuplicateBackupRestoreTaskName(name string, tenancyId int) bool
+	CreateDeviceLog(log *RestoreAndBackUpDeviceLog) error
+	BatchBackupRestoreProgress(taskId int) (total int64, success int64, err error)
+	BatchBackupRestoreResult(taskId int) (*int, error)
+	BatchBackupRestoreDetail(taskId int) ([]BackupRestoreTaskDetailVo, error)
+	FindZTPResults(req *ListZTPResultsRequest) ([]ZTPResultVo, int64, error)
+	FindZTPRetryLogs(elementId int64) ([]ZTPRetryLogVo, error)
+	FindHistoryZTPFiles(elementId int64, page, pageSize int) ([]HistoryZTPFileVo, int64, error)
+	GetSystemConfigValue(key string) (string, error)
+	SaveSystemConfigValue(key, value string) error
+	DeleteZTPLogsByElementIds(elementIds []int64) error
+	DeleteZTPFileSendLogsByElementIds(elementIds []int64) error
+	ClearDeviceAOSFile(elementIds []int64) error
+	DeleteGnbIdUsedByElementId(elementId int64) error
+	GetDeviceSerialNumber(elementId int64) (string, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[NorthReport, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[NorthReport, int](db, "id"),
 		db:             db,
 	}
 }
 
 // FindBackupOrRestoreTasks returns a paginated list of backup/restore tasks.
-func (r *Repository) FindBackupOrRestoreTasks(tenancyId int, offset, limit int) ([]BackupOrRestoreTask, int64, error) {
+func (r *repository) FindBackupOrRestoreTasks(tenancyId int, offset, limit int) ([]BackupOrRestoreTask, int64, error) {
 	var tasks []BackupOrRestoreTask
 	var total int64
 
@@ -44,12 +105,12 @@ func (r *Repository) FindBackupOrRestoreTasks(tenancyId int, offset, limit int) 
 }
 
 // CreateBackupOrRestoreTask inserts a new backup/restore task.
-func (r *Repository) CreateBackupOrRestoreTask(t *BackupOrRestoreTask) error {
+func (r *repository) CreateBackupOrRestoreTask(t *BackupOrRestoreTask) error {
 	return r.db.Create(t).Error
 }
 
 // FindBatchConfigLogs returns a paginated list of batch configuration logs.
-func (r *Repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]BatchConfigurationLog, int64, error) {
+func (r *repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]BatchConfigurationLog, int64, error) {
 	var logs []BatchConfigurationLog
 	var total int64
 
@@ -67,7 +128,7 @@ func (r *Repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]Ba
 }
 
 // FindMRData returns a paginated list of MR data records for the given element.
-func (r *Repository) FindMRData(elementId int64, offset, limit int) ([]MRData, int64, error) {
+func (r *repository) FindMRData(elementId int64, offset, limit int) ([]MRData, int64, error) {
 	var data []MRData
 	var total int64
 
@@ -85,7 +146,7 @@ func (r *Repository) FindMRData(elementId int64, offset, limit int) ([]MRData, i
 }
 
 // FindZTPLogs returns all ZTP logs for the given element.
-func (r *Repository) FindZTPLogs(elementId int64) ([]ZTPLog, error) {
+func (r *repository) FindZTPLogs(elementId int64) ([]ZTPLog, error) {
 	var logs []ZTPLog
 	if err := r.db.Where("element_id = ?", elementId).Order("id DESC").Find(&logs).Error; err != nil {
 		logger.Errorf("FindZTPLogs error: %v", err)
@@ -95,12 +156,12 @@ func (r *Repository) FindZTPLogs(elementId int64) ([]ZTPLog, error) {
 }
 
 // CreateZTPLog inserts a new ZTP log record.
-func (r *Repository) CreateZTPLog(log *ZTPLog) error {
+func (r *repository) CreateZTPLog(log *ZTPLog) error {
 	return r.db.Create(log).Error
 }
 
 // FindNorthReports returns all north reports for the given license.
-func (r *Repository) FindNorthReports(licenseId int) ([]NorthReport, error) {
+func (r *repository) FindNorthReports(licenseId int) ([]NorthReport, error) {
 	var reports []NorthReport
 	if err := r.db.Where("license_id = ? AND (deleted = ? OR deleted IS NULL)", licenseId, 0).Find(&reports).Error; err != nil {
 		logger.Errorf("FindNorthReports error: %v", err)
@@ -111,24 +172,24 @@ func (r *Repository) FindNorthReports(licenseId int) ([]NorthReport, error) {
 
 // CreateNorthReport inserts a new north report.
 // Delegates to BaseRepository.Create.
-func (r *Repository) CreateNorthReport(report *NorthReport) error {
+func (r *repository) CreateNorthReport(report *NorthReport) error {
 	return r.BaseRepository.Create(report)
 }
 
 // UpdateNorthReport saves changes to an existing north report.
 // Delegates to BaseRepository.Save.
-func (r *Repository) UpdateNorthReport(report *NorthReport) error {
+func (r *repository) UpdateNorthReport(report *NorthReport) error {
 	return r.BaseRepository.Save(report)
 }
 
 // DeleteNorthReport removes a north report by ID.
 // Delegates to BaseRepository.DeleteByID.
-func (r *Repository) DeleteNorthReport(id int) error {
+func (r *repository) DeleteNorthReport(id int) error {
 	return r.BaseRepository.DeleteByID(id)
 }
 
 // FindRadius returns all RADIUS configurations for the given tenancy.
-func (r *Repository) FindRadius(tenancyId int) ([]Radius, error) {
+func (r *repository) FindRadius(tenancyId int) ([]Radius, error) {
 	var list []Radius
 	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&list).Error; err != nil {
 		logger.Errorf("FindRadius error: %v", err)
@@ -138,7 +199,7 @@ func (r *Repository) FindRadius(tenancyId int) ([]Radius, error) {
 }
 
 // SaveRadius inserts or updates a RADIUS configuration.
-func (r *Repository) SaveRadius(rad *Radius) error {
+func (r *repository) SaveRadius(rad *Radius) error {
 	if rad.Id == 0 {
 		return r.db.Create(rad).Error
 	}
@@ -146,17 +207,17 @@ func (r *Repository) SaveRadius(rad *Radius) error {
 }
 
 // DeleteRadius removes a RADIUS configuration by ID.
-func (r *Repository) DeleteRadius(id int) error {
+func (r *repository) DeleteRadius(id int) error {
 	return r.db.Where("id = ?", id).Delete(&Radius{}).Error
 }
 
 // CreateOperatorLog inserts a new operator log record.
-func (r *Repository) CreateOperatorLog(log *SystemOperatorLog) error {
+func (r *repository) CreateOperatorLog(log *SystemOperatorLog) error {
 	return r.db.Create(log).Error
 }
 
 // FindOperatorLogs returns a paginated list of operator logs.
-func (r *Repository) FindOperatorLogs(tenancyId int, offset, limit int) ([]SystemOperatorLog, int64, error) {
+func (r *repository) FindOperatorLogs(tenancyId int, offset, limit int) ([]SystemOperatorLog, int64, error) {
 	var logs []SystemOperatorLog
 	var total int64
 
@@ -174,7 +235,7 @@ func (r *Repository) FindOperatorLogs(tenancyId int, offset, limit int) ([]Syste
 }
 
 // FindUploadFiles returns a paginated list of uploaded files.
-func (r *Repository) FindUploadFiles(offset, limit int) ([]UploadFile, int64, error) {
+func (r *repository) FindUploadFiles(offset, limit int) ([]UploadFile, int64, error) {
 	var files []UploadFile
 	var total int64
 
@@ -192,17 +253,17 @@ func (r *Repository) FindUploadFiles(offset, limit int) ([]UploadFile, int64, er
 }
 
 // CreateUploadFile inserts a new upload file record.
-func (r *Repository) CreateUploadFile(f *UploadFile) error {
+func (r *repository) CreateUploadFile(f *UploadFile) error {
 	return r.db.Create(f).Error
 }
 
 // DeleteUploadFile removes an upload file by ID.
-func (r *Repository) DeleteUploadFile(id string) error {
+func (r *repository) DeleteUploadFile(id string) error {
 	return r.db.Where("file_id = ?", id).Delete(&UploadFile{}).Error
 }
 
 // FindErrorInfos returns all error info records for the given tenancy.
-func (r *Repository) FindErrorInfos(tenancyId int) ([]ErrorInfo, error) {
+func (r *repository) FindErrorInfos(tenancyId int) ([]ErrorInfo, error) {
 	var infos []ErrorInfo
 	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&infos).Error; err != nil {
 		logger.Errorf("FindErrorInfos error: %v", err)
@@ -212,7 +273,7 @@ func (r *Repository) FindErrorInfos(tenancyId int) ([]ErrorInfo, error) {
 }
 
 // CreateErrorInfo inserts a new error info record.
-func (r *Repository) CreateErrorInfo(e *ErrorInfo) error {
+func (r *repository) CreateErrorInfo(e *ErrorInfo) error {
 	return r.db.Create(e).Error
 }
 
@@ -221,12 +282,12 @@ func (r *Repository) CreateErrorInfo(e *ErrorInfo) error {
 // ---------------------------------------------------------------------------
 
 // CreateBatchAddObjectTask inserts a new batch-add-object task.
-func (r *Repository) CreateBatchAddObjectTask(t *BatchAddObjectTask) error {
+func (r *repository) CreateBatchAddObjectTask(t *BatchAddObjectTask) error {
 	return r.db.Create(t).Error
 }
 
 // FindBatchAddObjectTasks returns a paginated list of tasks for the given tenancy.
-func (r *Repository) FindBatchAddObjectTasks(tenancyId int, offset, limit int) ([]BatchAddObjectTask, int64, error) {
+func (r *repository) FindBatchAddObjectTasks(tenancyId int, offset, limit int) ([]BatchAddObjectTask, int64, error) {
 	var tasks []BatchAddObjectTask
 	var total int64
 
@@ -244,12 +305,12 @@ func (r *Repository) FindBatchAddObjectTasks(tenancyId int, offset, limit int) (
 }
 
 // CreateBatchAddObjectTaskLog inserts a task-to-eventlog link.
-func (r *Repository) CreateBatchAddObjectTaskLog(log *BatchAddObjectTaskLog) error {
+func (r *repository) CreateBatchAddObjectTaskLog(log *BatchAddObjectTaskLog) error {
 	return r.db.Create(log).Error
 }
 
 // BatchAddObjectTaskProgress returns (total, success_count) for a given task.
-func (r *Repository) BatchAddObjectTaskProgress(taskId int) (total int64, success int64, err error) {
+func (r *repository) BatchAddObjectTaskProgress(taskId int) (total int64, success int64, err error) {
 	type row struct {
 		Total   int64
 		Success int64
@@ -266,7 +327,7 @@ func (r *Repository) BatchAddObjectTaskProgress(taskId int) (total int64, succes
 }
 
 // BatchAddObjectTaskDetail returns per-device results for a task.
-func (r *Repository) BatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskDetailVo, error) {
+func (r *repository) BatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskDetailVo, error) {
 	var list []BatchAddObjectTaskDetailVo
 	err := r.db.Raw(`
 		SELECT ce.device_name  AS device_name,
@@ -290,7 +351,7 @@ func (r *Repository) BatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskD
 
 // InsertEventLog creates an event_log row and returns its auto-generated ID.
 // This avoids a circular import with the eventlog package.
-func (r *Repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
+func (r *repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
 	row := struct {
 		Id               int64  `gorm:"primaryKey;autoIncrement"`
 		EventType        string `gorm:"column:event_type;type:varchar(255)"`
@@ -316,7 +377,7 @@ func (r *Repository) InsertEventLog(eventType string, elementId int64, user stri
 }
 
 // DB returns the underlying *gorm.DB (used by service for Redis dispatch prep).
-func (r *Repository) DB() *gorm.DB {
+func (r *repository) DB() *gorm.DB {
 	return r.db
 }
 
@@ -325,7 +386,7 @@ func (r *Repository) DB() *gorm.DB {
 // ---------------------------------------------------------------------------
 
 // FindBackupRestoreTaskById loads a single task by ID.
-func (r *Repository) FindBackupRestoreTaskById(id int) (*BackupOrRestoreTask, error) {
+func (r *repository) FindBackupRestoreTaskById(id int) (*BackupOrRestoreTask, error) {
 	var task BackupOrRestoreTask
 	if err := r.db.First(&task, id).Error; err != nil {
 		return nil, err
@@ -334,24 +395,24 @@ func (r *Repository) FindBackupRestoreTaskById(id int) (*BackupOrRestoreTask, er
 }
 
 // UpdateBackupRestoreTask saves changes to a task.
-func (r *Repository) UpdateBackupRestoreTask(t *BackupOrRestoreTask) error {
+func (r *repository) UpdateBackupRestoreTask(t *BackupOrRestoreTask) error {
 	return r.db.Save(t).Error
 }
 
 // CheckDuplicateBackupRestoreTaskName checks if a task name already exists for the tenancy.
-func (r *Repository) CheckDuplicateBackupRestoreTaskName(name string, tenancyId int) bool {
+func (r *repository) CheckDuplicateBackupRestoreTaskName(name string, tenancyId int) bool {
 	var count int64
 	r.db.Model(&BackupOrRestoreTask{}).Where("name = ? AND tenancy_id = ?", name, tenancyId).Count(&count)
 	return count > 0
 }
 
 // CreateDeviceLog inserts a restore_and_back_up_device_log record.
-func (r *Repository) CreateDeviceLog(log *RestoreAndBackUpDeviceLog) error {
+func (r *repository) CreateDeviceLog(log *RestoreAndBackUpDeviceLog) error {
 	return r.db.Create(log).Error
 }
 
 // BatchBackupRestoreProgress returns (total_devices, success_count) for a task.
-func (r *Repository) BatchBackupRestoreProgress(taskId int) (total int64, success int64, err error) {
+func (r *repository) BatchBackupRestoreProgress(taskId int) (total int64, success int64, err error) {
 	type row struct {
 		Total   int64
 		Success int64
@@ -368,7 +429,7 @@ func (r *Repository) BatchBackupRestoreProgress(taskId int) (total int64, succes
 
 // BatchBackupRestoreResult returns the overall result for a task.
 // nil = pending, 1 = all success, 2 = has failure.
-func (r *Repository) BatchBackupRestoreResult(taskId int) (*int, error) {
+func (r *repository) BatchBackupRestoreResult(taskId int) (*int, error) {
 	type row struct {
 		Total    int64
 		Failed   int64
@@ -400,7 +461,7 @@ func (r *Repository) BatchBackupRestoreResult(taskId int) (*int, error) {
 }
 
 // BatchBackupRestoreDetail returns per-device results for a task.
-func (r *Repository) BatchBackupRestoreDetail(taskId int) ([]BackupRestoreTaskDetailVo, error) {
+func (r *repository) BatchBackupRestoreDetail(taskId int) ([]BackupRestoreTaskDetailVo, error) {
 	var list []BackupRestoreTaskDetailVo
 	err := r.db.Raw(`
 		SELECT ce.device_name          AS device_name,
@@ -428,7 +489,7 @@ func (r *Repository) BatchBackupRestoreDetail(taskId int) ([]BackupRestoreTaskDe
 // ---------------------------------------------------------------------------
 
 // FindZTPResults returns paginated ZTP results with device info.
-func (r *Repository) FindZTPResults(req *ListZTPResultsRequest) ([]ZTPResultVo, int64, error) {
+func (r *repository) FindZTPResults(req *ListZTPResultsRequest) ([]ZTPResultVo, int64, error) {
 	var total int64
 
 	where := "1=1"
@@ -497,7 +558,7 @@ func (r *Repository) FindZTPResults(req *ListZTPResultsRequest) ([]ZTPResultVo, 
 }
 
 // FindZTPRetryLogs returns retry logs for a device.
-func (r *Repository) FindZTPRetryLogs(elementId int64) ([]ZTPRetryLogVo, error) {
+func (r *repository) FindZTPRetryLogs(elementId int64) ([]ZTPRetryLogVo, error) {
 	var list []ZTPRetryLogVo
 	err := r.db.Raw(`
 		SELECT IFNULL(retry_time, '') AS operation_date, IFNULL(info, '') AS message
@@ -511,7 +572,7 @@ func (r *Repository) FindZTPRetryLogs(elementId int64) ([]ZTPRetryLogVo, error) 
 }
 
 // FindHistoryZTPFiles returns paginated ZTP file history for a device.
-func (r *Repository) FindHistoryZTPFiles(elementId int64, page, pageSize int) ([]HistoryZTPFileVo, int64, error) {
+func (r *repository) FindHistoryZTPFiles(elementId int64, page, pageSize int) ([]HistoryZTPFileVo, int64, error) {
 	var total int64
 	query := r.db.Model(&ZTPFileSendLog{}).Where("element_id = ?", elementId)
 	if err := query.Count(&total).Error; err != nil {
@@ -542,7 +603,7 @@ func (r *Repository) FindHistoryZTPFiles(elementId int64, page, pageSize int) ([
 }
 
 // GetSystemConfigValue returns the config value for a given key.
-func (r *Repository) GetSystemConfigValue(key string) (string, error) {
+func (r *repository) GetSystemConfigValue(key string) (string, error) {
 	var cfg SystemConfig
 	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
@@ -555,7 +616,7 @@ func (r *Repository) GetSystemConfigValue(key string) (string, error) {
 }
 
 // SaveSystemConfigValue inserts or updates a system config entry.
-func (r *Repository) SaveSystemConfigValue(key, value string) error {
+func (r *repository) SaveSystemConfigValue(key, value string) error {
 	var cfg SystemConfig
 	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err == gorm.ErrRecordNotFound {
@@ -570,23 +631,37 @@ func (r *Repository) SaveSystemConfigValue(key, value string) error {
 }
 
 // DeleteZTPLogsByElementIds removes ZTP logs for the given devices.
-func (r *Repository) DeleteZTPLogsByElementIds(elementIds []int64) error {
+func (r *repository) DeleteZTPLogsByElementIds(elementIds []int64) error {
 	return r.db.Where("element_id IN (?)", elementIds).Delete(&ZTPLog{}).Error
 }
 
 // DeleteZTPFileSendLogsByElementIds removes file send logs for the given devices.
-func (r *Repository) DeleteZTPFileSendLogsByElementIds(elementIds []int64) error {
+func (r *repository) DeleteZTPFileSendLogsByElementIds(elementIds []int64) error {
 	return r.db.Where("element_id IN (?)", elementIds).Delete(&ZTPFileSendLog{}).Error
 }
 
 // ClearDeviceAOSFile resets the aos_file_name and read_to_ztp flag on devices.
-func (r *Repository) ClearDeviceAOSFile(elementIds []int64) error {
+func (r *repository) ClearDeviceAOSFile(elementIds []int64) error {
 	return r.db.Table("cpe_element").
 		Where("ne_neid IN (?)", elementIds).
 		Updates(map[string]interface{}{"aos_file_name": nil, "read_to_ztp": 0}).Error
 }
 
 // DeleteGnbIdUsedByElementId removes gnbId allocation for a device.
-func (r *Repository) DeleteGnbIdUsedByElementId(elementId int64) error {
+func (r *repository) DeleteGnbIdUsedByElementId(elementId int64) error {
 	return r.db.Where("element_id = ?", elementId).Delete(&ZTPGnbIdUsed{}).Error
+}
+
+// GetDeviceSerialNumber returns the serial number for a non-deleted device.
+// Used by the HTTP handler's ZTP provisioning flow so the handler no longer
+// needs a direct *gorm.DB handle.
+func (r *repository) GetDeviceSerialNumber(elementId int64) (string, error) {
+	var dev device.CpeElement
+	if err := r.db.Select("ne_neid, serial_number").Where("ne_neid = ? AND deleted = ?", elementId, false).First(&dev).Error; err != nil {
+		return "", err
+	}
+	if dev.SerialNumber == nil {
+		return "", nil
+	}
+	return *dev.SerialNumber, nil
 }

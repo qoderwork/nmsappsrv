@@ -14,7 +14,7 @@ import (
 
 // Handler exposes HTTP handlers for reset endpoints.
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a Handler backed by a fresh Service.

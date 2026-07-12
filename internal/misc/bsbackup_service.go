@@ -49,8 +49,8 @@ func configUploadDir() string {
 
 // ListBaseStationBackupInfo returns a paginated list of devices together with
 // their latest config-file / backup information.
-func (s *Service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoRequest, tenancyId int) ([]BaseStationBackupInfoVo, int64, error) {
-	db := s.repo.db
+func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoRequest, tenancyId int) ([]BaseStationBackupInfoVo, int64, error) {
+	db := s.repo.DB()
 	offset := (req.Page - 1) * req.PageSize
 
 	// Base query: non-deleted devices belonging to this license / tenancy.
@@ -104,8 +104,8 @@ func (s *Service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoReques
 
 // ImportConfigFile persists an uploaded configuration file to disk and creates
 // a config_upload_log record.
-func (s *Service) ImportConfigFile(elementId int64, fileName string, fileData []byte, tenancyId int) (*ImportConfigFileResult, error) {
-	db := s.repo.db
+func (s *service) ImportConfigFile(elementId int64, fileName string, fileData []byte, tenancyId int) (*ImportConfigFileResult, error) {
+	db := s.repo.DB()
 
 	// Verify the target device exists.
 	var elem device.CpeElement
@@ -163,8 +163,8 @@ func (s *Service) ImportConfigFile(elementId int64, fileName string, fileData []
 // ExportConfigFile collects the latest config files for the given devices and
 // packs them into a zip archive.  It returns the path to the temporary zip file
 // (the caller is responsible for cleanup).
-func (s *Service) ExportConfigFile(elementIds []int64, tenancyId int) (string, error) {
-	db := s.repo.db
+func (s *service) ExportConfigFile(elementIds []int64, tenancyId int) (string, error) {
+	db := s.repo.DB()
 
 	// Fetch the latest config_upload_log per device.
 	var logs []ConfigUploadLog
@@ -229,8 +229,8 @@ func (s *Service) ExportConfigFile(elementIds []int64, tenancyId int) (string, e
 
 // CreateBSBackupTask creates a new backup task and its per-device log entries.
 // When ExecuteMode is 1 (immediate) the TR-069 commands are dispatched right away.
-func (s *Service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username string, tenancyId int) error {
-	db := s.repo.db
+func (s *service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username string, tenancyId int) error {
+	db := s.repo.DB()
 
 	deviceGroupJSON, err := json.Marshal(req.DeviceGroupIds)
 	if err != nil {
@@ -290,8 +290,8 @@ func (s *Service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username strin
 
 // CreateBSRestoreTask creates a new restore task and its per-device log entries.
 // When ExecuteMode is 1 (immediate) the TR-069 commands are dispatched right away.
-func (s *Service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username string, tenancyId int) error {
-	db := s.repo.db
+func (s *service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username string, tenancyId int) error {
+	db := s.repo.DB()
 
 	deviceGroupJSON, err := json.Marshal(req.DeviceGroupIds)
 	if err != nil {
@@ -350,8 +350,8 @@ func (s *Service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username str
 }
 
 // CancelTask sets a backup or restore task's status to 4 (cancelled).
-func (s *Service) CancelTask(taskId int) error {
-	db := s.repo.db
+func (s *service) CancelTask(taskId int) error {
+	db := s.repo.DB()
 
 	var task BackupOrRestoreTask
 	if err := db.Where("id = ?", taskId).First(&task).Error; err != nil {
@@ -377,8 +377,8 @@ func (s *Service) CancelTask(taskId int) error {
 
 // StartBSBackupRestoreTask transitions an awaiting task (status 1) to executing
 // (status 2) and dispatches the TR-069 commands to the target devices.
-func (s *Service) StartBSBackupRestoreTask(taskId int, username string) error {
-	db := s.repo.db
+func (s *service) StartBSBackupRestoreTask(taskId int, username string) error {
+	db := s.repo.DB()
 
 	var task BackupOrRestoreTask
 	if err := db.Where("id = ?", taskId).First(&task).Error; err != nil {
@@ -408,8 +408,8 @@ func (s *Service) StartBSBackupRestoreTask(taskId int, username string) error {
 // ListBSBackupTasks returns a paginated list of backup/restore tasks for the
 // given tenancy.  The returned VOs follow the existing BackupRestoreTaskVo
 // shape used elsewhere in the misc module.
-func (s *Service) ListBSBackupTasks(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
-	db := s.repo.db
+func (s *service) ListBSBackupTasks(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
+	db := s.repo.DB()
 	offset := (page - 1) * pageSize
 
 	var total int64
@@ -452,8 +452,8 @@ func (s *Service) ListBSBackupTasks(tenancyId int, page, pageSize int) ([]Backup
 
 // ListDeviceBackupResult returns paginated per-device execution results for a
 // given task.
-func (s *Service) ListDeviceBackupResult(taskId int, page, pageSize int) ([]DeviceBackupResultVo, int64, error) {
-	db := s.repo.db
+func (s *service) ListDeviceBackupResult(taskId int, page, pageSize int) ([]DeviceBackupResultVo, int64, error) {
+	db := s.repo.DB()
 	offset := (page - 1) * pageSize
 
 	var total int64
@@ -495,8 +495,8 @@ func (s *Service) ListDeviceBackupResult(taskId int, page, pageSize int) ([]Devi
 
 // GetConfigFilePath returns the on-disk path for a configuration file
 // identified by its config_upload_log id.
-func (s *Service) GetConfigFilePath(logId string) (string, error) {
-	db := s.repo.db
+func (s *service) GetConfigFilePath(logId string) (string, error) {
+	db := s.repo.DB()
 
 	var cul ConfigUploadLog
 	if err := db.Where("id = ?", logId).First(&cul).Error; err != nil {
@@ -524,7 +524,7 @@ func (s *Service) GetConfigFilePath(logId string) (string, error) {
 
 // createBSDeviceLogs inserts a RestoreAndBackUpDeviceLog row for every device
 // that belongs to the given task.
-func (s *Service) createBSDeviceLogs(db *gorm.DB, taskId int, elementIds []int64, taskType string) error {
+func (s *service) createBSDeviceLogs(db *gorm.DB, taskId int, elementIds []int64, taskType string) error {
 
 	for _, eid := range elementIds {
 		log := RestoreAndBackUpDeviceLog{
@@ -541,8 +541,8 @@ func (s *Service) createBSDeviceLogs(db *gorm.DB, taskId int, elementIds []int64
 
 // dispatchBSOperation sends TR-069 operation messages to the Redis operation
 // queue for every pending device log belonging to the given task.
-func (s *Service) dispatchBSOperation(taskId int, username string) error {
-	db := s.repo.db
+func (s *service) dispatchBSOperation(taskId int, username string) error {
+	db := s.repo.DB()
 	ctx := context.Background()
 
 	var task BackupOrRestoreTask

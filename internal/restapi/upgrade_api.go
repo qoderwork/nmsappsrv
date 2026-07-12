@@ -16,7 +16,7 @@ import (
 // Upgrade file operations
 // ============================
 
-func (s *Service) UploadUpgradeFile(c *gin.Context, fileName string, filePath string, fileSize int64) (*RestUpgradeFileVo, error) {
+func (s *service) UploadUpgradeFile(c *gin.Context, fileName string, filePath string, fileSize int64) (*RestUpgradeFileVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 	now := time.Now()
@@ -47,7 +47,7 @@ func (s *Service) UploadUpgradeFile(c *gin.Context, fileName string, filePath st
 	}, nil
 }
 
-func (s *Service) ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpgradeFileVo, int64, error) {
+func (s *service) ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpgradeFileVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	files, total, err := s.repo.ListUpgradeFiles(licenseId, offset, limit)
@@ -82,7 +82,7 @@ func (s *Service) ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpg
 	return result, total, nil
 }
 
-func (s *Service) DeleteUpgradeFile(c *gin.Context, id int) error {
+func (s *service) DeleteUpgradeFile(c *gin.Context, id int) error {
 	licenseId := middleware.GetLicenseId(c)
 
 	if err := s.repo.DeleteUpgradeFile(id, licenseId); err != nil {
@@ -97,7 +97,7 @@ func (s *Service) DeleteUpgradeFile(c *gin.Context, id int) error {
 // Upgrade task operations
 // ============================
 
-func (s *Service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest) (*RestUpgradeTaskVo, error) {
+func (s *service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest) (*RestUpgradeTaskVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 	now := time.Now()
@@ -131,7 +131,7 @@ func (s *Service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest)
 	}, nil
 }
 
-func (s *Service) GetUpgradeTask(c *gin.Context, id int) (*RestUpgradeTaskVo, error) {
+func (s *service) GetUpgradeTask(c *gin.Context, id int) (*RestUpgradeTaskVo, error) {
 	task, err := s.repo.GetUpgradeTask(id)
 	if err != nil {
 		return nil, apperror.ErrNotFound.WithMessage("upgrade task not found")
@@ -151,7 +151,7 @@ func (s *Service) GetUpgradeTask(c *gin.Context, id int) (*RestUpgradeTaskVo, er
 	return vo, nil
 }
 
-func (s *Service) ListUpgradeTasks(c *gin.Context, offset, limit int) ([]RestUpgradeTaskVo, int64, error) {
+func (s *service) ListUpgradeTasks(c *gin.Context, offset, limit int) ([]RestUpgradeTaskVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	tasks, total, err := s.repo.ListUpgradeTasks(licenseId, offset, limit)

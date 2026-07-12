@@ -26,6 +26,11 @@ type Repository interface {
 	CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64
 	FindDefaultGroups(licenseId int) ([]DeviceGroup, error)
 	AddElementsToGroup(groupId string, elementIds []int64) error
+
+	// System/license lookups previously done via a raw *gorm.DB in the service.
+	GetLicenseQuota(licenseId int) (int, error)
+	CountNonDeleted(licenseId int, deviceType string) (int64, error)
+	GetLocationEncryptionKey() (string, error)
 }
 
 // repository handles database operations for device entities.
@@ -229,4 +234,46 @@ func (r *repository) AddElementsToGroup(groupId string, elementIds []int64) erro
 		rels = append(rels, GroupHasElement{GroupId: groupId, ElementId: eid})
 	}
 	return r.db.Create(&rels).Error
+}
+
+// ---------------------------------------------------------------------------
+// System / license lookups (route former raw-db access through the repo)
+// ---------------------------------------------------------------------------
+
+// GetLicenseQuota reads the device quota integer from the license table.
+func (r *repository) GetLicenseQuota(licenseId int) (int, error) {
+	var quota int
+	if err := r.db.Table("license").Where("id = ?", licenseId).Scan(&quota).Error; err != nil {
+		return 0, err
+	}
+	return quota, nil
+}
+
+// CountNonDeleted counts non-deleted devices of a given type for a license.
+// An empty deviceType counts CPE devices (device_type = 'cpe' OR NULL),
+// matching the original inline query in the service.
+func (r *repository) CountNonDeleted(licenseId int, deviceType string) (int64, error) {
+	var existing int64
+	query := r.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	switch deviceType {
+	case "enb":
+		query = query.Where("device_type = ?", "enb")
+	case "gnb":
+		query = query.Where("device_type = ?", "gnb")
+	default:
+		query = query.Where("device_type = ? OR device_type IS NULL", "cpe")
+	}
+	if err := query.Count(&existing).Error; err != nil {
+		return 0, err
+	}
+	return existing, nil
+}
+
+// GetLocationEncryptionKey reads the AES key string from system_config.
+func (r *repository) GetLocationEncryptionKey() (string, error) {
+	var configValue string
+	if err := r.db.Table("system_config").Where("config_key = ?", "location_encryption_key").Limit(1).Scan(&configValue).Error; err != nil {
+		return "", err
+	}
+	return configValue, nil
 }

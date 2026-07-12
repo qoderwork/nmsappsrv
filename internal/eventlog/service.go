@@ -4,14 +4,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains the business logic for event-log management.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for event-log management.
+type Service interface {
+	ListEventLogs(elementId int64, eventType string, page, pageSize int) ([]EventLog, int64, error)
+	GetEventLog(id int64) (*EventLog, error)
+	ListTaskEventLogs(taskId int, taskType string) ([]TaskToEventLog, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ---------------------------------------------------------------------------
@@ -20,7 +32,7 @@ func NewService(db *gorm.DB) *Service {
 
 // ListEventLogs returns a paginated list of event logs filtered by element
 // and optional event type.
-func (s *Service) ListEventLogs(elementId int64, eventType string, page, pageSize int) ([]EventLog, int64, error) {
+func (s *service) ListEventLogs(elementId int64, eventType string, page, pageSize int) ([]EventLog, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -32,7 +44,7 @@ func (s *Service) ListEventLogs(elementId int64, eventType string, page, pageSiz
 }
 
 // GetEventLog returns a single event log by ID.
-func (s *Service) GetEventLog(id int64) (*EventLog, error) {
+func (s *service) GetEventLog(id int64) (*EventLog, error) {
 	return s.repo.FindByID(id)
 }
 
@@ -41,6 +53,6 @@ func (s *Service) GetEventLog(id int64) (*EventLog, error) {
 // ---------------------------------------------------------------------------
 
 // ListTaskEventLogs returns all event-log associations for the given task.
-func (s *Service) ListTaskEventLogs(taskId int, taskType string) ([]TaskToEventLog, error) {
+func (s *service) ListTaskEventLogs(taskId int, taskType string) ([]TaskToEventLog, error) {
 	return s.repo.FindTaskEventLogs(taskId, taskType)
 }

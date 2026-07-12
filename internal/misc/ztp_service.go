@@ -10,7 +10,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // ListZTPLogs returns all ZTP logs for the given element.
-func (s *Service) ListZTPLogs(elementId int64) ([]ZTPLog, error) {
+func (s *service) ListZTPLogs(elementId int64) ([]ZTPLog, error) {
 	return s.repo.FindZTPLogs(elementId)
 }
 
@@ -19,7 +19,7 @@ func (s *Service) ListZTPLogs(elementId int64) ([]ZTPLog, error) {
 // ---------------------------------------------------------------------------
 
 // GetZTPSetting loads and parses the ZTP configuration from system_config.
-func (s *Service) GetZTPSetting() (*ZTPSetting, error) {
+func (s *service) GetZTPSetting() (*ZTPSetting, error) {
 	val, err := s.repo.GetSystemConfigValue("ztp_config")
 	if err != nil {
 		// No config yet — return defaults.
@@ -33,7 +33,7 @@ func (s *Service) GetZTPSetting() (*ZTPSetting, error) {
 }
 
 // SaveZTPSetting persists the ZTP configuration to system_config.
-func (s *Service) SaveZTPSetting(setting *ZTPSetting) error {
+func (s *service) SaveZTPSetting(setting *ZTPSetting) error {
 	data, err := json.Marshal(setting)
 	if err != nil {
 		return fmt.Errorf("marshal ztp_config: %w", err)
@@ -42,22 +42,22 @@ func (s *Service) SaveZTPSetting(setting *ZTPSetting) error {
 }
 
 // ListZTPResults returns paginated ZTP provisioning results.
-func (s *Service) ListZTPResults(req *ListZTPResultsRequest) ([]ZTPResultVo, int64, error) {
+func (s *service) ListZTPResults(req *ListZTPResultsRequest) ([]ZTPResultVo, int64, error) {
 	return s.repo.FindZTPResults(req)
 }
 
 // ListZTPRetryLogs returns retry logs for a device.
-func (s *Service) ListZTPRetryLogs(elementId int64) ([]ZTPRetryLogVo, error) {
+func (s *service) ListZTPRetryLogs(elementId int64) ([]ZTPRetryLogVo, error) {
 	return s.repo.FindZTPRetryLogs(elementId)
 }
 
 // ListHistoryZTPFiles returns paginated ZTP file history.
-func (s *Service) ListHistoryZTPFiles(elementId int64, page, pageSize int) ([]HistoryZTPFileVo, int64, error) {
+func (s *service) ListHistoryZTPFiles(elementId int64, page, pageSize int) ([]HistoryZTPFileVo, int64, error) {
 	return s.repo.FindHistoryZTPFiles(elementId, page, pageSize)
 }
 
 // SetZTPStatus enables or disables ZTP for the given devices.
-func (s *Service) SetZTPStatus(req *SetZTPStatusRequest) error {
+func (s *service) SetZTPStatus(req *SetZTPStatusRequest) error {
 	if req.Status == "enable" {
 		// Reset aos_file_name to nil and read_to_ztp to 0 so the ZTP thread picks them up.
 		return s.repo.ClearDeviceAOSFile(req.ElementIds)
@@ -69,7 +69,7 @@ func (s *Service) SetZTPStatus(req *SetZTPStatusRequest) error {
 }
 
 // BatchReZTP triggers re-provisioning for a batch of devices.
-func (s *Service) BatchReZTP(req *BatchReZTPRequest) error {
+func (s *service) BatchReZTP(req *BatchReZTPRequest) error {
 	elementIds := s.resolveReZTPDeviceIds(req)
 	if len(elementIds) == 0 {
 		return fmt.Errorf("no devices resolved for re-ZTP")
@@ -87,7 +87,7 @@ func (s *Service) BatchReZTP(req *BatchReZTPRequest) error {
 }
 
 // DeleteZTPFiles deletes ZTP files and related data for the given devices.
-func (s *Service) DeleteZTPFiles(req *DeleteZTPFileRequest) error {
+func (s *service) DeleteZTPFiles(req *DeleteZTPFileRequest) error {
 	_ = s.repo.DeleteZTPLogsByElementIds(req.ElementIds)
 	_ = s.repo.DeleteZTPFileSendLogsByElementIds(req.ElementIds)
 	for _, id := range req.ElementIds {
@@ -97,7 +97,7 @@ func (s *Service) DeleteZTPFiles(req *DeleteZTPFileRequest) error {
 }
 
 // resolveReZTPDeviceIds extracts device IDs from the batch re-ZTP request.
-func (s *Service) resolveReZTPDeviceIds(req *BatchReZTPRequest) []int64 {
+func (s *service) resolveReZTPDeviceIds(req *BatchReZTPRequest) []int64 {
 	seen := make(map[int64]struct{})
 	var result []int64
 

@@ -14,17 +14,36 @@ import (
 	"gorm.io/gorm"
 )
 
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for device log management.
+type Service interface {
+	AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequest) error
+	ListLogCollectionResults(c *gin.Context, req *ListLogCollectionResultRequest) ([]LogCollectionResultVo, int64, error)
+	DeleteAllLogFile(req *DeleteAllLogFileRequest) error
+	DeleteLogFile(req *DeleteLogFileRequest) error
+	GetLogFile(logId int64) (string, error)
+	ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, error)
+	EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUploadRequest) error
+	DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUploadRequest) error
 }
 
-func NewService(db *gorm.DB) *Service {
-	return &Service{
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+// NewService creates a Service backed by a fresh Repository.
+func NewService(db *gorm.DB) Service {
+	return &service{
 		repo: NewRepository(db),
 	}
 }
 
-func (s *Service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequest) error {
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
+}
+
+func (s *service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 	now := time.Now()
 	ctx := context.Background()
@@ -61,7 +80,7 @@ func (s *Service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequ
 	return nil
 }
 
-func (s *Service) ListLogCollectionResults(c *gin.Context, req *ListLogCollectionResultRequest) ([]LogCollectionResultVo, int64, error) {
+func (s *service) ListLogCollectionResults(c *gin.Context, req *ListLogCollectionResultRequest) ([]LogCollectionResultVo, int64, error) {
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -78,7 +97,7 @@ func (s *Service) ListLogCollectionResults(c *gin.Context, req *ListLogCollectio
 	return results, total, nil
 }
 
-func (s *Service) DeleteAllLogFile(req *DeleteAllLogFileRequest) error {
+func (s *service) DeleteAllLogFile(req *DeleteAllLogFileRequest) error {
 	// Fetch all log records first to get file paths for physical file deletion
 	logs, err := s.repo.FindAllByElementId(req.ElementId)
 	if err != nil {
@@ -104,7 +123,7 @@ func (s *Service) DeleteAllLogFile(req *DeleteAllLogFileRequest) error {
 	return nil
 }
 
-func (s *Service) DeleteLogFile(req *DeleteLogFileRequest) error {
+func (s *service) DeleteLogFile(req *DeleteLogFileRequest) error {
 	// Get log record first
 	log, err := s.repo.FindByID(req.LogId)
 	if err != nil {
@@ -127,7 +146,7 @@ func (s *Service) DeleteLogFile(req *DeleteLogFileRequest) error {
 	return nil
 }
 
-func (s *Service) GetLogFile(logId int64) (string, error) {
+func (s *service) GetLogFile(logId int64) (string, error) {
 	log, err := s.repo.FindByID(logId)
 	if err != nil {
 		return "", err
@@ -140,7 +159,7 @@ func (s *Service) GetLogFile(logId int64) (string, error) {
 	return *log.FilePath, nil
 }
 
-func (s *Service) ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, error) {
+func (s *service) ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, error) {
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -170,22 +189,16 @@ func (s *Service) ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, err
 	return result, total, nil
 }
 
-func (s *Service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUploadRequest) error {
+func (s *service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUploadRequest) error {
 	// Get device info to determine TR-069 path
-	var device struct {
-		NeNeid   int64   `gorm:"column:ne_neid"`
-		RootNode *string `gorm:"column:root_node"`
-	}
-	err := s.repo.db.Table("cpe_element").
-		Where("ne_neid = ? AND deleted = ?", req.ElementId, false).
-		First(&device).Error
+	rootNode, err := s.repo.FindDeviceRootNode(req.ElementId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
 
 	// Determine TR-069 path based on rootNode
 	paramPath := "Device.LogPeriodicUpload"
-	if device.RootNode != nil && *device.RootNode == "InternetGatewayDevice" {
+	if rootNode != nil && *rootNode == "InternetGatewayDevice" {
 		paramPath = "InternetGatewayDevice.LogPeriodicUpload"
 	}
 
@@ -211,22 +224,16 @@ func (s *Service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUpload
 	return nil
 }
 
-func (s *Service) DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUploadRequest) error {
+func (s *service) DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUploadRequest) error {
 	// Get device info to determine TR-069 path
-	var device struct {
-		NeNeid   int64   `gorm:"column:ne_neid"`
-		RootNode *string `gorm:"column:root_node"`
-	}
-	err := s.repo.db.Table("cpe_element").
-		Where("ne_neid = ? AND deleted = ?", req.ElementId, false).
-		First(&device).Error
+	rootNode, err := s.repo.FindDeviceRootNode(req.ElementId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
 
 	// Determine TR-069 path based on rootNode
 	paramPath := "Device.LogPeriodicUpload"
-	if device.RootNode != nil && *device.RootNode == "InternetGatewayDevice" {
+	if rootNode != nil && *rootNode == "InternetGatewayDevice" {
 		paramPath = "InternetGatewayDevice.LogPeriodicUpload"
 	}
 

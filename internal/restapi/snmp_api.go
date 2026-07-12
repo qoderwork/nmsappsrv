@@ -18,7 +18,7 @@ import (
 // ============================
 
 // SnmpGet queues an SNMP GET operation to the Redis SNMP queue
-func (s *Service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
+func (s *service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 
@@ -70,7 +70,7 @@ func (s *Service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
 }
 
 // SnmpSet queues an SNMP SET operation to the Redis SNMP queue
-func (s *Service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
+func (s *service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 
@@ -123,7 +123,7 @@ func (s *Service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
 }
 
 // ListSnmpOperationLogs returns SNMP operation logs with pagination
-func (s *Service) ListSnmpOperationLogs(c *gin.Context, offset, limit int) ([]SnmpOperationLogVo, int64, error) {
+func (s *service) ListSnmpOperationLogs(c *gin.Context, offset, limit int) ([]SnmpOperationLogVo, int64, error) {
 	logs, total, err := s.repo.ListSnmpOperationLogs(offset, limit)
 	if err != nil {
 		logger.Errorf("Failed to list SNMP operation logs: %v", err)

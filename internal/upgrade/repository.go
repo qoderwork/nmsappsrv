@@ -9,15 +9,48 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for upgrade entities.
-type Repository struct {
+// Repository defines the data-access contract for upgrade entities.
+type Repository interface {
+	// Generic CRUD provided by the embedded BaseRepository[UpgradeFile, int].
+	Create(entity *UpgradeFile) error
+	Save(entity *UpgradeFile) error
+	FindByID(id int) (*UpgradeFile, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]UpgradeFile, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[UpgradeFile], error)
+
+	// Custom methods.
+	FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error)
+	FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error)
+	FindUpgradeTaskByID(id int) (*UpgradeTask, error)
+	CreateUpgradeTask(t *UpgradeTask) error
+	UpdateUpgradeTask(t *UpgradeTask) error
+	FindUpgradeLogs(taskId int, offset, limit int) ([]UpgradeLog, int64, error)
+	CreateUpgradeLog(log *UpgradeLog) error
+	CreateRebootTask(t *RebootTask) error
+	FindRebootTasks(tenancyId int, offset, limit int) ([]RebootTask, int64, error)
+	CreateRollbackTask(t *RollbackTask) error
+	UpdateRollbackTask(t *RollbackTask) error
+	FindRollbackTaskByID(id int) (*RollbackTask, error)
+	FindRollbackTasks(tenancyId int, offset, limit int) ([]RollbackTask, int64, error)
+	UpdateUpgradeLog(log *UpgradeLog) error
+	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
+	CountUpgradeLogsBySuccess(taskId int, success bool) (int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[UpgradeFile, int] // embedded generic CRUD for UpgradeFile
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[UpgradeFile, int](db, "id"),
 		db:             db,
 	}
@@ -29,7 +62,7 @@ func NewRepository(db *gorm.DB) *Repository {
 
 // FindUpgradeFiles returns a paginated list of upgrade files for the given
 // tenancy together with the total count.
-func (r *Repository) FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error) {
+func (r *repository) FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error) {
 	query := r.DB.Model(&UpgradeFile{}).Where("tenancy_id = ?", tenancyId)
 	result, err := r.FindPage(query, "upload_time DESC", offset, limit)
 	if err != nil {
@@ -45,7 +78,7 @@ func (r *Repository) FindUpgradeFiles(tenancyId int, offset, limit int) ([]Upgra
 
 // FindUpgradeTasks returns a paginated list of upgrade tasks for the given
 // tenancy together with the total count.
-func (r *Repository) FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error) {
+func (r *repository) FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error) {
 	var tasks []UpgradeTask
 	var total int64
 
@@ -79,7 +112,7 @@ func (r *Repository) FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, o
 }
 
 // FindUpgradeTaskByID returns a single upgrade task by its primary key.
-func (r *Repository) FindUpgradeTaskByID(id int) (*UpgradeTask, error) {
+func (r *repository) FindUpgradeTaskByID(id int) (*UpgradeTask, error) {
 	var t UpgradeTask
 	if err := r.db.Where("id = ?", id).First(&t).Error; err != nil {
 		return nil, err
@@ -88,12 +121,12 @@ func (r *Repository) FindUpgradeTaskByID(id int) (*UpgradeTask, error) {
 }
 
 // CreateUpgradeTask inserts a new upgrade task.
-func (r *Repository) CreateUpgradeTask(t *UpgradeTask) error {
+func (r *repository) CreateUpgradeTask(t *UpgradeTask) error {
 	return r.db.Create(t).Error
 }
 
 // UpdateUpgradeTask saves changes to an existing upgrade task.
-func (r *Repository) UpdateUpgradeTask(t *UpgradeTask) error {
+func (r *repository) UpdateUpgradeTask(t *UpgradeTask) error {
 	return r.db.Save(t).Error
 }
 
@@ -103,7 +136,7 @@ func (r *Repository) UpdateUpgradeTask(t *UpgradeTask) error {
 
 // FindUpgradeLogs returns a paginated list of upgrade logs for the given task
 // together with the total count.
-func (r *Repository) FindUpgradeLogs(taskId int, offset, limit int) ([]UpgradeLog, int64, error) {
+func (r *repository) FindUpgradeLogs(taskId int, offset, limit int) ([]UpgradeLog, int64, error) {
 	var logs []UpgradeLog
 	var total int64
 
@@ -121,7 +154,7 @@ func (r *Repository) FindUpgradeLogs(taskId int, offset, limit int) ([]UpgradeLo
 }
 
 // CreateUpgradeLog inserts a new upgrade log entry.
-func (r *Repository) CreateUpgradeLog(log *UpgradeLog) error {
+func (r *repository) CreateUpgradeLog(log *UpgradeLog) error {
 	return r.db.Create(log).Error
 }
 
@@ -130,13 +163,13 @@ func (r *Repository) CreateUpgradeLog(log *UpgradeLog) error {
 // ---------------------------------------------------------------------------
 
 // CreateRebootTask inserts a new reboot task.
-func (r *Repository) CreateRebootTask(t *RebootTask) error {
+func (r *repository) CreateRebootTask(t *RebootTask) error {
 	return r.db.Create(t).Error
 }
 
 // FindRebootTasks returns a paginated list of reboot tasks for the given
 // tenancy together with the total count.
-func (r *Repository) FindRebootTasks(tenancyId int, offset, limit int) ([]RebootTask, int64, error) {
+func (r *repository) FindRebootTasks(tenancyId int, offset, limit int) ([]RebootTask, int64, error) {
 	var tasks []RebootTask
 	var total int64
 
@@ -158,17 +191,17 @@ func (r *Repository) FindRebootTasks(tenancyId int, offset, limit int) ([]Reboot
 // ---------------------------------------------------------------------------
 
 // CreateRollbackTask inserts a new rollback task.
-func (r *Repository) CreateRollbackTask(t *RollbackTask) error {
+func (r *repository) CreateRollbackTask(t *RollbackTask) error {
 	return r.db.Create(t).Error
 }
 
 // UpdateRollbackTask saves changes to an existing rollback task.
-func (r *Repository) UpdateRollbackTask(t *RollbackTask) error {
+func (r *repository) UpdateRollbackTask(t *RollbackTask) error {
 	return r.db.Save(t).Error
 }
 
 // FindRollbackTaskByID returns a single rollback task by its primary key.
-func (r *Repository) FindRollbackTaskByID(id int) (*RollbackTask, error) {
+func (r *repository) FindRollbackTaskByID(id int) (*RollbackTask, error) {
 	var t RollbackTask
 	if err := r.db.Where("id = ?", id).First(&t).Error; err != nil {
 		return nil, err
@@ -178,7 +211,7 @@ func (r *Repository) FindRollbackTaskByID(id int) (*RollbackTask, error) {
 
 // FindRollbackTasks returns a paginated list of rollback tasks for the given
 // tenancy together with the total count.
-func (r *Repository) FindRollbackTasks(tenancyId int, offset, limit int) ([]RollbackTask, int64, error) {
+func (r *repository) FindRollbackTasks(tenancyId int, offset, limit int) ([]RollbackTask, int64, error) {
 	var tasks []RollbackTask
 	var total int64
 
@@ -200,12 +233,12 @@ func (r *Repository) FindRollbackTasks(tenancyId int, offset, limit int) ([]Roll
 // ---------------------------------------------------------------------------
 
 // UpdateUpgradeLog saves changes to an existing upgrade log entry.
-func (r *Repository) UpdateUpgradeLog(log *UpgradeLog) error {
+func (r *repository) UpdateUpgradeLog(log *UpgradeLog) error {
 	return r.db.Save(log).Error
 }
 
 // FindElementInfo returns serial_number and device_type for a given element.
-func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
+func (r *repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
 	var row struct {
 		SN         string `gorm:"column:serial_number"`
 		DeviceType string `gorm:"column:device_type"`
@@ -215,6 +248,16 @@ func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceType str
 		Where("ne_neid = ? AND deleted = 0", elementId).
 		Scan(&row).Error
 	return row.SN, row.DeviceType, err
+}
+
+// CountUpgradeLogsBySuccess returns the number of upgrade logs for a task
+// filtered by the success flag.
+func (r *repository) CountUpgradeLogsBySuccess(taskId int, success bool) (int64, error) {
+	var count int64
+	if err := r.db.Model(&UpgradeLog{}).Where("task_id = ? AND success = ?", taskId, success).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // ParseElementIds deserializes the JSON element_ids column.

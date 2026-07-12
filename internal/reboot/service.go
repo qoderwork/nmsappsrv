@@ -12,18 +12,28 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Service contains reboot business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for reboot management.
+type Service interface {
+	AddRebootTask(req *AddRebootTaskRequest, tenancyId int, username string) (int, error)
+	DeleteRebootTask(id int) error
+	StartRebootTask(id int, username string) error
+	CancelRebootTask(id int) error
+	ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
+	ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new reboot service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // AddRebootTask creates a new reboot task and dispatches commands if immediate.
-func (s *Service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, username string) (int, error) {
+func (s *service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, username string) (int, error) {
 	if s.repo.TaskNameExists(tenancyId, req.Name) {
 		return 0, fmt.Errorf("task name already exists")
 	}
@@ -81,12 +91,12 @@ func (s *Service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, userna
 }
 
 // DeleteRebootTask removes a reboot task.
-func (s *Service) DeleteRebootTask(id int) error {
+func (s *service) DeleteRebootTask(id int) error {
 	return s.repo.DeleteByID(id)
 }
 
 // StartRebootTask manually starts a waiting task.
-func (s *Service) StartRebootTask(id int, username string) error {
+func (s *service) StartRebootTask(id int, username string) error {
 	task, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -114,7 +124,7 @@ func (s *Service) StartRebootTask(id int, username string) error {
 }
 
 // CancelRebootTask cancels a waiting task.
-func (s *Service) CancelRebootTask(id int) error {
+func (s *service) CancelRebootTask(id int) error {
 	task, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -124,18 +134,18 @@ func (s *Service) CancelRebootTask(id int) error {
 }
 
 // ListTasks returns paginated reboot tasks.
-func (s *Service) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
+func (s *service) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
 	return s.repo.ListTasks(tenancyId, query)
 }
 
 // ListTaskResults returns per-device results for a task.
-func (s *Service) ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error) {
+func (s *service) ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error) {
 	return s.repo.ListTaskResults(query)
 }
 
 // ---------- dispatch ----------
 
-func (s *Service) dispatchReboot(task *RebootTask, elementIds []int64, username string) {
+func (s *service) dispatchReboot(task *RebootTask, elementIds []int64, username string) {
 	eventType := "Reboot"
 	operation := "Reboot"
 	taskType := "reboot"
@@ -194,4 +204,9 @@ func (s *Service) dispatchReboot(task *RebootTask, elementIds []int64, username 
 			logger.Errorf("reboot: push to queue for %d: %v", eid, err)
 		}
 	}
+}
+
+// newService creates a Service backed by the given mock Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

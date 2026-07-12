@@ -14,7 +14,7 @@ import (
 
 // Handler provides HTTP handlers for device auth config management.
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new device auth config handler.

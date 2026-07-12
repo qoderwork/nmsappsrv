@@ -12,19 +12,37 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Repository provides data access for SSH management.
-type Repository struct {
+// Repository defines the data-access contract for SSH management.
+type Repository interface {
+	FindLabelByName(tenancyId int, name string) (*SSHLabel, error)
+	FindLabelByID(id int) (*SSHLabel, error)
+	CreateLabel(label *SSHLabel) error
+	DeleteLabel(id int) error
+	UpdateLabel(label *SSHLabel) error
+	ListLabels(tenancyId int) ([]SSHLabel, error)
+	FindTimerByElementId(elementId int64) (*SSHAccessTimerTask, error)
+	CreateTimer(task *SSHAccessTimerTask) error
+	UpdateTimer(task *SSHAccessTimerTask) error
+	ListTimers(page, pageSize int, elementId *int64) ([]SSHAccessTimerTask, int64, error)
+	FindExpiredTimers() ([]SSHAccessTimerTask, error)
+	FindElementInfo(elementId int64) (sn string, deviceName string, err error)
+	FindElementIdsByGroup(groupIds []string) ([]int64, error)
+	GetTenancyName(tenancyId int) string
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // ---------- SSH Label ----------
 
-func (r *Repository) FindLabelByName(tenancyId int, name string) (*SSHLabel, error) {
+func (r *repository) FindLabelByName(tenancyId int, name string) (*SSHLabel, error) {
 	var label SSHLabel
 	err := r.db.Where("license_id = ? AND name = ?", tenancyId, name).First(&label).Error
 	if err != nil {
@@ -33,7 +51,7 @@ func (r *Repository) FindLabelByName(tenancyId int, name string) (*SSHLabel, err
 	return &label, nil
 }
 
-func (r *Repository) FindLabelByID(id int) (*SSHLabel, error) {
+func (r *repository) FindLabelByID(id int) (*SSHLabel, error) {
 	var label SSHLabel
 	err := r.db.First(&label, id).Error
 	if err != nil {
@@ -42,19 +60,19 @@ func (r *Repository) FindLabelByID(id int) (*SSHLabel, error) {
 	return &label, nil
 }
 
-func (r *Repository) CreateLabel(label *SSHLabel) error {
+func (r *repository) CreateLabel(label *SSHLabel) error {
 	return r.db.Create(label).Error
 }
 
-func (r *Repository) DeleteLabel(id int) error {
+func (r *repository) DeleteLabel(id int) error {
 	return r.db.Delete(&SSHLabel{}, id).Error
 }
 
-func (r *Repository) UpdateLabel(label *SSHLabel) error {
+func (r *repository) UpdateLabel(label *SSHLabel) error {
 	return r.db.Save(label).Error
 }
 
-func (r *Repository) ListLabels(tenancyId int) ([]SSHLabel, error) {
+func (r *repository) ListLabels(tenancyId int) ([]SSHLabel, error) {
 	var labels []SSHLabel
 	err := r.db.Where("license_id = ?", tenancyId).Find(&labels).Error
 	return labels, err
@@ -62,7 +80,7 @@ func (r *Repository) ListLabels(tenancyId int) ([]SSHLabel, error) {
 
 // ---------- SSH Access Timer ----------
 
-func (r *Repository) FindTimerByElementId(elementId int64) (*SSHAccessTimerTask, error) {
+func (r *repository) FindTimerByElementId(elementId int64) (*SSHAccessTimerTask, error) {
 	var task SSHAccessTimerTask
 	err := r.db.Where("element_id = ?", elementId).First(&task).Error
 	if err != nil {
@@ -71,15 +89,15 @@ func (r *Repository) FindTimerByElementId(elementId int64) (*SSHAccessTimerTask,
 	return &task, nil
 }
 
-func (r *Repository) CreateTimer(task *SSHAccessTimerTask) error {
+func (r *repository) CreateTimer(task *SSHAccessTimerTask) error {
 	return r.db.Create(task).Error
 }
 
-func (r *Repository) UpdateTimer(task *SSHAccessTimerTask) error {
+func (r *repository) UpdateTimer(task *SSHAccessTimerTask) error {
 	return r.db.Save(task).Error
 }
 
-func (r *Repository) ListTimers(page, pageSize int, elementId *int64) ([]SSHAccessTimerTask, int64, error) {
+func (r *repository) ListTimers(page, pageSize int, elementId *int64) ([]SSHAccessTimerTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -102,14 +120,14 @@ func (r *Repository) ListTimers(page, pageSize int, elementId *int64) ([]SSHAcce
 	return tasks, total, err
 }
 
-func (r *Repository) FindExpiredTimers() ([]SSHAccessTimerTask, error) {
+func (r *repository) FindExpiredTimers() ([]SSHAccessTimerTask, error) {
 	var tasks []SSHAccessTimerTask
 	now := time.Now()
 	err := r.db.Where("ssh_status = ? AND deadline < ?", "1", now).Find(&tasks).Error
 	return tasks, err
 }
 
-func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceName string, err error) {
+func (r *repository) FindElementInfo(elementId int64) (sn string, deviceName string, err error) {
 	var row struct {
 		SN         string `gorm:"column:serial_number"`
 		DeviceName string `gorm:"column:device_name"`
@@ -121,7 +139,7 @@ func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceName str
 	return row.SN, row.DeviceName, err
 }
 
-func (r *Repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
+func (r *repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 	if len(groupIds) == 0 {
 		return nil, nil
 	}
@@ -133,7 +151,7 @@ func (r *Repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 	return ids, err
 }
 
-func (r *Repository) GetTenancyName(tenancyId int) string {
+func (r *repository) GetTenancyName(tenancyId int) string {
 	var name string
 	r.db.Table("tenancy").Where("id = ?", tenancyId).Pluck("name", &name)
 	return name
@@ -141,19 +159,30 @@ func (r *Repository) GetTenancyName(tenancyId int) string {
 
 // ---------- Service ----------
 
-// Service contains SSH business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for SSH operations.
+type Service interface {
+	AddLabel(req *AddSSHLabelRequest, tenancyId int) error
+	DeleteLabel(id int) error
+	ListLabels(tenancyId int) ([]SSHLabel, error)
+	UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error
+	SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) error
+	ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessTimerVO, int64, error)
+	StartExpiredChecker()
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new SSH service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------- SSH Label methods ----------
 
-func (s *Service) AddLabel(req *AddSSHLabelRequest, tenancyId int) error {
+func (s *service) AddLabel(req *AddSSHLabelRequest, tenancyId int) error {
 	existing, _ := s.repo.FindLabelByName(tenancyId, req.Name)
 	if existing != nil {
 		return fmt.Errorf("label name already exists")
@@ -166,15 +195,15 @@ func (s *Service) AddLabel(req *AddSSHLabelRequest, tenancyId int) error {
 	return s.repo.CreateLabel(label)
 }
 
-func (s *Service) DeleteLabel(id int) error {
+func (s *service) DeleteLabel(id int) error {
 	return s.repo.DeleteLabel(id)
 }
 
-func (s *Service) ListLabels(tenancyId int) ([]SSHLabel, error) {
+func (s *service) ListLabels(tenancyId int) ([]SSHLabel, error) {
 	return s.repo.ListLabels(tenancyId)
 }
 
-func (s *Service) UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error {
+func (s *service) UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error {
 	existing, _ := s.repo.FindLabelByName(tenancyId, req.Name)
 	if existing != nil && existing.Id != req.Id {
 		return fmt.Errorf("label name already exists")
@@ -190,7 +219,7 @@ func (s *Service) UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error {
 
 // ---------- SSH Access Timer methods ----------
 
-func (s *Service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) error {
+func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) error {
 	elementIds := req.ElementIds
 	if req.DeviceGroupIds != nil && len(req.DeviceGroupIds) > 0 {
 		groupIds, err := s.repo.FindElementIdsByGroup(req.DeviceGroupIds)
@@ -252,7 +281,7 @@ func (s *Service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, user
 	return nil
 }
 
-func (s *Service) ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessTimerVO, int64, error) {
+func (s *service) ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessTimerVO, int64, error) {
 	tasks, total, err := s.repo.ListTimers(req.Page, req.PageSize, req.ElementId)
 	if err != nil {
 		return nil, 0, err
@@ -282,7 +311,7 @@ func (s *Service) ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessT
 
 // StartExpiredChecker runs a background goroutine that checks every 2 minutes
 // for expired SSH access timers and disables SSH on those devices.
-func (s *Service) StartExpiredChecker() {
+func (s *service) StartExpiredChecker() {
 	go func() {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
@@ -292,7 +321,7 @@ func (s *Service) StartExpiredChecker() {
 	}()
 }
 
-func (s *Service) processExpiredTasks() {
+func (s *service) processExpiredTasks() {
 	tasks, err := s.repo.FindExpiredTimers()
 	if err != nil {
 		logger.Errorf("ssh_timer: find expired: %v", err)
@@ -337,4 +366,9 @@ func strVal(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// newService creates a Service backed by the given Repository (test/mock helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

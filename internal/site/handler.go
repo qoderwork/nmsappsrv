@@ -12,7 +12,7 @@ import (
 
 // Handler exposes site HTTP endpoints.
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new site handler.

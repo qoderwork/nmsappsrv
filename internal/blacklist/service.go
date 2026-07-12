@@ -7,18 +7,33 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains blacklist business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for blacklist management.
+type Service interface {
+	AddDeviceToBlackList(req *AddDeviceToBlackListRequest, licenseId int, username string) (int, error)
+	DeleteDeviceFromBlackList(id int, username string) error
+	BatchDeleteDeviceFromBlackList(ids []int, username string) error
+	ListBlackList(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error)
+	ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error)
+	LoadAllToRedis() error
 }
 
-// NewService creates a new blacklist service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+// NewService creates a Service backed by a fresh Repository.
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // AddDeviceToBlackList adds a device to the blacklist.
-func (s *Service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, licenseId int, username string) (int, error) {
+func (s *service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, licenseId int, username string) (int, error) {
 	// Duplicate check
 	existing, _ := s.repo.FindBySNAndDeviceType(licenseId, req.SN, req.DeviceType)
 	if existing != nil {
@@ -55,7 +70,7 @@ func (s *Service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, license
 }
 
 // DeleteDeviceFromBlackList removes a single device from the blacklist.
-func (s *Service) DeleteDeviceFromBlackList(id int, username string) error {
+func (s *service) DeleteDeviceFromBlackList(id int, username string) error {
 	entry, err := s.repo.FindByID(id)
 	if err != nil {
 		return fmt.Errorf("blacklist entry not found")
@@ -83,7 +98,7 @@ func (s *Service) DeleteDeviceFromBlackList(id int, username string) error {
 }
 
 // BatchDeleteDeviceFromBlackList removes multiple devices from the blacklist.
-func (s *Service) BatchDeleteDeviceFromBlackList(ids []int, username string) error {
+func (s *service) BatchDeleteDeviceFromBlackList(ids []int, username string) error {
 	// Load entries first for logging and Redis cleanup
 	entries := make([]*ElementBlackList, 0, len(ids))
 	for _, id := range ids {
@@ -116,16 +131,16 @@ func (s *Service) BatchDeleteDeviceFromBlackList(ids []int, username string) err
 }
 
 // ListBlackList returns paginated blacklist entries.
-func (s *Service) ListBlackList(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
+func (s *service) ListBlackList(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
 	return s.repo.List(licenseId, query)
 }
 
 // ListOperationLogs returns paginated operation logs.
-func (s *Service) ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
+func (s *service) ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
 	return s.repo.ListOperationLogs(licenseId, query)
 }
 
 // LoadAllToRedis loads all blacklist entries into Redis (call at startup).
-func (s *Service) LoadAllToRedis() error {
+func (s *service) LoadAllToRedis() error {
 	return s.repo.LoadAllToRedis()
 }

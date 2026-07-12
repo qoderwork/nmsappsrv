@@ -16,17 +16,17 @@ import (
 // ---------------------------------------------------------------------------
 
 // ListParameterTemplates returns all templates for the given tenancy.
-func (s *Service) ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
+func (s *service) ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
 	return s.repo.FindParameterTemplates(tenancyId)
 }
 
 // CreateParameterTemplate persists a new parameter template.
-func (s *Service) CreateParameterTemplate(t *ParameterTemplate) error {
+func (s *service) CreateParameterTemplate(t *ParameterTemplate) error {
 	return s.repo.CreateParameterTemplate(t)
 }
 
 // UpdateParameterTemplate persists changes to an existing parameter template.
-func (s *Service) UpdateParameterTemplate(t *ParameterTemplate) error {
+func (s *service) UpdateParameterTemplate(t *ParameterTemplate) error {
 	return s.repo.UpdateParameterTemplate(t)
 }
 
@@ -47,14 +47,14 @@ type DeployTemplateStatus struct {
 // DeployTemplate deploys a parameter template to the specified target devices.
 // It loads the template's parameter paths, reads the desired values from
 // element_basic_info_parameter for each device, and sends SPV commands via TR-069.
-func (s *Service) DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error) {
+func (s *service) DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error) {
 	if len(elementIds) == 0 {
 		return nil, fmt.Errorf("no target devices specified")
 	}
 
 	// 1. Load template's parameter paths via parameter_template_has_parameter JOIN parameter
 	var paramPaths []string
-	err := s.repo.db.Raw(`
+	err := s.repo.DB().Raw(`
 		SELECT p.path FROM parameter_template_has_parameter pth
 		JOIN parameter p ON p.id = pth.parameter_id
 		WHERE pth.template_id = ? AND p.path IS NOT NULL AND p.path != ''
@@ -78,7 +78,7 @@ func (s *Service) DeployTemplate(templateId int64, elementIds []int64, username 
 			SerialNumber string `gorm:"column:serial_number"`
 			DeviceName   string `gorm:"column:device_name"`
 		}
-		if err := s.repo.db.Table("cpe_element").
+		if err := s.repo.DB().Table("cpe_element").
 			Select("serial_number, device_name").
 			Where("ne_neid = ? AND deleted = ?", elementId, false).
 			Scan(&deviceInfo).Error; err != nil {
@@ -99,7 +99,7 @@ func (s *Service) DeployTemplate(templateId int64, elementIds []int64, username 
 			ParamName  string `gorm:"column:param_name"`
 			ParamValue string `gorm:"column:param_value"`
 		}
-		s.repo.db.Table("element_basic_info_parameter").
+		s.repo.DB().Table("element_basic_info_parameter").
 			Select("param_name, param_value").
 			Where("element_id = ? AND param_name IN ?", elementId, paramPaths).
 			Scan(&paramValues)
@@ -141,7 +141,7 @@ func (s *Service) DeployTemplate(templateId int64, elementIds []int64, username 
 			"template_id":    templateId,
 			"issue_time":     now.Format(time.RFC3339),
 		})
-		s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+		s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 			Updates(map[string]interface{}{
 				"command_track_data": string(trackData),
 				"command_issue_time": now,
@@ -162,7 +162,7 @@ func (s *Service) DeployTemplate(templateId int64, elementIds []int64, username 
 		queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
 		if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
 			status.Message = fmt.Sprintf("push to device queue failed: %v", err)
-			s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+			s.repo.DB().Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
 			results = append(results, status)
 			continue
 		}

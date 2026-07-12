@@ -9,7 +9,7 @@ import (
 )
 
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 func NewHandler(db *gorm.DB) *Handler {

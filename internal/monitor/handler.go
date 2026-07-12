@@ -12,7 +12,7 @@ import (
 
 // Handler exposes monitor HTTP endpoints.
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new monitor handler.

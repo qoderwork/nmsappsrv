@@ -15,7 +15,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // ListBackupRestoreTasks returns a paginated list of backup/restore tasks.
-func (s *Service) ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error) {
+func (s *service) ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -27,7 +27,7 @@ func (s *Service) ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]B
 }
 
 // CreateBackupRestoreTask persists a new backup/restore task.
-func (s *Service) CreateBackupRestoreTask(t *BackupOrRestoreTask) error {
+func (s *service) CreateBackupRestoreTask(t *BackupOrRestoreTask) error {
 	return s.repo.CreateBackupOrRestoreTask(t)
 }
 
@@ -48,7 +48,7 @@ type operationMessage struct {
 
 // BatchAddObject creates a batch-add-object task and dispatches AddObject
 // commands for each device to the Redis operation queue.
-func (s *Service) BatchAddObject(req *BatchAddObjectRequest, username string, tenancyId int) error {
+func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, tenancyId int) error {
 	if len(req.Ids) == 0 {
 		return fmt.Errorf("device ids must not be empty")
 	}
@@ -121,7 +121,7 @@ func (s *Service) BatchAddObject(req *BatchAddObjectRequest, username string, te
 }
 
 // ListBatchAddObjectTasks returns the paginated task list with progress info.
-func (s *Service) ListBatchAddObjectTasks(tenancyId int, page, pageSize int) ([]BatchAddObjectTaskVo, int64, error) {
+func (s *service) ListBatchAddObjectTasks(tenancyId int, page, pageSize int) ([]BatchAddObjectTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -152,7 +152,7 @@ func (s *Service) ListBatchAddObjectTasks(tenancyId int, page, pageSize int) ([]
 }
 
 // ListBatchAddObjectTaskDetail returns per-device results for a given task.
-func (s *Service) ListBatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskDetailVo, error) {
+func (s *service) ListBatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskDetailVo, error) {
 	return s.repo.BatchAddObjectTaskDetail(taskId)
 }
 
@@ -162,7 +162,7 @@ func (s *Service) ListBatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTask
 
 // CreateBackupTask creates a batch backup task and dispatches commands for
 // immediate execution (mode 1) or saves it for later trigger (mode 2/3).
-func (s *Service) CreateBackupTask(req *BackupRestoreRequest, username string, tenancyId int) error {
+func (s *service) CreateBackupTask(req *BackupRestoreRequest, username string, tenancyId int) error {
 	if req.Name == "" {
 		return fmt.Errorf("task name is required")
 	}
@@ -219,7 +219,7 @@ func (s *Service) CreateBackupTask(req *BackupRestoreRequest, username string, t
 
 // CreateRestoreTask creates a batch restore task and dispatches commands for
 // immediate execution (mode 1) or saves it for later trigger (mode 2/3).
-func (s *Service) CreateRestoreTask(req *BackupRestoreRequest, username string, tenancyId int) error {
+func (s *service) CreateRestoreTask(req *BackupRestoreRequest, username string, tenancyId int) error {
 	if req.Name == "" {
 		return fmt.Errorf("task name is required")
 	}
@@ -274,7 +274,7 @@ func (s *Service) CreateRestoreTask(req *BackupRestoreRequest, username string, 
 }
 
 // StartBackupRestoreTask manually triggers a pending task (executeMode=2).
-func (s *Service) StartBackupRestoreTask(taskId int, username string) error {
+func (s *service) StartBackupRestoreTask(taskId int, username string) error {
 	task, err := s.repo.FindBackupRestoreTaskById(taskId)
 	if err != nil {
 		return fmt.Errorf("task not found: %d", taskId)
@@ -308,7 +308,7 @@ func (s *Service) StartBackupRestoreTask(taskId int, username string) error {
 }
 
 // CancelBackupRestoreTask cancels a pending or scheduled task.
-func (s *Service) CancelBackupRestoreTask(taskId int) error {
+func (s *service) CancelBackupRestoreTask(taskId int) error {
 	task, err := s.repo.FindBackupRestoreTaskById(taskId)
 	if err != nil {
 		return fmt.Errorf("task not found: %d", taskId)
@@ -323,7 +323,7 @@ func (s *Service) CancelBackupRestoreTask(taskId int) error {
 }
 
 // ListBackupRestoreTasksVo returns the task list with progress and result info.
-func (s *Service) ListBackupRestoreTasksVo(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
+func (s *service) ListBackupRestoreTasksVo(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -368,14 +368,14 @@ func (s *Service) ListBackupRestoreTasksVo(tenancyId int, page, pageSize int) ([
 }
 
 // ListBackupRestoreTaskDetail returns per-device results for a task.
-func (s *Service) ListBackupRestoreTaskDetail(taskId int) ([]BackupRestoreTaskDetailVo, error) {
+func (s *service) ListBackupRestoreTaskDetail(taskId int) ([]BackupRestoreTaskDetailVo, error) {
 	return s.repo.BatchBackupRestoreDetail(taskId)
 }
 
 // ---------- internal dispatch ----------
 
 // dispatchBackupRestore resolves target devices and dispatches TR-069 commands.
-func (s *Service) dispatchBackupRestore(task *BackupOrRestoreTask, username string, operation string) {
+func (s *service) dispatchBackupRestore(task *BackupOrRestoreTask, username string, operation string) {
 	deviceIds := s.resolveBackupDeviceIds(task)
 	if len(deviceIds) == 0 {
 		logger.Warnf("no devices resolved for task %d", task.Id)
@@ -454,7 +454,7 @@ func (s *Service) dispatchBackupRestore(task *BackupOrRestoreTask, username stri
 }
 
 // resolveBackupDeviceIds extracts device IDs from the task configuration.
-func (s *Service) resolveBackupDeviceIds(task *BackupOrRestoreTask) []int64 {
+func (s *service) resolveBackupDeviceIds(task *BackupOrRestoreTask) []int64 {
 	seen := make(map[int64]struct{})
 	var result []int64
 

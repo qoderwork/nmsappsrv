@@ -12,53 +12,79 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Repository provides data access for reset management.
-type Repository struct {
+// Repository defines the data-access contract for reset management.
+type Repository interface {
+	CreateTask(t *ResetTask) error
+	FindTaskByID(id int) (*ResetTask, error)
+	DeleteTask(id int) error
+	UpdateTask(t *ResetTask) error
+	TaskNameExists(tenancyId int, name string) bool
+	FindElementIdsByGroup(groupIds []string) ([]int64, error)
+	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
+	InsertEventLog(eventType string, elementId int64, user string, status int, faultInfo string) (int64, error)
+	CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error
+	IsDeviceInUpgrade(elementId int64) bool
+	ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
+	ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
-// Service contains reset business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for reset management.
+type Service interface {
+	AddResetTask(req *AddResetTaskRequest, tenancyId int, username string) (int, error)
+	DeleteResetTask(id int) error
+	StartResetTask(id int, username string) error
+	CancelResetTask(id int) error
+	ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
+	ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new reset service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------- Repository methods ----------
 
-func (r *Repository) CreateTask(t *ResetTask) error {
+func (r *repository) CreateTask(t *ResetTask) error {
 	return r.db.Create(t).Error
 }
 
-func (r *Repository) FindTaskByID(id int) (*ResetTask, error) {
+func (r *repository) FindTaskByID(id int) (*ResetTask, error) {
 	var t ResetTask
 	err := r.db.First(&t, id).Error
 	return &t, err
 }
 
-func (r *Repository) DeleteTask(id int) error {
+func (r *repository) DeleteTask(id int) error {
 	return r.db.Delete(&ResetTask{}, id).Error
 }
 
-func (r *Repository) UpdateTask(t *ResetTask) error {
+func (r *repository) UpdateTask(t *ResetTask) error {
 	return r.db.Save(t).Error
 }
 
-func (r *Repository) TaskNameExists(tenancyId int, name string) bool {
+func (r *repository) TaskNameExists(tenancyId int, name string) bool {
 	var count int64
 	r.db.Model(&ResetTask{}).Where("tenancy_id = ? AND name = ?", tenancyId, name).Count(&count)
 	return count > 0
 }
 
-func (r *Repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
+func (r *repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 	if len(groupIds) == 0 {
 		return nil, nil
 	}
@@ -70,7 +96,7 @@ func (r *Repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 	return ids, err
 }
 
-func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
+func (r *repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
 	var row struct {
 		SN         string `gorm:"column:serial_number"`
 		DeviceType string `gorm:"column:device_type"`
@@ -82,7 +108,7 @@ func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceType str
 	return row.SN, row.DeviceType, err
 }
 
-func (r *Repository) InsertEventLog(eventType string, elementId int64, user string, status int, faultInfo string) (int64, error) {
+func (r *repository) InsertEventLog(eventType string, elementId int64, user string, status int, faultInfo string) (int64, error) {
 	row := struct {
 		Id               int64     `gorm:"primaryKey;autoIncrement"`
 		EventType        string    `gorm:"column:event_type;type:varchar(255)"`
@@ -106,12 +132,12 @@ func (r *Repository) InsertEventLog(eventType string, elementId int64, user stri
 	return row.Id, nil
 }
 
-func (r *Repository) CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error {
+func (r *repository) CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error {
 	rel := TaskToEventLog{TaskId: taskId, EventLogId: eventLogId, TaskType: taskType}
 	return r.db.Create(&rel).Error
 }
 
-func (r *Repository) IsDeviceInUpgrade(elementId int64) bool {
+func (r *repository) IsDeviceInUpgrade(elementId int64) bool {
 	var count int64
 	r.db.Table("upgrade_log").Where("element_id = ? AND status IN (1,2)", elementId).Count(&count)
 	if count > 0 {
@@ -121,7 +147,7 @@ func (r *Repository) IsDeviceInUpgrade(elementId int64) bool {
 	return count > 0
 }
 
-func (r *Repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
+func (r *repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -257,7 +283,7 @@ func (r *Repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]Reset
 	return vos, total, nil
 }
 
-func (r *Repository) ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error) {
+func (r *repository) ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -329,7 +355,7 @@ func (r *Repository) ListTaskResults(query ListResetTaskResultQuery) ([]ResetTas
 	return vos, total, nil
 }
 
-func (r *Repository) getTenancyNames() map[int]string {
+func (r *repository) getTenancyNames() map[int]string {
 	m := make(map[int]string)
 	type row struct {
 		Id   int    `gorm:"column:id"`
@@ -346,7 +372,7 @@ func (r *Repository) getTenancyNames() map[int]string {
 // ---------- Service methods ----------
 
 // AddResetTask creates a new reset task and dispatches commands if immediate.
-func (s *Service) AddResetTask(req *AddResetTaskRequest, tenancyId int, username string) (int, error) {
+func (s *service) AddResetTask(req *AddResetTaskRequest, tenancyId int, username string) (int, error) {
 	if s.repo.TaskNameExists(tenancyId, req.Name) {
 		return 0, fmt.Errorf("task name already exists")
 	}
@@ -397,11 +423,11 @@ func (s *Service) AddResetTask(req *AddResetTaskRequest, tenancyId int, username
 	return task.Id, nil
 }
 
-func (s *Service) DeleteResetTask(id int) error {
+func (s *service) DeleteResetTask(id int) error {
 	return s.repo.DeleteTask(id)
 }
 
-func (s *Service) StartResetTask(id int, username string) error {
+func (s *service) StartResetTask(id int, username string) error {
 	task, err := s.repo.FindTaskByID(id)
 	if err != nil {
 		return err
@@ -427,7 +453,7 @@ func (s *Service) StartResetTask(id int, username string) error {
 	return nil
 }
 
-func (s *Service) CancelResetTask(id int) error {
+func (s *service) CancelResetTask(id int) error {
 	task, err := s.repo.FindTaskByID(id)
 	if err != nil {
 		return err
@@ -436,17 +462,17 @@ func (s *Service) CancelResetTask(id int) error {
 	return s.repo.UpdateTask(task)
 }
 
-func (s *Service) ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
+func (s *service) ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
 	return s.repo.ListTasks(tenancyId, query)
 }
 
-func (s *Service) ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error) {
+func (s *service) ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error) {
 	return s.repo.ListTaskResults(query)
 }
 
 // ---------- dispatch ----------
 
-func (s *Service) dispatchReset(task *ResetTask, elementIds []int64, username string) {
+func (s *service) dispatchReset(task *ResetTask, elementIds []int64, username string) {
 	ctx := context.Background()
 
 	for _, eid := range elementIds {
@@ -517,4 +543,9 @@ func parseElementIds(jsonStr string) []int64 {
 		json.Unmarshal([]byte(jsonStr), &ids)
 	}
 	return ids
+}
+
+// newService creates a Service backed by the given mock Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

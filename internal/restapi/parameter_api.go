@@ -13,7 +13,7 @@ import (
 // Parameter operations
 // ============================
 
-func (s *Service) GetDeviceParams(c *gin.Context, elementId int64) ([]RestParameterVo, error) {
+func (s *service) GetDeviceParams(c *gin.Context, elementId int64) ([]RestParameterVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	// Verify device exists and belongs to this license
@@ -30,7 +30,7 @@ func (s *Service) GetDeviceParams(c *gin.Context, elementId int64) ([]RestParame
 	return params, nil
 }
 
-func (s *Service) SetDeviceParams(c *gin.Context, elementId int64, req *SetRestParameterRequest) error {
+func (s *service) SetDeviceParams(c *gin.Context, elementId int64, req *SetRestParameterRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 
@@ -49,7 +49,7 @@ func (s *Service) SetDeviceParams(c *gin.Context, elementId int64, req *SetRestP
 	return nil
 }
 
-func (s *Service) PresetDeviceParams(c *gin.Context, elementId int64, req *PresetParameterRequest) (*RequestStatusVo, error) {
+func (s *service) PresetDeviceParams(c *gin.Context, elementId int64, req *PresetParameterRequest) (*RequestStatusVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 

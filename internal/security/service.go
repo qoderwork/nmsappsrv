@@ -57,19 +57,26 @@ var defaultRule = SecurityRule{
 	MaxAdminPasswordLen:    120,
 }
 
-// Service contains security rule business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for security rules.
+type Service interface {
+	GetRule() (*SecurityRule, error)
+	UpdateRule(req *UpdateSecurityRuleRequest) error
+	GetPasswordStrategy() (*PasswordStrategyResponse, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 	mu   sync.Mutex
 }
 
 // NewService creates a new security rule service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // GetRule reads the security rule config, filling defaults for missing fields.
-func (s *Service) GetRule() (*SecurityRule, error) {
+func (s *service) GetRule() (*SecurityRule, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return nil, err
@@ -83,7 +90,7 @@ func (s *Service) GetRule() (*SecurityRule, error) {
 }
 
 // UpdateRule validates and persists the security rule config.
-func (s *Service) UpdateRule(req *UpdateSecurityRuleRequest) error {
+func (s *service) UpdateRule(req *UpdateSecurityRuleRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -132,7 +139,7 @@ func (s *Service) UpdateRule(req *UpdateSecurityRuleRequest) error {
 }
 
 // GetPasswordStrategy returns only the password length strategy.
-func (s *Service) GetPasswordStrategy() (*PasswordStrategyResponse, error) {
+func (s *service) GetPasswordStrategy() (*PasswordStrategyResponse, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return nil, err
@@ -155,7 +162,7 @@ func (s *Service) GetPasswordStrategy() (*PasswordStrategyResponse, error) {
 
 // ---------- repository helpers ----------
 
-func (s *Service) loadConfig() (*SecurityRule, error) {
+func (s *service) loadConfig() (*SecurityRule, error) {
 	key := "security_rule"
 	sc, err := s.repo.FindConfigByKey(key)
 	if err != nil {
@@ -174,7 +181,7 @@ func (s *Service) loadConfig() (*SecurityRule, error) {
 	return &cfg, nil
 }
 
-func (s *Service) saveConfig(cfg *SecurityRule) error {
+func (s *service) saveConfig(cfg *SecurityRule) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
@@ -193,7 +200,7 @@ func (s *Service) saveConfig(cfg *SecurityRule) error {
 	return s.repo.SaveConfig(sc)
 }
 
-func (s *Service) fillDefaults(cfg *SecurityRule) {
+func (s *service) fillDefaults(cfg *SecurityRule) {
 	if cfg.MaxFailedLoginAttempts == 0 {
 		cfg.MaxFailedLoginAttempts = defaultRule.MaxFailedLoginAttempts
 	}
@@ -215,4 +222,9 @@ func (s *Service) fillDefaults(cfg *SecurityRule) {
 	if cfg.MaxAdminPasswordLen == 0 {
 		cfg.MaxAdminPasswordLen = defaultRule.MaxAdminPasswordLen
 	}
+}
+
+// newService creates a Service backed by the given Repository (test/mock helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

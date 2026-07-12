@@ -27,7 +27,7 @@ type ACSHandler struct {
 	xmlSigEnabled  bool
 	privKey        *rsa.PrivateKey
 	cert           *x509.Certificate
-	authService    *deviceauth.Service
+	authService    deviceauth.Service
 }
 
 // NewACSHandler creates a new ACSHandler with the given dependencies.

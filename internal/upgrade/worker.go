@@ -31,7 +31,7 @@ type UpgradeMessage struct {
 type UpgradeWorker struct {
 	db       *gorm.DB
 	opSender *tr069.OperationSender
-	repo     *Repository
+	repo     Repository
 
 	mu      sync.Mutex
 	running bool

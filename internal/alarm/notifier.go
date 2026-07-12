@@ -21,7 +21,7 @@ import (
 // notifications enabled and sends the email accordingly.
 type AlarmNotifier struct {
 	db          *gorm.DB
-	mailService *mail.Service
+	mailService mail.Service
 
 	mu      sync.Mutex
 	running bool
@@ -29,7 +29,7 @@ type AlarmNotifier struct {
 }
 
 // NewAlarmNotifier creates an AlarmNotifier.
-func NewAlarmNotifier(db *gorm.DB, mailService *mail.Service) *AlarmNotifier {
+func NewAlarmNotifier(db *gorm.DB, mailService mail.Service) *AlarmNotifier {
 	return &AlarmNotifier{
 		db:          db,
 		mailService: mailService,

@@ -7,17 +7,37 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for event-log entities.
+// Repository defines the data-access contract for event-log entities.
 // It embeds BaseRepository[EventLog, int64] for standard CRUD on EventLog,
 // and retains module-specific methods for custom queries and other entity types.
-type Repository struct {
+type Repository interface {
+	// Generic CRUD delegated to BaseRepository[EventLog, int64].
+	Create(entity *EventLog) error
+	Save(entity *EventLog) error
+	FindByID(id int64) (*EventLog, error)
+	DeleteByID(id int64) error
+	DeleteByIDs(ids []int64) error
+	SoftDelete(id int64) error
+	UpdateFields(id int64, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]EventLog, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[EventLog], error)
+
+	// Module-specific methods.
+	FindEventLogs(elementId int64, eventType string, offset, limit int) ([]EventLog, int64, error)
+	FindTaskEventLogs(taskId int, taskType string) ([]TaskToEventLog, error)
+	CreateTaskToEventLog(t *TaskToEventLog) error
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[EventLog, int64]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[EventLog, int64](db, "id"),
 		db:             db,
 	}
@@ -29,7 +49,7 @@ func NewRepository(db *gorm.DB) *Repository {
 
 // FindEventLogs returns a paginated list of event logs filtered by element
 // and (optionally) event type, together with the total count.
-func (r *Repository) FindEventLogs(elementId int64, eventType string, offset, limit int) ([]EventLog, int64, error) {
+func (r *repository) FindEventLogs(elementId int64, eventType string, offset, limit int) ([]EventLog, int64, error) {
 	var logs []EventLog
 	var total int64
 
@@ -55,7 +75,7 @@ func (r *Repository) FindEventLogs(elementId int64, eventType string, offset, li
 
 // FindTaskEventLogs returns all task-to-event-log associations for the given
 // task ID and task type.
-func (r *Repository) FindTaskEventLogs(taskId int, taskType string) ([]TaskToEventLog, error) {
+func (r *repository) FindTaskEventLogs(taskId int, taskType string) ([]TaskToEventLog, error) {
 	var rels []TaskToEventLog
 	query := r.db.Where("task_id = ?", taskId)
 	if taskType != "" {
@@ -68,6 +88,6 @@ func (r *Repository) FindTaskEventLogs(taskId int, taskType string) ([]TaskToEve
 }
 
 // CreateTaskToEventLog inserts a new task-to-event-log association.
-func (r *Repository) CreateTaskToEventLog(t *TaskToEventLog) error {
+func (r *repository) CreateTaskToEventLog(t *TaskToEventLog) error {
 	return r.db.Create(t).Error
 }

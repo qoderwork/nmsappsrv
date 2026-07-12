@@ -10,17 +10,41 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides data access for reboot management.
-// It embeds BaseRepository[RebootTask, int] for standard CRUD on RebootTask,
-// and retains module-specific methods for complex join queries and cross-table operations.
-type Repository struct {
+// Repository defines the data-access contract for reboot management.
+type Repository interface {
+	// Generic BaseRepository[RebootTask, int] methods.
+	Create(entity *RebootTask) error
+	Save(entity *RebootTask) error
+	FindByID(id int) (*RebootTask, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]RebootTask, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[RebootTask], error)
+
+	// Module-specific methods.
+	TaskNameExists(tenancyId int, name string) bool
+	FindElementIdsByGroup(groupIds []string) ([]int64, error)
+	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
+	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
+	CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error
+	IsDeviceInUpgrade(elementId int64) bool
+	ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
+	ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+// It embeds BaseRepository[RebootTask, int] for standard CRUD.
+type repository struct {
 	*baserepo.BaseRepository[RebootTask, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[RebootTask, int](db, "id"),
 		db:             db,
 	}
@@ -31,14 +55,14 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // TaskNameExists checks if a task name already exists for the given tenancy.
-func (r *Repository) TaskNameExists(tenancyId int, name string) bool {
+func (r *repository) TaskNameExists(tenancyId int, name string) bool {
 	var count int64
 	r.db.Model(&RebootTask{}).Where("tenancy_id = ? AND name = ?", tenancyId, name).Count(&count)
 	return count > 0
 }
 
 // FindElementIdsByGroup returns ne_neid list for the given device group IDs.
-func (r *Repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
+func (r *repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 	if len(groupIds) == 0 {
 		return nil, nil
 	}
@@ -51,7 +75,7 @@ func (r *Repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 }
 
 // FindElementInfo returns serial_number and device_type for a given element.
-func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
+func (r *repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
 	var row struct {
 		SN         string `gorm:"column:serial_number"`
 		DeviceType string `gorm:"column:device_type"`
@@ -64,7 +88,7 @@ func (r *Repository) FindElementInfo(elementId int64) (sn string, deviceType str
 }
 
 // InsertEventLog creates an event_log row and returns its auto-increment ID.
-func (r *Repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
+func (r *repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
 	row := struct {
 		Id               int64     `gorm:"primaryKey;autoIncrement"`
 		EventType        string    `gorm:"column:event_type;type:varchar(255)"`
@@ -88,7 +112,7 @@ func (r *Repository) InsertEventLog(eventType string, elementId int64, user stri
 }
 
 // CreateTaskToEventLog links a task to an event_log entry.
-func (r *Repository) CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error {
+func (r *repository) CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error {
 	rel := TaskToEventLog{
 		TaskId:     taskId,
 		EventLogId: eventLogId,
@@ -98,7 +122,7 @@ func (r *Repository) CreateTaskToEventLog(taskId int, eventLogId int64, taskType
 }
 
 // IsDeviceInUpgrade checks if a device currently has an active upgrade.
-func (r *Repository) IsDeviceInUpgrade(elementId int64) bool {
+func (r *repository) IsDeviceInUpgrade(elementId int64) bool {
 	var count int64
 	r.db.Table("upgrade_log").
 		Where("element_id = ? AND status IN (1,2)", elementId).
@@ -113,7 +137,7 @@ func (r *Repository) IsDeviceInUpgrade(elementId int64) bool {
 }
 
 // ListTasks returns paginated reboot tasks with computed progress.
-func (r *Repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
+func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -273,7 +297,7 @@ func (r *Repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 }
 
 // ListTaskResults returns per-device results for a reboot task.
-func (r *Repository) ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error) {
+func (r *repository) ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -349,7 +373,7 @@ func (r *Repository) ListTaskResults(query ListRebootTaskResultQuery) ([]RebootT
 
 // ---------- helpers ----------
 
-func (r *Repository) getTenancyNames() map[int]string {
+func (r *repository) getTenancyNames() map[int]string {
 	m := make(map[int]string)
 	type row struct {
 		Id   int    `gorm:"column:id"`

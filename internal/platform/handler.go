@@ -16,7 +16,7 @@ import (
 
 // Handler provides HTTP handlers for platform settings endpoints
 type Handler struct {
-	svc           *Service
+	svc           Service
 	platformFiles config.PlatformFilesConfig
 }
 

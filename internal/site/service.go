@@ -12,35 +12,53 @@ import (
 	"nmsappsrv/pkg/logger"
 )
 
-// Service contains site business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for site operations.
+type Service interface {
+	ListAreas(tenancyId int) ([]SysArea, error)
+	GetArea(id int) (*SysArea, error)
+	CreateArea(a *SysArea) error
+	UpdateArea(a *SysArea) error
+	DeleteArea(id int) error
+	ListSites(licenseId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error)
+	ListSiteBasicInfo(licenseId int) ([]SiteBasicInfo, error)
+	CreateSite(site *SiteInfo, licenseId int) error
+	UpdateSite(id string, site *SiteInfo, licenseId int) error
+	DeleteSite(id string) error
+	GetSystemConfig() (*SystemConfig, error)
+	UpdateSystemConfig(configJSON string) error
+	ListSystemParameters() ([]SystemParameter, error)
+	UpdateSystemParameter(p *SystemParameter) error
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new site service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------- SysArea ----------
 
-func (s *Service) ListAreas(tenancyId int) ([]SysArea, error) {
+func (s *service) ListAreas(tenancyId int) ([]SysArea, error) {
 	return s.repo.FindAreas(tenancyId)
 }
 
-func (s *Service) GetArea(id int) (*SysArea, error) {
+func (s *service) GetArea(id int) (*SysArea, error) {
 	return s.repo.FindAreaByID(id)
 }
 
-func (s *Service) CreateArea(a *SysArea) error {
+func (s *service) CreateArea(a *SysArea) error {
 	return s.repo.CreateArea(a)
 }
 
-func (s *Service) UpdateArea(a *SysArea) error {
+func (s *service) UpdateArea(a *SysArea) error {
 	return s.repo.UpdateArea(a)
 }
 
-func (s *Service) DeleteArea(id int) error {
+func (s *service) DeleteArea(id int) error {
 	// Check for child areas before deleting
 	children, err := s.repo.FindChildAreas(id)
 	if err != nil {
@@ -55,7 +73,7 @@ func (s *Service) DeleteArea(id int) error {
 // ---------- SiteInfo ----------
 
 // ListSites returns a paginated list of sites with area path resolved.
-func (s *Service) ListSites(licenseId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error) {
+func (s *service) ListSites(licenseId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -94,12 +112,12 @@ func (s *Service) ListSites(licenseId int, search string, page, pageSize int) ([
 }
 
 // ListSiteBasicInfo returns lightweight site info for dropdowns.
-func (s *Service) ListSiteBasicInfo(licenseId int) ([]SiteBasicInfo, error) {
+func (s *service) ListSiteBasicInfo(licenseId int) ([]SiteBasicInfo, error) {
 	return s.repo.FindAllSites(licenseId)
 }
 
 // CreateSite creates a new site with UUID and duplicate name check.
-func (s *Service) CreateSite(site *SiteInfo, licenseId int) error {
+func (s *service) CreateSite(site *SiteInfo, licenseId int) error {
 	if site.SiteName == nil || *site.SiteName == "" {
 		return apperror.ErrInvalidInput.WithMessage("site name is required")
 	}
@@ -120,7 +138,7 @@ func (s *Service) CreateSite(site *SiteInfo, licenseId int) error {
 }
 
 // UpdateSite updates an existing site with duplicate name check.
-func (s *Service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
+func (s *service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
 	if site.SiteName == nil || *site.SiteName == "" {
 		return apperror.ErrInvalidInput.WithMessage("site name is required")
 	}
@@ -150,7 +168,7 @@ func (s *Service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
 }
 
 // DeleteSite deletes a site and nullifies device references.
-func (s *Service) DeleteSite(id string) error {
+func (s *service) DeleteSite(id string) error {
 	// First, detach all devices from this site
 	if err := s.repo.NullifyDeviceSiteId(id); err != nil {
 		logger.Warnf("DeleteSite: failed to nullify device site_id: %v", err)
@@ -161,7 +179,7 @@ func (s *Service) DeleteSite(id string) error {
 }
 
 // resolveAreaPath walks up the area parent chain to build a display path like "Region/District/Zone".
-func (s *Service) resolveAreaPath(areaMap map[int]*SysArea, areaId int) string {
+func (s *service) resolveAreaPath(areaMap map[int]*SysArea, areaId int) string {
 	area, ok := areaMap[areaId]
 	if !ok {
 		return ""
@@ -190,11 +208,11 @@ func (s *Service) resolveAreaPath(areaMap map[int]*SysArea, areaId int) string {
 
 // ---------- SystemConfig ----------
 
-func (s *Service) GetSystemConfig() (*SystemConfig, error) {
+func (s *service) GetSystemConfig() (*SystemConfig, error) {
 	return s.repo.FindSystemConfig()
 }
 
-func (s *Service) UpdateSystemConfig(configJSON string) error {
+func (s *service) UpdateSystemConfig(configJSON string) error {
 	// Validate that the incoming string is valid JSON.
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(configJSON), &js); err != nil {
@@ -206,13 +224,18 @@ func (s *Service) UpdateSystemConfig(configJSON string) error {
 
 // ---------- SystemParameter ----------
 
-func (s *Service) ListSystemParameters() ([]SystemParameter, error) {
+func (s *service) ListSystemParameters() ([]SystemParameter, error) {
 	return s.repo.FindSystemParameters()
 }
 
-func (s *Service) UpdateSystemParameter(p *SystemParameter) error {
+func (s *service) UpdateSystemParameter(p *SystemParameter) error {
 	return s.repo.UpdateSystemParameter(p)
 }
 
 // Ensure strconv is used (for potential future use)
 var _ = strconv.Itoa
+
+// newService creates a Service backed by the given Repository (test/mock helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
+}

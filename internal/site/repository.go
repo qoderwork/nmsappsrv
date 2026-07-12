@@ -6,15 +6,44 @@ import (
 	"nmsappsrv/pkg/baserepo"
 )
 
-// Repository provides data access for site-related models.
-type Repository struct {
+// Repository defines the data-access contract for site-related models.
+type Repository interface {
+	Create(entity *SiteInfo) error
+	Save(entity *SiteInfo) error
+	FindByID(id string) (*SiteInfo, error)
+	DeleteByID(id string) error
+	DeleteByIDs(ids []string) error
+	SoftDelete(id string) error
+	UpdateFields(id string, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]SiteInfo, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[SiteInfo], error)
+
+	FindAreas(tenancyId int) ([]SysArea, error)
+	FindAreaByID(id int) (*SysArea, error)
+	CreateArea(a *SysArea) error
+	UpdateArea(a *SysArea) error
+	DeleteArea(id int) error
+	FindChildAreas(parentId int) ([]SysArea, error)
+	FindSites(licenseId int, search string, offset, limit int) ([]SiteInfo, int64, error)
+	FindAllSites(licenseId int) ([]SiteBasicInfo, error)
+	FindSiteByNameAndLicense(name string, licenseId int) (*SiteInfo, error)
+	NullifyDeviceSiteId(siteId string) error
+	FindSystemConfig() (*SystemConfig, error)
+	UpdateSystemConfig(cfg *SystemConfig) error
+	FindSystemParameters() ([]SystemParameter, error)
+	UpdateSystemParameter(p *SystemParameter) error
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[SiteInfo, string] // embedded generic CRUD for SiteInfo
 	db *gorm.DB                                // kept for custom / cross-model queries
 }
 
 // NewRepository creates a new site repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[SiteInfo, string](db, "id"),
 		db:             db,
 	}
@@ -22,13 +51,13 @@ func NewRepository(db *gorm.DB) *Repository {
 
 // ---------- SysArea ----------
 
-func (r *Repository) FindAreas(tenancyId int) ([]SysArea, error) {
+func (r *repository) FindAreas(tenancyId int) ([]SysArea, error) {
 	var items []SysArea
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
 }
 
-func (r *Repository) FindAreaByID(id int) (*SysArea, error) {
+func (r *repository) FindAreaByID(id int) (*SysArea, error) {
 	var item SysArea
 	err := r.db.Where("id = ?", id).First(&item).Error
 	if err != nil {
@@ -37,20 +66,20 @@ func (r *Repository) FindAreaByID(id int) (*SysArea, error) {
 	return &item, nil
 }
 
-func (r *Repository) CreateArea(a *SysArea) error {
+func (r *repository) CreateArea(a *SysArea) error {
 	return r.db.Create(a).Error
 }
 
-func (r *Repository) UpdateArea(a *SysArea) error {
+func (r *repository) UpdateArea(a *SysArea) error {
 	return r.db.Save(a).Error
 }
 
-func (r *Repository) DeleteArea(id int) error {
+func (r *repository) DeleteArea(id int) error {
 	return r.db.Where("id = ?", id).Delete(&SysArea{}).Error
 }
 
 // FindChildAreas returns areas that have the given parent ID.
-func (r *Repository) FindChildAreas(parentId int) ([]SysArea, error) {
+func (r *repository) FindChildAreas(parentId int) ([]SysArea, error) {
 	var items []SysArea
 	err := r.db.Where("p_id = ?", parentId).Find(&items).Error
 	return items, err
@@ -59,7 +88,7 @@ func (r *Repository) FindChildAreas(parentId int) ([]SysArea, error) {
 // ---------- SiteInfo ----------
 
 // FindSites returns a paginated list of sites for the given license, optionally filtered by name.
-func (r *Repository) FindSites(licenseId int, search string, offset, limit int) ([]SiteInfo, int64, error) {
+func (r *repository) FindSites(licenseId int, search string, offset, limit int) ([]SiteInfo, int64, error) {
 	query := r.DB.Model(&SiteInfo{}).Where("license_id = ?", licenseId)
 	if search != "" {
 		query = query.Where("site_name LIKE ?", "%"+search+"%")
@@ -73,7 +102,7 @@ func (r *Repository) FindSites(licenseId int, search string, offset, limit int) 
 }
 
 // FindAllSites returns all sites for the given license (for dropdown).
-func (r *Repository) FindAllSites(licenseId int) ([]SiteBasicInfo, error) {
+func (r *repository) FindAllSites(licenseId int) ([]SiteBasicInfo, error) {
 	var items []SiteBasicInfo
 	err := r.db.Model(&SiteInfo{}).
 		Select("id, site_name").
@@ -84,7 +113,7 @@ func (r *Repository) FindAllSites(licenseId int) ([]SiteBasicInfo, error) {
 }
 
 // FindSiteByNameAndLicense returns a site with the given name and license (for duplicate check).
-func (r *Repository) FindSiteByNameAndLicense(name string, licenseId int) (*SiteInfo, error) {
+func (r *repository) FindSiteByNameAndLicense(name string, licenseId int) (*SiteInfo, error) {
 	var site SiteInfo
 	err := r.db.Where("site_name = ? AND license_id = ?", name, licenseId).First(&site).Error
 	if err != nil {
@@ -94,13 +123,13 @@ func (r *Repository) FindSiteByNameAndLicense(name string, licenseId int) (*Site
 }
 
 // NullifyDeviceSiteId sets site_id = NULL on all devices referencing this site.
-func (r *Repository) NullifyDeviceSiteId(siteId string) error {
+func (r *repository) NullifyDeviceSiteId(siteId string) error {
 	return r.db.Exec("UPDATE cpe_element SET site_id = NULL WHERE site_id = ?", siteId).Error
 }
 
 // ---------- SystemConfig ----------
 
-func (r *Repository) FindSystemConfig() (*SystemConfig, error) {
+func (r *repository) FindSystemConfig() (*SystemConfig, error) {
 	var cfg SystemConfig
 	err := r.db.First(&cfg).Error
 	if err != nil {
@@ -112,7 +141,7 @@ func (r *Repository) FindSystemConfig() (*SystemConfig, error) {
 	return &cfg, nil
 }
 
-func (r *Repository) UpdateSystemConfig(cfg *SystemConfig) error {
+func (r *repository) UpdateSystemConfig(cfg *SystemConfig) error {
 	var existing SystemConfig
 	err := r.db.First(&existing).Error
 	if err != nil {
@@ -127,12 +156,12 @@ func (r *Repository) UpdateSystemConfig(cfg *SystemConfig) error {
 
 // ---------- SystemParameter ----------
 
-func (r *Repository) FindSystemParameters() ([]SystemParameter, error) {
+func (r *repository) FindSystemParameters() ([]SystemParameter, error) {
 	var items []SystemParameter
 	err := r.db.Find(&items).Error
 	return items, err
 }
 
-func (r *Repository) UpdateSystemParameter(p *SystemParameter) error {
+func (r *repository) UpdateSystemParameter(p *SystemParameter) error {
 	return r.db.Save(p).Error
 }

@@ -7,17 +7,37 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for CBSD entities.
+// Repository defines the data-access contract for CBSD entities.
+type Repository interface {
+	Create(entity *CbsdInfo) error
+	Save(entity *CbsdInfo) error
+	FindByID(id string) (*CbsdInfo, error)
+	DeleteByID(id string) error
+	DeleteByIDs(ids []string) error
+	SoftDelete(id string) error
+	UpdateFields(id string, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]CbsdInfo, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[CbsdInfo], error)
+	FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo, int64, error)
+	FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, error)
+	FindCbrsLogs(cbsdId string, logType string, offset, limit int) ([]CbrsLog, int64, error)
+	CreateCbrsLog(log *CbrsLog) error
+	CreateCertFileSendTask(t *CBSDCertFileSendTask) error
+	FindCertFileSendTasks(tenancyId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
 // It embeds BaseRepository[CbsdInfo, string] for standard CRUD on CbsdInfo,
 // and retains module-specific methods for custom queries and other entity types.
-type Repository struct {
+type repository struct {
 	*baserepo.BaseRepository[CbsdInfo, string]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[CbsdInfo, string](db, "id"),
 		db:             db,
 	}
@@ -28,7 +48,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // FindCbsdInfos returns a paginated list of CBSD info records for the given license.
-func (r *Repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo, int64, error) {
+func (r *repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo, int64, error) {
 	var infos []CbsdInfo
 	var total int64
 
@@ -46,7 +66,7 @@ func (r *Repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo
 }
 
 // FindCbsdInfoBySN looks up a CBSD info by serial number and license.
-func (r *Repository) FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, error) {
+func (r *repository) FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, error) {
 	var info CbsdInfo
 	if err := r.db.Where("cbsd_serial_number = ? AND license_id = ?", sn, licenseId).First(&info).Error; err != nil {
 		return nil, err
@@ -59,7 +79,7 @@ func (r *Repository) FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, erro
 // ---------------------------------------------------------------------------
 
 // FindCbrsLogs returns a paginated list of CBRS logs filtered by cbsd_id and log_type.
-func (r *Repository) FindCbrsLogs(cbsdId string, logType string, offset, limit int) ([]CbrsLog, int64, error) {
+func (r *repository) FindCbrsLogs(cbsdId string, logType string, offset, limit int) ([]CbrsLog, int64, error) {
 	var logs []CbrsLog
 	var total int64
 
@@ -83,7 +103,7 @@ func (r *Repository) FindCbrsLogs(cbsdId string, logType string, offset, limit i
 }
 
 // CreateCbrsLog inserts a new CBRS log record.
-func (r *Repository) CreateCbrsLog(log *CbrsLog) error {
+func (r *repository) CreateCbrsLog(log *CbrsLog) error {
 	return r.db.Create(log).Error
 }
 
@@ -92,12 +112,12 @@ func (r *Repository) CreateCbrsLog(log *CbrsLog) error {
 // ---------------------------------------------------------------------------
 
 // CreateCertFileSendTask inserts a new cert file send task.
-func (r *Repository) CreateCertFileSendTask(t *CBSDCertFileSendTask) error {
+func (r *repository) CreateCertFileSendTask(t *CBSDCertFileSendTask) error {
 	return r.db.Create(t).Error
 }
 
 // FindCertFileSendTasks returns a paginated list of cert file send tasks for the given tenancy.
-func (r *Repository) FindCertFileSendTasks(tenancyId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error) {
+func (r *repository) FindCertFileSendTasks(tenancyId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error) {
 	var tasks []CBSDCertFileSendTask
 	var total int64
 

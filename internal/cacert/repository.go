@@ -9,26 +9,57 @@ import (
 	"nmsappsrv/pkg/baserepo"
 )
 
-// Repository handles database operations for CA certificate module.
+// Repository defines the data-access contract for CA certificate module.
+type Repository interface {
+	Create(entity *CaFile) error
+	Save(entity *CaFile) error
+	FindByID(id int) (*CaFile, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]CaFile, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[CaFile], error)
+	ListCaFiles(ctx context.Context, page, pageSize int) ([]CaFile, int64, error)
+	DeleteCaFiles(ctx context.Context, ids []int) error
+	ListAllCaFiles(ctx context.Context) ([]CaFile, error)
+	ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]CaTask, int64, error)
+	CreateCaTask(ctx context.Context, task *CaTask) error
+	GetCaTaskByID(ctx context.Context, id int) (*CaTask, error)
+	DeleteCaTasks(ctx context.Context, ids []int) error
+	CreateDeviceSendCaLogs(ctx context.Context, logs []DeviceSendCaLog) error
+	ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pageSize int) ([]DeviceSendCaLog, int64, error)
+	// DB exposes the underlying *gorm.DB for module-specific queries used by
+	// the service layer helpers that are not part of the generic contract.
+	DB() *gorm.DB
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
 // It embeds BaseRepository[CaFile, int] for standard CRUD on CaFile,
 // and retains module-specific methods for custom queries and other entity types.
-type Repository struct {
+type repository struct {
 	*baserepo.BaseRepository[CaFile, int]
 	db *gorm.DB
 }
 
-// NewRepository creates a new Repository
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[CaFile, int](db, "id"),
 		db:             db,
 	}
 }
 
+// DB returns the underlying *gorm.DB handle.
+func (r *repository) DB() *gorm.DB {
+	return r.db
+}
+
 // ---------- CaFile ----------
 
 // ListCaFiles returns paginated CA file list ordered by create_time desc
-func (r *Repository) ListCaFiles(ctx context.Context, page, pageSize int) ([]CaFile, int64, error) {
+func (r *repository) ListCaFiles(ctx context.Context, page, pageSize int) ([]CaFile, int64, error) {
 	var files []CaFile
 	var total int64
 
@@ -41,14 +72,14 @@ func (r *Repository) ListCaFiles(ctx context.Context, page, pageSize int) ([]CaF
 }
 
 // DeleteCaFiles soft-deletes CA files by setting del_flag = 'Y'
-func (r *Repository) DeleteCaFiles(ctx context.Context, ids []int) error {
+func (r *repository) DeleteCaFiles(ctx context.Context, ids []int) error {
 	return r.db.WithContext(ctx).Model(&CaFile{}).
 		Where("id IN ?", ids).
 		Update("del_flag", "Y").Error
 }
 
 // ListAllCaFiles returns all non-deleted CA files (for dropdown)
-func (r *Repository) ListAllCaFiles(ctx context.Context) ([]CaFile, error) {
+func (r *repository) ListAllCaFiles(ctx context.Context) ([]CaFile, error) {
 	var files []CaFile
 	err := r.db.WithContext(ctx).Model(&CaFile{}).
 		Where("del_flag = ? OR del_flag IS NULL", "0").
@@ -61,7 +92,7 @@ func (r *Repository) ListAllCaFiles(ctx context.Context) ([]CaFile, error) {
 // ---------- CaTask ----------
 
 // ListCaTasks returns paginated CA task list, optionally filtered by tenancyId
-func (r *Repository) ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]CaTask, int64, error) {
+func (r *repository) ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]CaTask, int64, error) {
 	var tasks []CaTask
 	var total int64
 
@@ -77,12 +108,12 @@ func (r *Repository) ListCaTasks(ctx context.Context, page, pageSize int, tenanc
 }
 
 // CreateCaTask inserts a new CA task
-func (r *Repository) CreateCaTask(ctx context.Context, task *CaTask) error {
+func (r *repository) CreateCaTask(ctx context.Context, task *CaTask) error {
 	return r.db.WithContext(ctx).Create(task).Error
 }
 
 // GetCaTaskByID returns a single CA task by ID
-func (r *Repository) GetCaTaskByID(ctx context.Context, id int) (*CaTask, error) {
+func (r *repository) GetCaTaskByID(ctx context.Context, id int) (*CaTask, error) {
 	var task CaTask
 	err := r.db.WithContext(ctx).First(&task, id).Error
 	if err != nil {
@@ -92,14 +123,14 @@ func (r *Repository) GetCaTaskByID(ctx context.Context, id int) (*CaTask, error)
 }
 
 // DeleteCaTasks deletes CA tasks by IDs
-func (r *Repository) DeleteCaTasks(ctx context.Context, ids []int) error {
+func (r *repository) DeleteCaTasks(ctx context.Context, ids []int) error {
 	return r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&CaTask{}).Error
 }
 
 // ---------- DeviceSendCaLog ----------
 
 // CreateDeviceSendCaLogs batch-inserts device CA delivery logs
-func (r *Repository) CreateDeviceSendCaLogs(ctx context.Context, logs []DeviceSendCaLog) error {
+func (r *repository) CreateDeviceSendCaLogs(ctx context.Context, logs []DeviceSendCaLog) error {
 	if len(logs) == 0 {
 		return nil
 	}
@@ -107,7 +138,7 @@ func (r *Repository) CreateDeviceSendCaLogs(ctx context.Context, logs []DeviceSe
 }
 
 // ListDeviceSendCaLogs returns paginated device CA logs filtered by taskId
-func (r *Repository) ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pageSize int) ([]DeviceSendCaLog, int64, error) {
+func (r *repository) ListDeviceSendCaLogs(ctx context.Context, taskId int, page, pageSize int) ([]DeviceSendCaLog, int64, error) {
 	var logs []DeviceSendCaLog
 	var total int64
 

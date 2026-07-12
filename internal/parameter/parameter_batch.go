@@ -17,7 +17,7 @@ import (
 
 // BatchParameterConfigurationDirect creates a batch parameter configuration task
 // and dispatches SetParameterValues commands for each device to Redis.
-func (s *Service) BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error {
+func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error {
 	if len(req.ParamValues) == 0 {
 		return fmt.Errorf("paramValues must not be empty")
 	}
@@ -109,7 +109,7 @@ func (s *Service) BatchParameterConfigurationDirect(req *BatchParameterConfigReq
 }
 
 // ListBatchConfigurations returns the paginated task list with progress info.
-func (s *Service) ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error) {
+func (s *service) ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -142,14 +142,14 @@ func (s *Service) ListBatchConfigurations(tenancyId int, page, pageSize int) ([]
 }
 
 // ListBatchConfigurationDetail returns per-device results for a given task.
-func (s *Service) ListBatchConfigurationDetail(taskId int64) ([]BatchConfigTaskDetailVo, error) {
+func (s *service) ListBatchConfigurationDetail(taskId int64) ([]BatchConfigTaskDetailVo, error) {
 	return s.repo.BatchConfigDetail(taskId)
 }
 
 // ---------- helpers ----------
 
 // resolveDeviceIds merges explicit element IDs with IDs resolved from group IDs.
-func (s *Service) resolveDeviceIds(elementIds []int64, groupIds []string) ([]int64, error) {
+func (s *service) resolveDeviceIds(elementIds []int64, groupIds []string) ([]int64, error) {
 	seen := make(map[int64]struct{})
 	var result []int64
 

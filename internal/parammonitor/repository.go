@@ -7,16 +7,50 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides data access for parameter monitoring entities.
-// It embeds BaseRepository[ParameterMonitorConfig, int] for standard CRUD on ParameterMonitorConfig,
-// and retains module-specific methods for associations, threshold rules, and cross-table queries.
-type Repository struct {
+// Repository defines the data-access contract for parameter monitoring entities.
+type Repository interface {
+	// Generic BaseRepository[ParameterMonitorConfig, int] methods.
+	Create(entity *ParameterMonitorConfig) error
+	Save(entity *ParameterMonitorConfig) error
+	FindByID(id int) (*ParameterMonitorConfig, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]ParameterMonitorConfig, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[ParameterMonitorConfig], error)
+
+	// Module-specific methods.
+	ListConfigs(licenseId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error)
+	SetConfigParameters(configId int, parameterIds []string) error
+	GetConfigParameters(configId int) ([]string, error)
+	GetParameterByIds(ids []string) (map[string]string, error)
+	CreateThresholdRule(rule *ThresholdRule) error
+	UpdateThresholdRule(rule *ThresholdRule) error
+	DeleteThresholdRule(id uint) error
+	GetThresholdRule(id uint) (*ThresholdRule, error)
+	ListThresholdRules(enabled *bool, page, pageSize int) ([]ThresholdRule, int64, error)
+	GetLatestParameterValue(deviceSN, parameterName string) (*ParameterRecord, error)
+
+	// DB returns the underlying *gorm.DB.
+	DB() *gorm.DB
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+// It embeds BaseRepository[ParameterMonitorConfig, int] for standard CRUD.
+type repository struct {
 	*baserepo.BaseRepository[ParameterMonitorConfig, int]
 	db *gorm.DB
 }
 
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+// DB returns the underlying *gorm.DB.
+func (r *repository) DB() *gorm.DB {
+	return r.db
+}
+
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[ParameterMonitorConfig, int](db, "id"),
 		db:             db,
 	}
@@ -27,7 +61,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // ListConfigs returns paginated monitor configs for the given license.
-func (r *Repository) ListConfigs(licenseId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error) {
+func (r *repository) ListConfigs(licenseId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error) {
 	var configs []ParameterMonitorConfig
 	var total int64
 
@@ -48,7 +82,7 @@ func (r *Repository) ListConfigs(licenseId int, page, pageSize int) ([]Parameter
 // MonitorConfigHasParameter – association table operations
 // ---------------------------------------------------------------------------
 
-func (r *Repository) SetConfigParameters(configId int, parameterIds []string) error {
+func (r *repository) SetConfigParameters(configId int, parameterIds []string) error {
 	// Delete old associations
 	err := r.db.Where("config_id = ?", configId).Delete(&MonitorConfigHasParameter{}).Error
 	if err != nil {
@@ -69,7 +103,7 @@ func (r *Repository) SetConfigParameters(configId int, parameterIds []string) er
 	return nil
 }
 
-func (r *Repository) GetConfigParameters(configId int) ([]string, error) {
+func (r *repository) GetConfigParameters(configId int) ([]string, error) {
 	var assocs []MonitorConfigHasParameter
 	err := r.db.Where("config_id = ?", configId).Find(&assocs).Error
 	if err != nil {
@@ -86,7 +120,7 @@ func (r *Repository) GetConfigParameters(configId int) ([]string, error) {
 	return paramIds, nil
 }
 
-func (r *Repository) GetParameterByIds(ids []string) (map[string]string, error) {
+func (r *repository) GetParameterByIds(ids []string) (map[string]string, error) {
 	if len(ids) == 0 {
 		return make(map[string]string), nil
 	}
@@ -115,22 +149,22 @@ func (r *Repository) GetParameterByIds(ids []string) (map[string]string, error) 
 // ---------------------------------------------------------------------------
 
 // CreateThresholdRule inserts a new threshold rule.
-func (r *Repository) CreateThresholdRule(rule *ThresholdRule) error {
+func (r *repository) CreateThresholdRule(rule *ThresholdRule) error {
 	return r.db.Create(rule).Error
 }
 
 // UpdateThresholdRule saves changes to an existing threshold rule.
-func (r *Repository) UpdateThresholdRule(rule *ThresholdRule) error {
+func (r *repository) UpdateThresholdRule(rule *ThresholdRule) error {
 	return r.db.Save(rule).Error
 }
 
 // DeleteThresholdRule removes a threshold rule by ID.
-func (r *Repository) DeleteThresholdRule(id uint) error {
+func (r *repository) DeleteThresholdRule(id uint) error {
 	return r.db.Where("id = ?", id).Delete(&ThresholdRule{}).Error
 }
 
 // GetThresholdRule returns a single threshold rule by ID.
-func (r *Repository) GetThresholdRule(id uint) (*ThresholdRule, error) {
+func (r *repository) GetThresholdRule(id uint) (*ThresholdRule, error) {
 	var rule ThresholdRule
 	if err := r.db.First(&rule, id).Error; err != nil {
 		return nil, err
@@ -140,7 +174,7 @@ func (r *Repository) GetThresholdRule(id uint) (*ThresholdRule, error) {
 
 // ListThresholdRules returns a paginated list of threshold rules.
 // If enabled is non-nil, only rules matching that flag are returned.
-func (r *Repository) ListThresholdRules(enabled *bool, page, pageSize int) ([]ThresholdRule, int64, error) {
+func (r *repository) ListThresholdRules(enabled *bool, page, pageSize int) ([]ThresholdRule, int64, error) {
 	var rules []ThresholdRule
 	var total int64
 
@@ -161,7 +195,7 @@ func (r *Repository) ListThresholdRules(enabled *bool, page, pageSize int) ([]Th
 }
 
 // GetLatestParameterValue returns the most recent parameter reading for a device.
-func (r *Repository) GetLatestParameterValue(deviceSN, parameterName string) (*ParameterRecord, error) {
+func (r *repository) GetLatestParameterValue(deviceSN, parameterName string) (*ParameterRecord, error) {
 	var rec ParameterRecord
 	err := r.db.Table("element_basic_info_parameter").
 		Select("element_basic_info_parameter.element_id, cpe_element.serial_number, element_basic_info_parameter.param_name, element_basic_info_parameter.param_value").

@@ -8,17 +8,48 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides data access for PM-related models.
+// Repository defines the data-access contract for PM-related models.
+type Repository interface {
+	Create(entity *PerformanceKpi) error
+	Save(entity *PerformanceKpi) error
+	FindByID(id string) (*PerformanceKpi, error)
+	DeleteByID(id string) error
+	DeleteByIDs(ids []string) error
+	SoftDelete(id string) error
+	UpdateFields(id string, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]PerformanceKpi, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[PerformanceKpi], error)
+
+	FindKPIs(tenancyId int) ([]PerformanceKpi, error)
+	FindKPISets(tenancyId int) ([]PerformanceKpiSet, error)
+	CreateKPISet(s *PerformanceKpiSet) error
+	FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error)
+	CreateKPITemplate(t *PerformanceKpiTemplate) error
+	UpdateKPITemplate(t *PerformanceKpiTemplate) error
+	DeleteKPITemplate(id int) error
+	FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error)
+	FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error)
+	CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error
+	UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error
+	DeleteKPIAlarmTemplate(id int) error
+	FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error)
+	FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error)
+	FindAllActiveElements(licenseId int) ([]elementRow, error)
+	FindAllActiveElementsAllTenants() ([]elementRow, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
 // It embeds BaseRepository[PerformanceKpi, string] for standard CRUD on PerformanceKpi,
 // and retains module-specific methods for other entity types and custom queries.
-type Repository struct {
+type repository struct {
 	*baserepo.BaseRepository[PerformanceKpi, string]
 	db *gorm.DB
 }
 
 // NewRepository creates a new PM repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[PerformanceKpi, string](db, "id"),
 		db:             db,
 	}
@@ -29,7 +60,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // FindKPIs returns all KPIs for the given tenancy.
-func (r *Repository) FindKPIs(tenancyId int) ([]PerformanceKpi, error) {
+func (r *repository) FindKPIs(tenancyId int) ([]PerformanceKpi, error) {
 	var items []PerformanceKpi
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
@@ -39,13 +70,13 @@ func (r *Repository) FindKPIs(tenancyId int) ([]PerformanceKpi, error) {
 // PerformanceKpiSet (different entity type)
 // ---------------------------------------------------------------------------
 
-func (r *Repository) FindKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
+func (r *repository) FindKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
 	var items []PerformanceKpiSet
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
 }
 
-func (r *Repository) CreateKPISet(s *PerformanceKpiSet) error {
+func (r *repository) CreateKPISet(s *PerformanceKpiSet) error {
 	return r.db.Create(s).Error
 }
 
@@ -53,21 +84,21 @@ func (r *Repository) CreateKPISet(s *PerformanceKpiSet) error {
 // PerformanceKpiTemplate (different entity type)
 // ---------------------------------------------------------------------------
 
-func (r *Repository) FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
+func (r *repository) FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
 	var items []PerformanceKpiTemplate
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
 }
 
-func (r *Repository) CreateKPITemplate(t *PerformanceKpiTemplate) error {
+func (r *repository) CreateKPITemplate(t *PerformanceKpiTemplate) error {
 	return r.db.Create(t).Error
 }
 
-func (r *Repository) UpdateKPITemplate(t *PerformanceKpiTemplate) error {
+func (r *repository) UpdateKPITemplate(t *PerformanceKpiTemplate) error {
 	return r.db.Save(t).Error
 }
 
-func (r *Repository) DeleteKPITemplate(id int) error {
+func (r *repository) DeleteKPITemplate(id int) error {
 	return r.db.Where("id = ?", id).Delete(&PerformanceKpiTemplate{}).Error
 }
 
@@ -75,7 +106,7 @@ func (r *Repository) DeleteKPITemplate(id int) error {
 // PMFileLog
 // ---------------------------------------------------------------------------
 
-func (r *Repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error) {
+func (r *repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error) {
 	var items []PMFileLog
 	var total int64
 	q := r.db.Model(&PMFileLog{}).Where("tenancy_id = ?", tenancyId)
@@ -90,21 +121,21 @@ func (r *Repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileL
 // KpiAlarmTemplate (different entity type)
 // ---------------------------------------------------------------------------
 
-func (r *Repository) FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
+func (r *repository) FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
 	var items []KpiAlarmTemplate
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
 }
 
-func (r *Repository) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
+func (r *repository) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	return r.db.Create(t).Error
 }
 
-func (r *Repository) UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
+func (r *repository) UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	return r.db.Save(t).Error
 }
 
-func (r *Repository) DeleteKPIAlarmTemplate(id int) error {
+func (r *repository) DeleteKPIAlarmTemplate(id int) error {
 	return r.db.Where("id = ?", id).Delete(&KpiAlarmTemplate{}).Error
 }
 
@@ -112,7 +143,7 @@ func (r *Repository) DeleteKPIAlarmTemplate(id int) error {
 // DashboardPmStatisticData
 // ---------------------------------------------------------------------------
 
-func (r *Repository) FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error) {
+func (r *repository) FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error) {
 	var items []DashboardPmStatisticData
 	err := r.db.Where("tenancy_id = ? AND time BETWEEN ? AND ?", tenancyId, startTime, endTime).Find(&items).Error
 	return items, err
@@ -122,7 +153,7 @@ func (r *Repository) FindDashboardData(tenancyId int, startTime, endTime time.Ti
 // PDCPTraffic
 // ---------------------------------------------------------------------------
 
-func (r *Repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error) {
+func (r *repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error) {
 	var items []PDCPTraffic
 	err := r.db.Where("tenancy_id = ? AND statistic_time BETWEEN ? AND ?", tenancyId, startTime, endTime).Find(&items).Error
 	return items, err
@@ -133,7 +164,7 @@ func (r *Repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time
 // ---------------------------------------------------------------------------
 
 // FindAllActiveElements queries all non-deleted devices for the given license.
-func (r *Repository) FindAllActiveElements(licenseId int) ([]elementRow, error) {
+func (r *repository) FindAllActiveElements(licenseId int) ([]elementRow, error) {
 	var rows []elementRow
 	err := r.db.Table("cpe_element").
 		Select("ne_neid, device_type, generation, model_name").
@@ -143,7 +174,7 @@ func (r *Repository) FindAllActiveElements(licenseId int) ([]elementRow, error) 
 }
 
 // FindAllActiveElementsAllTenants queries all non-deleted devices (no tenancy filter).
-func (r *Repository) FindAllActiveElementsAllTenants() ([]elementRow, error) {
+func (r *repository) FindAllActiveElementsAllTenants() ([]elementRow, error) {
 	var rows []elementRow
 	err := r.db.Table("cpe_element").
 		Select("ne_neid, device_type, generation, model_name").

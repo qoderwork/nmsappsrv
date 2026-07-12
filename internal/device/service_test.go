@@ -31,6 +31,9 @@ type mockRepository struct {
 	countNonDeletedByDeviceTypeFn func(deviceType string, licenseId int, generation string) int64
 	findDefaultGroupsFn           func(licenseId int) ([]DeviceGroup, error)
 	addElementsToGroupFn          func(groupId string, elementIds []int64) error
+	getLicenseQuotaFn            func(licenseId int) (int, error)
+	countNonDeletedFn            func(licenseId int, deviceType string) (int64, error)
+	getLocationEncryptionKeyFn   func() (string, error)
 }
 
 func (m *mockRepository) FindByID(id int64) (*CpeElement, error) {
@@ -150,6 +153,27 @@ func (m *mockRepository) AddElementsToGroup(groupId string, elementIds []int64) 
 		return m.addElementsToGroupFn(groupId, elementIds)
 	}
 	return nil
+}
+
+func (m *mockRepository) GetLicenseQuota(licenseId int) (int, error) {
+	if m.getLicenseQuotaFn != nil {
+		return m.getLicenseQuotaFn(licenseId)
+	}
+	return 0, nil
+}
+
+func (m *mockRepository) CountNonDeleted(licenseId int, deviceType string) (int64, error) {
+	if m.countNonDeletedFn != nil {
+		return m.countNonDeletedFn(licenseId, deviceType)
+	}
+	return 0, nil
+}
+
+func (m *mockRepository) GetLocationEncryptionKey() (string, error) {
+	if m.getLocationEncryptionKeyFn != nil {
+		return m.getLocationEncryptionKeyFn()
+	}
+	return "", nil
 }
 
 // newTestService creates a service with the given mock repository.

@@ -10,34 +10,49 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains the business logic for MML operations.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for MML operations.
+type Service interface {
+	ListMmlSets(licenseId int) ([]MmlSet, error)
+	ListMmlCommands(setId int) ([]MmlCommand, error)
+	GetMmlCommandParams(commandId int) ([]MmlCommandParam, error)
+	ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error)
+	ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error)
+	GetMmlResult(id int) (*MmlExecuteResult, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ListMmlSets returns all MML sets for the given license.
-func (s *Service) ListMmlSets(licenseId int) ([]MmlSet, error) {
+func (s *service) ListMmlSets(licenseId int) ([]MmlSet, error) {
 	return s.repo.FindMmlSets(licenseId)
 }
 
 // ListMmlCommands returns all commands in the given MML set.
-func (s *Service) ListMmlCommands(setId int) ([]MmlCommand, error) {
+func (s *service) ListMmlCommands(setId int) ([]MmlCommand, error) {
 	return s.repo.FindMmlCommands(setId)
 }
 
 // GetMmlCommandParams returns all parameters for the given command.
-func (s *Service) GetMmlCommandParams(commandId int) ([]MmlCommandParam, error) {
+func (s *service) GetMmlCommandParams(commandId int) ([]MmlCommandParam, error) {
 	return s.repo.FindMmlCommandParams(commandId)
 }
 
 // ExecuteMml creates a pending execution result record (status=0) and
 // enqueues the MML command to the Redis queue for async dispatch.
-func (s *Service) ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error) {
+func (s *service) ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error) {
 	now := time.Now()
 	result := &MmlExecuteResult{
 		ElementId:     &elementId,
@@ -69,7 +84,7 @@ func (s *Service) ExecuteMml(elementId int64, command string, uid string, userna
 }
 
 // ListMmlResults returns a paginated list of execution results for an element.
-func (s *Service) ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error) {
+func (s *service) ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -81,6 +96,6 @@ func (s *Service) ListMmlResults(elementId int64, page, pageSize int) ([]MmlExec
 }
 
 // GetMmlResult returns a single execution result by ID.
-func (s *Service) GetMmlResult(id int) (*MmlExecuteResult, error) {
+func (s *service) GetMmlResult(id int) (*MmlExecuteResult, error) {
 	return s.repo.FindByID(id)
 }

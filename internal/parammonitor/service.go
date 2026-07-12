@@ -16,22 +16,37 @@ import (
 	"gorm.io/gorm"
 )
 
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for parameter monitoring.
+type Service interface {
+	AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest) error
+	DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error
+	ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConfigDetailVo, error)
+	UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error
+	ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigRequest) ([]MonitorConfigVo, int64, error)
+	ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error
+	GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]RealtimeMonitorDataVo, error)
+	ReloadMonitorParameters(req *ReloadMonitorRequest) error
+	BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) ([]BatchQueryResultVo, error)
+	BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, username string) ([]BatchQueryLiveResult, error)
 }
 
-func NewService(db *gorm.DB) *Service {
-	return &Service{
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+func NewService(db *gorm.DB) Service {
+	return &service{
 		repo: NewRepository(db),
 	}
 }
 
 // countDevices calculates the actual device count based on scope and scope_data.
 // scope=1: all devices; scope=2: selected (elementIds or groupIds in scope_data).
-func (s *Service) countDevices(scope int, scopeData *string) int {
+func (s *service) countDevices(scope int, scopeData *string) int {
 	if scope == 1 {
 		var count int64
-		s.repo.db.Table("cpe_element").Where("deleted = ?", false).Count(&count)
+		s.repo.DB().Table("cpe_element").Where("deleted = ?", false).Count(&count)
 		return int(count)
 	}
 
@@ -47,13 +62,13 @@ func (s *Service) countDevices(scope int, scopeData *string) int {
 	// Check if IDs are group IDs by looking in device_group table.
 	// If matches found, count via group_has_element; otherwise treat as element IDs.
 	var groupCount int64
-	s.repo.db.Table("device_group").
+	s.repo.DB().Table("device_group").
 		Where("id IN ?", ids).
 		Count(&groupCount)
 
 	if groupCount > 0 {
 		var elementCount int64
-		s.repo.db.Table("group_has_element").
+		s.repo.DB().Table("group_has_element").
 			Where("group_id IN ?", ids).
 			Count(&elementCount)
 		return int(elementCount)
@@ -64,10 +79,10 @@ func (s *Service) countDevices(scope int, scopeData *string) int {
 
 // resolveScopeToElementIds resolves a monitor config's scope to actual element IDs.
 // scope=1: all non-deleted devices; scope=2: parse scope_data (handles both elementIds and groupIds).
-func (s *Service) resolveScopeToElementIds(scope int, scopeData *string) ([]int64, error) {
+func (s *service) resolveScopeToElementIds(scope int, scopeData *string) ([]int64, error) {
 	if scope == 1 {
 		var elementIds []int64
-		err := s.repo.db.Table("cpe_element").
+		err := s.repo.DB().Table("cpe_element").
 			Where("deleted = ?", false).
 			Pluck("ne_neid", &elementIds).Error
 		return elementIds, err
@@ -87,11 +102,11 @@ func (s *Service) resolveScopeToElementIds(scope int, scopeData *string) ([]int6
 
 	// Check if IDs are group IDs
 	var groupCount int64
-	s.repo.db.Table("device_group").Where("id IN ?", ids).Count(&groupCount)
+	s.repo.DB().Table("device_group").Where("id IN ?", ids).Count(&groupCount)
 
 	if groupCount > 0 {
 		var elementIds []int64
-		err := s.repo.db.Table("group_has_element").
+		err := s.repo.DB().Table("group_has_element").
 			Where("group_id IN ?", ids).
 			Pluck("element_id", &elementIds).Error
 		return elementIds, err
@@ -100,7 +115,7 @@ func (s *Service) resolveScopeToElementIds(scope int, scopeData *string) ([]int6
 	return ids, nil
 }
 
-func (s *Service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest) error {
+func (s *service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 	now := time.Now()
 
@@ -128,7 +143,7 @@ func (s *Service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest)
 	return nil
 }
 
-func (s *Service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
+func (s *service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
 	// Delete config
 	if err := s.repo.DeleteByID(req.Id); err != nil {
 		logger.Errorf("DeleteConfig error: %v", err)
@@ -144,7 +159,7 @@ func (s *Service) DeleteMonitorConfig(req *DeleteMonitorConfigRequest) error {
 	return nil
 }
 
-func (s *Service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConfigDetailVo, error) {
+func (s *service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConfigDetailVo, error) {
 	config, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return nil, apperror.Wrap(err, "VIEW_MONITOR_CONFIG_FAILED", 500, "failed to view monitor config")
@@ -183,7 +198,7 @@ func (s *Service) ViewMonitorConfig(req *ViewMonitorConfigRequest) (*MonitorConf
 	return &vo, nil
 }
 
-func (s *Service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
+func (s *service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
 	config, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
@@ -221,7 +236,7 @@ func (s *Service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
 	return nil
 }
 
-func (s *Service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigRequest) ([]MonitorConfigVo, int64, error) {
+func (s *service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigRequest) ([]MonitorConfigVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	if req.Page <= 0 {
@@ -261,7 +276,7 @@ func (s *Service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigReque
 	return result, total, nil
 }
 
-func (s *Service) ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error {
+func (s *service) ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error {
 	config, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
@@ -277,7 +292,7 @@ func (s *Service) ToggleMonitorConfig(req *ToggleMonitorConfigRequest) error {
 	return nil
 }
 
-func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]RealtimeMonitorDataVo, error) {
+func (s *service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]RealtimeMonitorDataVo, error) {
 	config, err := s.repo.FindByID(req.ConfigId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
@@ -313,7 +328,7 @@ func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]Rea
 			DeviceName   *string `gorm:"column:device_name"`
 			SerialNumber *string `gorm:"column:serial_number"`
 		}
-		err := s.repo.db.Table("cpe_element").
+		err := s.repo.DB().Table("cpe_element").
 			Where("ne_neid = ? AND deleted = ?", elementId, false).
 			First(&device).Error
 		if err != nil {
@@ -327,13 +342,13 @@ func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]Rea
 			var attr struct {
 				ParameterName *string `gorm:"column:parameter_name"`
 			}
-			err := s.repo.db.Table("parameter_attributes").
+			err := s.repo.DB().Table("parameter_attributes").
 				Where("id = ?", paramId).
 				First(&attr).Error
 			if err == nil && attr.ParameterName != nil {
 				// Read actual parameter value from element_basic_info_parameter
 				var paramValue string
-				s.repo.db.Table("element_basic_info_parameter").
+				s.repo.DB().Table("element_basic_info_parameter").
 					Where("element_id = ? AND param_name = ?", elementId, *attr.ParameterName).
 					Pluck("param_value", &paramValue)
 
@@ -357,7 +372,7 @@ func (s *Service) GetRealtimeMonitorData(req *RealtimeMonitorDataRequest) ([]Rea
 	return result, nil
 }
 
-func (s *Service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
+func (s *service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
 	config, err := s.repo.FindByID(req.ConfigId)
 	if err != nil {
 		return apperror.Wrap(err, "GET_MONITOR_CONFIG_FAILED", 404, "monitor config not found")
@@ -403,7 +418,7 @@ func (s *Service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
 	return nil
 }
 
-func (s *Service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) ([]BatchQueryResultVo, error) {
+func (s *service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) ([]BatchQueryResultVo, error) {
 	// Get parameter info
 	paramMap, err := s.repo.GetParameterByIds(req.ParameterIds)
 	if err != nil {
@@ -419,7 +434,7 @@ func (s *Service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) 
 			DeviceName   *string `gorm:"column:device_name"`
 			SerialNumber *string `gorm:"column:serial_number"`
 		}
-		err := s.repo.db.Table("cpe_element").
+		err := s.repo.DB().Table("cpe_element").
 			Where("ne_neid = ? AND deleted = ?", elementId, false).
 			First(&device).Error
 		if err != nil {
@@ -435,13 +450,13 @@ func (s *Service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) 
 			var attr struct {
 				ParameterName *string `gorm:"column:parameter_name"`
 			}
-			err := s.repo.db.Table("parameter_attributes").
+			err := s.repo.DB().Table("parameter_attributes").
 				Where("id = ?", paramId).
 				First(&attr).Error
 			if err == nil && attr.ParameterName != nil {
 				// Read actual parameter value from element_basic_info_parameter
 				var paramValue string
-				s.repo.db.Table("element_basic_info_parameter").
+				s.repo.DB().Table("element_basic_info_parameter").
 					Where("element_id = ? AND param_name = ?", elementId, path).
 					Pluck("param_value", &paramValue)
 
@@ -468,7 +483,7 @@ func (s *Service) BatchQueryDeviceParameters(req *BatchQueryDeviceParamRequest) 
 // devices concurrently via TR-069. It resolves parameter IDs to paths, builds SOAP
 // GPV XML for each device, creates event_log tracking entries, and pushes to device
 // queues. Returns dispatch status per device (actual values arrive asynchronously).
-func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, username string) ([]BatchQueryLiveResult, error) {
+func (s *service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, username string) ([]BatchQueryLiveResult, error) {
 	// 1. Resolve parameter IDs to paths
 	paramMap, err := s.repo.GetParameterByIds(req.ParameterIds)
 	if err != nil {
@@ -495,7 +510,7 @@ func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, use
 			SerialNumber *string `gorm:"column:serial_number"`
 			DeviceName   *string `gorm:"column:device_name"`
 		}
-		if err := s.repo.db.Table("cpe_element").
+		if err := s.repo.DB().Table("cpe_element").
 			Where("ne_neid = ? AND deleted = ?", elementId, false).
 			Scan(&d).Error; err != nil {
 			logger.Warnf("BatchQueryLive: device %d not found: %v", elementId)
@@ -540,14 +555,14 @@ func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, use
 				"command_issue_time": now,
 				"create_time":        now,
 			}
-			if err := s.repo.db.Table("event_log").Create(eventLog).Error; err != nil {
+			if err := s.repo.DB().Table("event_log").Create(eventLog).Error; err != nil {
 				res.Error = fmt.Sprintf("create event_log: %v", err)
 				results[idx] = res
 				return
 			}
 			// Retrieve the auto-generated ID
 			var eventLogId int64
-			s.repo.db.Raw("SELECT LAST_INSERT_ID()").Scan(&eventLogId)
+			s.repo.DB().Raw("SELECT LAST_INSERT_ID()").Scan(&eventLogId)
 
 			// Build SOAP GPV XML
 			headerId := soap.GenerateHeaderID()
@@ -562,7 +577,7 @@ func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, use
 				"param_names":    paramPaths,
 				"issue_time":     now.Format(time.RFC3339),
 			})
-			s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+			s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 				Updates(map[string]interface{}{
 					"command_track_data": string(trackData),
 				})
@@ -582,7 +597,7 @@ func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, use
 			// Push SOAP XML to device queue
 			queueKey := fmt.Sprintf("tr069:queue:%s", d.SerialNumber)
 			if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
-				s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+				s.repo.DB().Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
 				res.Error = fmt.Sprintf("push to queue: %v", err)
 				results[idx] = res
 				return
@@ -596,4 +611,9 @@ func (s *Service) BatchQueryDeviceParametersLive(req *BatchQueryLiveRequest, use
 
 	wg.Wait()
 	return results, nil
+}
+
+// newService creates a Service backed by the given mock Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
@@ -17,15 +16,14 @@ import (
 
 // Handler exposes HTTP handlers for miscellaneous endpoints.
 type Handler struct {
-	db  *gorm.DB
-	svc *Service
+	svc Service
 	// EnqueueZTPFunc is injected from main to avoid an import cycle with tr069.
 	EnqueueZTPFunc func(ctx context.Context, elementId int64, serialNumber, operationType, operationUser string) error
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db, svc: NewService(db)}
+	return &Handler{svc: NewService(db)}
 }
 
 // getTenancyId extracts tenancy_id from gin context as int.
@@ -304,18 +302,18 @@ func (h *Handler) ProvisionZTP(c *gin.Context) {
 	ctx := context.Background()
 	enqueued := 0
 	for _, elementId := range req.ElementIds {
-		// Look up device serial number
-		var dev device.CpeElement
-		if err := h.db.Select("ne_neid, serial_number").Where("ne_neid = ? AND deleted = ?", elementId, false).First(&dev).Error; err != nil {
+		// Look up device serial number via the service layer.
+		sn, err := h.svc.GetDeviceSerialNumber(elementId)
+		if err != nil {
 			logger.Warnf("ztp provision: device %d not found: %v", elementId, err)
 			continue
 		}
-		if dev.SerialNumber == nil || *dev.SerialNumber == "" {
+		if sn == "" {
 			logger.Warnf("ztp provision: device %d has no serial number", elementId)
 			continue
 		}
 
-		if err := h.EnqueueZTPFunc(ctx, elementId, *dev.SerialNumber, "provision", req.OperationUser); err != nil {
+		if err := h.EnqueueZTPFunc(ctx, elementId, sn, "provision", req.OperationUser); err != nil {
 			logger.Errorf("ztp provision: failed to enqueue device %d: %v", elementId, err)
 			continue
 		}

@@ -12,7 +12,7 @@ import (
 // TBG (femtocell) operations
 // ============================
 
-func (s *Service) ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, error) {
+func (s *service) ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	tbgs, total, err := s.repo.ListTBGs(licenseId, offset, limit)
@@ -35,7 +35,7 @@ func (s *Service) ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, e
 	return result, total, nil
 }
 
-func (s *Service) GetTBGBySN(sn string) (*TBGVo, error) {
+func (s *service) GetTBGBySN(sn string) (*TBGVo, error) {
 	tbg, err := s.repo.GetTBGBySN(sn)
 	if err != nil {
 		return nil, apperror.ErrNotFound.WithMessage("TBG device not found")
@@ -50,7 +50,7 @@ func (s *Service) GetTBGBySN(sn string) (*TBGVo, error) {
 	}, nil
 }
 
-func (s *Service) GetTBGByWanMac(mac string) (*TBGVo, error) {
+func (s *service) GetTBGByWanMac(mac string) (*TBGVo, error) {
 	tbg, err := s.repo.GetTBGByWanMac(mac)
 	if err != nil {
 		return nil, apperror.ErrNotFound.WithMessage("TBG device not found")
@@ -65,7 +65,7 @@ func (s *Service) GetTBGByWanMac(mac string) (*TBGVo, error) {
 	}, nil
 }
 
-func (s *Service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error) {
+func (s *service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 
@@ -120,7 +120,7 @@ func (s *Service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error)
 	return result, nil
 }
 
-func (s *Service) ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error {
+func (s *service) ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error {
 	username := middleware.GetUsername(c)
 
 	for _, req := range reqs {
@@ -149,7 +149,7 @@ func (s *Service) ModifyTBGs(c *gin.Context, reqs []ModifyTBGRequest) error {
 	return nil
 }
 
-func (s *Service) DeleteTBGs(c *gin.Context, req *DeleteTBGRequest) error {
+func (s *service) DeleteTBGs(c *gin.Context, req *DeleteTBGRequest) error {
 	username := middleware.GetUsername(c)
 
 	if len(req.SerialNumbers) > 100 {

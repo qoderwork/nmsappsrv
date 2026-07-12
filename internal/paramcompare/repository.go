@@ -6,19 +6,27 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database reads for the param-compare module.
-type Repository struct {
+// Repository defines the data-access contract for param-compare entities.
+type Repository interface {
+	GetDeviceParameters(deviceID uint) ([]DeviceParam, error)
+	GetTemplateParameters(templateID uint) ([]TemplateParam, error)
+	GetTemplateName(templateID uint) (string, error)
+	ListTemplates() ([]TemplateInfo, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // GetDeviceParameters returns all (param_name, param_value) pairs for a device
 // from the element_basic_info_parameter table.
-func (r *Repository) GetDeviceParameters(deviceID uint) ([]DeviceParam, error) {
+func (r *repository) GetDeviceParameters(deviceID uint) ([]DeviceParam, error) {
 	var params []DeviceParam
 	if err := r.db.Table("element_basic_info_parameter").
 		Select("param_name, param_value").
@@ -32,7 +40,7 @@ func (r *Repository) GetDeviceParameters(deviceID uint) ([]DeviceParam, error) {
 
 // GetTemplateParameters returns all (param_path, param_value) pairs for a
 // template from the parameter_template_value table.
-func (r *Repository) GetTemplateParameters(templateID uint) ([]TemplateParam, error) {
+func (r *repository) GetTemplateParameters(templateID uint) ([]TemplateParam, error) {
 	var params []TemplateParam
 	if err := r.db.Table("parameter_template_value").
 		Select("param_path, param_value").
@@ -45,7 +53,7 @@ func (r *Repository) GetTemplateParameters(templateID uint) ([]TemplateParam, er
 }
 
 // GetTemplateName returns the template name for the given ID.
-func (r *Repository) GetTemplateName(templateID uint) (string, error) {
+func (r *repository) GetTemplateName(templateID uint) (string, error) {
 	var name string
 	if err := r.db.Table("parameter_template").
 		Select("name").
@@ -57,7 +65,7 @@ func (r *Repository) GetTemplateName(templateID uint) (string, error) {
 }
 
 // ListTemplates returns lightweight template info including parameter counts.
-func (r *Repository) ListTemplates() ([]TemplateInfo, error) {
+func (r *repository) ListTemplates() ([]TemplateInfo, error) {
 	var list []TemplateInfo
 	if err := r.db.Raw(`
 		SELECT pt.id,

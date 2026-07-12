@@ -6,18 +6,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides database operations for platform settings
-type Repository struct {
+// Repository defines the data-access contract for platform settings.
+type Repository interface {
+	GetSystemConfig(key string) (string, error)
+	SaveSystemConfig(key, value string) error
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // GetSystemConfig reads a system_config entry by config_key
-func (r *Repository) GetSystemConfig(key string) (string, error) {
+func (r *repository) GetSystemConfig(key string) (string, error) {
 	var cfg systemConfigModel
 	if err := r.db.Where("id = ?", key).First(&cfg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -32,7 +38,7 @@ func (r *Repository) GetSystemConfig(key string) (string, error) {
 }
 
 // SaveSystemConfig upserts a system_config entry
-func (r *Repository) SaveSystemConfig(key, value string) error {
+func (r *repository) SaveSystemConfig(key, value string) error {
 	var cfg systemConfigModel
 	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {

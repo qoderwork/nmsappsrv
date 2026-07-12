@@ -13,7 +13,7 @@ import (
 // Device operations
 // ============================
 
-func (s *Service) ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo, int64, error) {
+func (s *service) ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	devices, total, err := s.repo.ListDevices(licenseId, offset, limit)
@@ -45,7 +45,7 @@ func (s *Service) ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo
 	return result, total, nil
 }
 
-func (s *Service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
+func (s *service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	d, err := s.repo.GetDeviceById(id, licenseId)
@@ -68,7 +68,7 @@ func (s *Service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
 	return vo, nil
 }
 
-func (s *Service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDeviceVo, error) {
+func (s *service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDeviceVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 
@@ -121,7 +121,7 @@ func (s *Service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDev
 	return vo, nil
 }
 
-func (s *Service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDeviceRequest) error {
+func (s *service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDeviceRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 
 	d, err := s.repo.GetDeviceById(id, licenseId)
@@ -147,7 +147,7 @@ func (s *Service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDevi
 	return nil
 }
 
-func (s *Service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequest) error {
+func (s *service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 
 	d, err := s.repo.GetDeviceBySN(req.SerialNumber, licenseId)
@@ -170,7 +170,7 @@ func (s *Service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequ
 	return nil
 }
 
-func (s *Service) DeleteDevice(c *gin.Context, id int64) error {
+func (s *service) DeleteDevice(c *gin.Context, id int64) error {
 	licenseId := middleware.GetLicenseId(c)
 
 	if err := s.repo.SoftDeleteDevice(id, licenseId); err != nil {

@@ -13,7 +13,8 @@ import (
 )
 
 type Handler struct {
-	svc     *Service
+	svc     Service
+	repo    Repository
 	checker *ThresholdChecker
 }
 
@@ -21,6 +22,7 @@ func NewHandler(db *gorm.DB) *Handler {
 	alarmSvc := alarm.NewService(db)
 	return &Handler{
 		svc:     NewService(db),
+		repo:    NewRepository(db),
 		checker: NewThresholdChecker(db, redis.RDB, alarmSvc),
 	}
 }
@@ -205,7 +207,7 @@ func (h *Handler) CreateThresholdRule(c *gin.Context) {
 		return
 	}
 
-	repo := NewRepository(h.svc.repo.db)
+	repo := h.repo
 	if err := repo.CreateThresholdRule(&rule); err != nil {
 		utils.HandleError(c, apperror.Wrap(err, "CREATE_THRESHOLD_FAILED", 500, "failed to create threshold rule"))
 		return
@@ -223,7 +225,7 @@ func (h *Handler) UpdateThresholdRule(c *gin.Context) {
 		return
 	}
 
-	repo := NewRepository(h.svc.repo.db)
+	repo := h.repo
 	existing, err := repo.GetThresholdRule(uint(id))
 	if err != nil {
 		utils.HandleError(c, apperror.ErrNotFound.WithMessage("threshold rule not found"))
@@ -275,7 +277,7 @@ func (h *Handler) DeleteThresholdRule(c *gin.Context) {
 		return
 	}
 
-	repo := NewRepository(h.svc.repo.db)
+	repo := h.repo
 	if err := repo.DeleteThresholdRule(uint(id)); err != nil {
 		utils.HandleError(c, apperror.Wrap(err, "DELETE_THRESHOLD_FAILED", 500, "failed to delete threshold rule"))
 		return
@@ -301,7 +303,7 @@ func (h *Handler) ListThresholdRules(c *gin.Context) {
 		enabledFilter = &val
 	}
 
-	repo := NewRepository(h.svc.repo.db)
+	repo := h.repo
 	rules, total, err := repo.ListThresholdRules(enabledFilter, page, pageSize)
 	if err != nil {
 		utils.HandleError(c, apperror.Wrap(err, "LIST_THRESHOLD_FAILED", 500, "failed to list threshold rules"))
@@ -320,7 +322,7 @@ func (h *Handler) GetThresholdRule(c *gin.Context) {
 		return
 	}
 
-	repo := NewRepository(h.svc.repo.db)
+	repo := h.repo
 	rule, err := repo.GetThresholdRule(uint(id))
 	if err != nil {
 		utils.HandleError(c, apperror.ErrNotFound.WithMessage("threshold rule not found"))
@@ -341,7 +343,7 @@ func (h *Handler) TestThresholdRule(c *gin.Context) {
 		return
 	}
 
-	repo := NewRepository(h.svc.repo.db)
+	repo := h.repo
 	rule, err := repo.GetThresholdRule(req.RuleID)
 	if err != nil {
 		utils.HandleError(c, apperror.ErrNotFound.WithMessage("threshold rule not found"))

@@ -12,7 +12,7 @@ import (
 // Alarm operations
 // ============================
 
-func (s *Service) ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, int64, error) {
+func (s *service) ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	alarms, total, err := s.repo.ListAlarms(licenseId, offset, limit)
@@ -38,7 +38,7 @@ func (s *Service) ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, 
 	return result, total, nil
 }
 
-func (s *Service) SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarmVo, error) {
+func (s *service) SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarmVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	alarms, err := s.repo.SyncAlarms(req.ElementIds, licenseId)
@@ -64,7 +64,7 @@ func (s *Service) SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarm
 	return result, nil
 }
 
-func (s *Service) ClearAlarms(c *gin.Context, req *ClearAlarmRequest) error {
+func (s *service) ClearAlarms(c *gin.Context, req *ClearAlarmRequest) error {
 	licenseId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
 

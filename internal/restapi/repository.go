@@ -15,13 +15,62 @@ import (
 	"gorm.io/gorm"
 )
 
-type Repository struct {
+type Repository interface {
+	// Standard CRUD (promoted from BaseRepository[TBGDevice, int])
+	Create(entity *TBGDevice) error
+	Save(entity *TBGDevice) error
+	FindByID(id int) (*TBGDevice, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]TBGDevice, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[TBGDevice], error)
+
+	// Module-specific queries
+	ListDevices(licenseId int, offset, limit int) ([]device.CpeElement, int64, error)
+	GetDeviceById(id int64, licenseId int) (*device.CpeElement, error)
+	GetDeviceBySN(sn string, licenseId int) (*device.CpeElement, error)
+	CreateDevice(d *device.CpeElement) error
+	UpdateDevice(d *device.CpeElement) error
+	SoftDeleteDevice(id int64, licenseId int) error
+	CountDevices(licenseId int) (int64, error)
+	GetDeviceParams(elementId int64) ([]RestParameterVo, error)
+	SetDeviceParams(elementId int64, params []RestParameterVo) error
+	PresetDeviceParams(elementId int64, params []RestParameterVo) (string, error)
+	ListAlarms(licenseId int, offset, limit int) ([]alarm.Alarm, int64, error)
+	GetAlarmsByElementIds(elementIds []int64, licenseId int) ([]alarm.Alarm, error)
+	ClearAlarms(alarmIds []int64, licenseId int) error
+	SyncAlarms(elementIds []int64, licenseId int) ([]alarm.Alarm, error)
+	CreateUpgradeFile(record map[string]interface{}) (int64, error)
+	ListUpgradeFiles(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error)
+	DeleteUpgradeFile(id int, licenseId int) error
+	CreateUpgradeTask(record map[string]interface{}) (int64, error)
+	GetUpgradeTask(id int) (map[string]interface{}, error)
+	ListUpgradeTasks(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error)
+	GetRequestStatus(requestId string) (*RequestStatusVo, error)
+	ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, int64, error)
+	GetTBGBySN(sn string) (*TBGDevice, error)
+	GetTBGByWanMac(mac string) (*TBGDevice, error)
+	CreateTBGs(tbgs []TBGDevice) error
+	DeleteTBGsBySNs(sns []string) error
+	ListAllNonDeletedDevices(licenseId int) ([]device.CpeElement, error)
+	GetDeviceByElementId(elementId int64) (*device.CpeElement, error)
+	GetACSConfig() (string, error)
+	UpdateACSConfig(value string) error
+	ListSnmpOperationLogs(offset, limit int) ([]map[string]interface{}, int64, error)
+}
+
+// repository implements Repository.
+type repository struct {
 	*baserepo.BaseRepository[TBGDevice, int] // embedded generic CRUD for TBGDevice
 	db *gorm.DB                              // kept for custom / cross-model queries
 }
 
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[TBGDevice, int](db, "id"),
 		db:             db,
 	}
@@ -31,7 +80,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // Device operations (cpe_element)
 // ============================
 
-func (r *Repository) ListDevices(licenseId int, offset, limit int) ([]device.CpeElement, int64, error) {
+func (r *repository) ListDevices(licenseId int, offset, limit int) ([]device.CpeElement, int64, error) {
 	var devices []device.CpeElement
 	var total int64
 
@@ -42,7 +91,7 @@ func (r *Repository) ListDevices(licenseId int, offset, limit int) ([]device.Cpe
 	return devices, total, err
 }
 
-func (r *Repository) GetDeviceById(id int64, licenseId int) (*device.CpeElement, error) {
+func (r *repository) GetDeviceById(id int64, licenseId int) (*device.CpeElement, error) {
 	var d device.CpeElement
 	err := r.db.Where("ne_neid = ? AND license_id = ? AND deleted = ?", id, licenseId, false).First(&d).Error
 	if err != nil {
@@ -51,7 +100,7 @@ func (r *Repository) GetDeviceById(id int64, licenseId int) (*device.CpeElement,
 	return &d, nil
 }
 
-func (r *Repository) GetDeviceBySN(sn string, licenseId int) (*device.CpeElement, error) {
+func (r *repository) GetDeviceBySN(sn string, licenseId int) (*device.CpeElement, error) {
 	var d device.CpeElement
 	err := r.db.Where("serial_number = ? AND license_id = ? AND deleted = ?", sn, licenseId, false).First(&d).Error
 	if err != nil {
@@ -60,21 +109,21 @@ func (r *Repository) GetDeviceBySN(sn string, licenseId int) (*device.CpeElement
 	return &d, nil
 }
 
-func (r *Repository) CreateDevice(d *device.CpeElement) error {
+func (r *repository) CreateDevice(d *device.CpeElement) error {
 	return r.db.Create(d).Error
 }
 
-func (r *Repository) UpdateDevice(d *device.CpeElement) error {
+func (r *repository) UpdateDevice(d *device.CpeElement) error {
 	return r.db.Save(d).Error
 }
 
-func (r *Repository) SoftDeleteDevice(id int64, licenseId int) error {
+func (r *repository) SoftDeleteDevice(id int64, licenseId int) error {
 	return r.db.Model(&device.CpeElement{}).
 		Where("ne_neid = ? AND license_id = ?", id, licenseId).
 		Update("deleted", true).Error
 }
 
-func (r *Repository) CountDevices(licenseId int) (int64, error) {
+func (r *repository) CountDevices(licenseId int) (int64, error) {
 	var count int64
 	err := r.db.Model(&device.CpeElement{}).
 		Where("license_id = ? AND deleted = ?", licenseId, false).
@@ -86,7 +135,7 @@ func (r *Repository) CountDevices(licenseId int) (int64, error) {
 // Parameter operations (via Redis)
 // ============================
 
-func (r *Repository) GetDeviceParams(elementId int64) ([]RestParameterVo, error) {
+func (r *repository) GetDeviceParams(elementId int64) ([]RestParameterVo, error) {
 	ctx := context.Background()
 	key := fmt.Sprintf("device:params:%d", elementId)
 
@@ -103,7 +152,7 @@ func (r *Repository) GetDeviceParams(elementId int64) ([]RestParameterVo, error)
 	return params, nil
 }
 
-func (r *Repository) SetDeviceParams(elementId int64, params []RestParameterVo) error {
+func (r *repository) SetDeviceParams(elementId int64, params []RestParameterVo) error {
 	ctx := context.Background()
 	key := fmt.Sprintf("device:params:%d", elementId)
 
@@ -128,7 +177,7 @@ func (r *Repository) SetDeviceParams(elementId int64, params []RestParameterVo) 
 	return nil
 }
 
-func (r *Repository) PresetDeviceParams(elementId int64, params []RestParameterVo) (string, error) {
+func (r *repository) PresetDeviceParams(elementId int64, params []RestParameterVo) (string, error) {
 	ctx := context.Background()
 
 	requestId := fmt.Sprintf("preset_%d_%d", elementId, time.Now().UnixNano())
@@ -155,7 +204,7 @@ func (r *Repository) PresetDeviceParams(elementId int64, params []RestParameterV
 // Alarm operations
 // ============================
 
-func (r *Repository) ListAlarms(licenseId int, offset, limit int) ([]alarm.Alarm, int64, error) {
+func (r *repository) ListAlarms(licenseId int, offset, limit int) ([]alarm.Alarm, int64, error) {
 	var alarms []alarm.Alarm
 	var total int64
 
@@ -166,21 +215,21 @@ func (r *Repository) ListAlarms(licenseId int, offset, limit int) ([]alarm.Alarm
 	return alarms, total, err
 }
 
-func (r *Repository) GetAlarmsByElementIds(elementIds []int64, licenseId int) ([]alarm.Alarm, error) {
+func (r *repository) GetAlarmsByElementIds(elementIds []int64, licenseId int) ([]alarm.Alarm, error) {
 	var alarms []alarm.Alarm
 	err := r.db.Where("element_id IN ? AND license_id = ?", elementIds, licenseId).
 		Order("id DESC").Find(&alarms).Error
 	return alarms, err
 }
 
-func (r *Repository) ClearAlarms(alarmIds []int64, licenseId int) error {
+func (r *repository) ClearAlarms(alarmIds []int64, licenseId int) error {
 	clearedStatus := 0
 	return r.db.Model(&alarm.Alarm{}).
 		Where("id IN ? AND license_id = ?", alarmIds, licenseId).
 		Update("alarm_status", &clearedStatus).Error
 }
 
-func (r *Repository) SyncAlarms(elementIds []int64, licenseId int) ([]alarm.Alarm, error) {
+func (r *repository) SyncAlarms(elementIds []int64, licenseId int) ([]alarm.Alarm, error) {
 	var alarms []alarm.Alarm
 	err := r.db.Where("element_id IN ? AND license_id = ?", elementIds, licenseId).
 		Order("event_time DESC").Find(&alarms).Error
@@ -191,7 +240,7 @@ func (r *Repository) SyncAlarms(elementIds []int64, licenseId int) ([]alarm.Alar
 // Upgrade file operations
 // ============================
 
-func (r *Repository) CreateUpgradeFile(record map[string]interface{}) (int64, error) {
+func (r *repository) CreateUpgradeFile(record map[string]interface{}) (int64, error) {
 	err := r.db.Table("upgrade_file").Create(record).Error
 	if err != nil {
 		return 0, err
@@ -201,7 +250,7 @@ func (r *Repository) CreateUpgradeFile(record map[string]interface{}) (int64, er
 	return id, nil
 }
 
-func (r *Repository) ListUpgradeFiles(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error) {
+func (r *repository) ListUpgradeFiles(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error) {
 	var files []map[string]interface{}
 	var total int64
 
@@ -212,7 +261,7 @@ func (r *Repository) ListUpgradeFiles(licenseId int, offset, limit int) ([]map[s
 	return files, total, err
 }
 
-func (r *Repository) DeleteUpgradeFile(id int, licenseId int) error {
+func (r *repository) DeleteUpgradeFile(id int, licenseId int) error {
 	return r.db.Table("upgrade_file").
 		Where("id = ? AND license_id = ?", id, licenseId).
 		Delete(nil).Error
@@ -222,7 +271,7 @@ func (r *Repository) DeleteUpgradeFile(id int, licenseId int) error {
 // Upgrade task operations
 // ============================
 
-func (r *Repository) CreateUpgradeTask(record map[string]interface{}) (int64, error) {
+func (r *repository) CreateUpgradeTask(record map[string]interface{}) (int64, error) {
 	err := r.db.Table("upgrade_task").Create(record).Error
 	if err != nil {
 		return 0, err
@@ -232,13 +281,13 @@ func (r *Repository) CreateUpgradeTask(record map[string]interface{}) (int64, er
 	return id, nil
 }
 
-func (r *Repository) GetUpgradeTask(id int) (map[string]interface{}, error) {
+func (r *repository) GetUpgradeTask(id int) (map[string]interface{}, error) {
 	var task map[string]interface{}
 	err := r.db.Table("upgrade_task").Where("id = ?", id).First(&task).Error
 	return task, err
 }
 
-func (r *Repository) ListUpgradeTasks(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error) {
+func (r *repository) ListUpgradeTasks(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error) {
 	var tasks []map[string]interface{}
 	var total int64
 
@@ -253,7 +302,7 @@ func (r *Repository) ListUpgradeTasks(licenseId int, offset, limit int) ([]map[s
 // Request status operations (via Redis + event_log)
 // ============================
 
-func (r *Repository) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
+func (r *repository) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
 	ctx := context.Background()
 	key := fmt.Sprintf("request:%s", requestId)
 
@@ -306,7 +355,7 @@ func (r *Repository) GetRequestStatus(requestId string) (*RequestStatusVo, error
 // TBG operations
 // ============================
 
-func (r *Repository) ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, int64, error) {
+func (r *repository) ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, int64, error) {
 	query := r.DB.Model(&TBGDevice{}).Where("license_id = ?", licenseId)
 	result, err := r.FindPage(query, "id ASC", offset, limit)
 	if err != nil {
@@ -315,7 +364,7 @@ func (r *Repository) ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, in
 	return result.Items, result.Total, nil
 }
 
-func (r *Repository) GetTBGBySN(sn string) (*TBGDevice, error) {
+func (r *repository) GetTBGBySN(sn string) (*TBGDevice, error) {
 	var tbg TBGDevice
 	err := r.db.Where("serial_number = ?", sn).First(&tbg).Error
 	if err != nil {
@@ -324,7 +373,7 @@ func (r *Repository) GetTBGBySN(sn string) (*TBGDevice, error) {
 	return &tbg, nil
 }
 
-func (r *Repository) GetTBGByWanMac(mac string) (*TBGDevice, error) {
+func (r *repository) GetTBGByWanMac(mac string) (*TBGDevice, error) {
 	var tbg TBGDevice
 	err := r.db.Where("wan_mac_address = ?", mac).First(&tbg).Error
 	if err != nil {
@@ -333,11 +382,11 @@ func (r *Repository) GetTBGByWanMac(mac string) (*TBGDevice, error) {
 	return &tbg, nil
 }
 
-func (r *Repository) CreateTBGs(tbgs []TBGDevice) error {
+func (r *repository) CreateTBGs(tbgs []TBGDevice) error {
 	return r.db.Create(&tbgs).Error
 }
 
-func (r *Repository) DeleteTBGsBySNs(sns []string) error {
+func (r *repository) DeleteTBGsBySNs(sns []string) error {
 	return r.db.Where("serial_number IN ?", sns).Delete(&TBGDevice{}).Error
 }
 
@@ -346,7 +395,7 @@ func (r *Repository) DeleteTBGsBySNs(sns []string) error {
 // ============================
 
 // ListAllNonDeletedDevices returns all non-deleted devices with basic info for online status check
-func (r *Repository) ListAllNonDeletedDevices(licenseId int) ([]device.CpeElement, error) {
+func (r *repository) ListAllNonDeletedDevices(licenseId int) ([]device.CpeElement, error) {
 	var devices []device.CpeElement
 	err := r.db.Where("license_id = ? AND deleted = ?", licenseId, false).
 		Select("ne_neid, serial_number, device_name").
@@ -355,7 +404,7 @@ func (r *Repository) ListAllNonDeletedDevices(licenseId int) ([]device.CpeElemen
 }
 
 // GetDeviceByElementId returns a single non-deleted device by element ID
-func (r *Repository) GetDeviceByElementId(elementId int64) (*device.CpeElement, error) {
+func (r *repository) GetDeviceByElementId(elementId int64) (*device.CpeElement, error) {
 	var d device.CpeElement
 	err := r.db.Where("ne_neid = ? AND deleted = ?", elementId, false).
 		Select("ne_neid, serial_number, device_name").
@@ -371,7 +420,7 @@ func (r *Repository) GetDeviceByElementId(elementId int64) (*device.CpeElement, 
 // ============================
 
 // GetACSConfig reads ACS config from system_config table
-func (r *Repository) GetACSConfig() (string, error) {
+func (r *repository) GetACSConfig() (string, error) {
 	var cfg struct {
 		Config *string `gorm:"column:config"`
 	}
@@ -389,7 +438,7 @@ func (r *Repository) GetACSConfig() (string, error) {
 }
 
 // UpdateACSConfig upserts ACS config in system_config table
-func (r *Repository) UpdateACSConfig(value string) error {
+func (r *repository) UpdateACSConfig(value string) error {
 	var existing struct {
 		Id string `gorm:"column:id"`
 	}
@@ -417,7 +466,7 @@ func (r *Repository) UpdateACSConfig(value string) error {
 // ============================
 
 // ListSnmpOperationLogs returns SNMP operation logs with pagination
-func (r *Repository) ListSnmpOperationLogs(offset, limit int) ([]map[string]interface{}, int64, error) {
+func (r *repository) ListSnmpOperationLogs(offset, limit int) ([]map[string]interface{}, int64, error) {
 	var logs []map[string]interface{}
 	var total int64
 

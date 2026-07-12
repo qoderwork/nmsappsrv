@@ -13,14 +13,36 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Service contains the business logic for upgrade management.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for upgrade management.
+type Service interface {
+	ListUpgradeFiles(tenancyId int, page, pageSize int) ([]UpgradeFile, int64, error)
+	UploadUpgradeFile(f *UpgradeFile) error
+	DeleteUpgradeFile(id int) error
+	ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error)
+	GetUpgradeTask(id int) (*UpgradeTask, error)
+	CreateUpgradeTask(t *UpgradeTask) error
+	ListUpgradeLogs(taskId int, page, pageSize int) ([]UpgradeLog, int64, error)
+	CreateRebootTask(t *RebootTask) error
+	ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTask, int64, error)
+	CreateRollbackTask(t *RollbackTask) error
+	ListRollbackTasks(tenancyId int, page, pageSize int) ([]RollbackTask, int64, error)
+	StartUpgradeTask(id int) error
+	StartRollbackTask(id int) error
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService builds a Service from an injected Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ---------------------------------------------------------------------------
@@ -28,7 +50,7 @@ func NewService(db *gorm.DB) *Service {
 // ---------------------------------------------------------------------------
 
 // ListUpgradeFiles returns a paginated list of upgrade files.
-func (s *Service) ListUpgradeFiles(tenancyId int, page, pageSize int) ([]UpgradeFile, int64, error) {
+func (s *service) ListUpgradeFiles(tenancyId int, page, pageSize int) ([]UpgradeFile, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -40,12 +62,12 @@ func (s *Service) ListUpgradeFiles(tenancyId int, page, pageSize int) ([]Upgrade
 }
 
 // UploadUpgradeFile persists a new upgrade file record.
-func (s *Service) UploadUpgradeFile(f *UpgradeFile) error {
+func (s *service) UploadUpgradeFile(f *UpgradeFile) error {
 	return s.repo.Create(f)
 }
 
 // DeleteUpgradeFile removes an upgrade file by ID.
-func (s *Service) DeleteUpgradeFile(id int) error {
+func (s *service) DeleteUpgradeFile(id int) error {
 	return s.repo.DeleteByID(id)
 }
 
@@ -54,7 +76,7 @@ func (s *Service) DeleteUpgradeFile(id int) error {
 // ---------------------------------------------------------------------------
 
 // ListUpgradeTasks returns a paginated list of upgrade task VOs with computed fields.
-func (s *Service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error) {
+func (s *service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -110,8 +132,8 @@ func (s *Service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page
 
 		// Compute progress from UpgradeLog counts
 		var successCount, failCount int64
-		s.repo.db.Model(&UpgradeLog{}).Where("task_id = ? AND success = ?", t.Id, true).Count(&successCount)
-		s.repo.db.Model(&UpgradeLog{}).Where("task_id = ? AND success = ?", t.Id, false).Count(&failCount)
+		successCount, _ = s.repo.CountUpgradeLogsBySuccess(t.Id, true)
+		failCount, _ = s.repo.CountUpgradeLogsBySuccess(t.Id, false)
 		vo.SuccessCount = int(successCount)
 		vo.FailCount = int(failCount)
 		vo.Progress = fmt.Sprintf("%d/%d", successCount+failCount, vo.DeviceCount)
@@ -123,13 +145,13 @@ func (s *Service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page
 }
 
 // GetUpgradeTask returns a single upgrade task by ID.
-func (s *Service) GetUpgradeTask(id int) (*UpgradeTask, error) {
+func (s *service) GetUpgradeTask(id int) (*UpgradeTask, error) {
 	return s.repo.FindUpgradeTaskByID(id)
 }
 
 // CreateUpgradeTask persists a new upgrade task, creates per-device UpgradeLog
 // records, and pushes dispatch messages to the upgrade queue.
-func (s *Service) CreateUpgradeTask(t *UpgradeTask) error {
+func (s *service) CreateUpgradeTask(t *UpgradeTask) error {
 	if err := s.repo.CreateUpgradeTask(t); err != nil {
 		return err
 	}
@@ -229,7 +251,7 @@ func (s *Service) CreateUpgradeTask(t *UpgradeTask) error {
 // ---------------------------------------------------------------------------
 
 // ListUpgradeLogs returns a paginated list of upgrade logs for the given task.
-func (s *Service) ListUpgradeLogs(taskId int, page, pageSize int) ([]UpgradeLog, int64, error) {
+func (s *service) ListUpgradeLogs(taskId int, page, pageSize int) ([]UpgradeLog, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -245,12 +267,12 @@ func (s *Service) ListUpgradeLogs(taskId int, page, pageSize int) ([]UpgradeLog,
 // ---------------------------------------------------------------------------
 
 // CreateRebootTask persists a new reboot task.
-func (s *Service) CreateRebootTask(t *RebootTask) error {
+func (s *service) CreateRebootTask(t *RebootTask) error {
 	return s.repo.CreateRebootTask(t)
 }
 
 // ListRebootTasks returns a paginated list of reboot tasks.
-func (s *Service) ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTask, int64, error) {
+func (s *service) ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -267,7 +289,7 @@ func (s *Service) ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTa
 
 // CreateRollbackTask persists a new rollback task, creates per-device UpgradeLog
 // records, and pushes dispatch messages to the upgrade queue.
-func (s *Service) CreateRollbackTask(t *RollbackTask) error {
+func (s *service) CreateRollbackTask(t *RollbackTask) error {
 	if err := s.repo.CreateRollbackTask(t); err != nil {
 		return err
 	}
@@ -346,7 +368,7 @@ func (s *Service) CreateRollbackTask(t *RollbackTask) error {
 }
 
 // ListRollbackTasks returns a paginated list of rollback tasks.
-func (s *Service) ListRollbackTasks(tenancyId int, page, pageSize int) ([]RollbackTask, int64, error) {
+func (s *service) ListRollbackTasks(tenancyId int, page, pageSize int) ([]RollbackTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -381,7 +403,7 @@ func replaceHyphens(s string) string {
 }
 
 // StartUpgradeTask manually starts a waiting upgrade task.
-func (s *Service) StartUpgradeTask(id int) error {
+func (s *service) StartUpgradeTask(id int) error {
 	task, err := s.repo.FindUpgradeTaskByID(id)
 	if err != nil {
 		return err
@@ -456,7 +478,7 @@ func (s *Service) StartUpgradeTask(id int) error {
 }
 
 // StartRollbackTask manually starts a waiting rollback task.
-func (s *Service) StartRollbackTask(id int) error {
+func (s *service) StartRollbackTask(id int) error {
 	task, err := s.repo.FindRollbackTaskByID(id)
 	if err != nil {
 		return err

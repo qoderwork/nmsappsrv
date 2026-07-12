@@ -6,18 +6,27 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides data access for diagnostics.
-type Repository struct {
+// Repository defines the data-access contract for diagnostics.
+type Repository interface {
+	FindElementRootNode(elementId int64) (string, error)
+	FindElementSerialNumber(elementId int64) (string, error)
+	FindParamsByElementIdAndNames(elementId int64, paramNames []string) ([]ParameterValue, error)
+	FindParamsByElementIdAndNameLike(elementId int64, pattern string) ([]ParameterValue, error)
+	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
-// NewRepository creates a new diagnostics repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // FindElementRootNode 查询设备的 rootNode (TR-181: "Device", TR-098: "InternetGatewayDevice")
-func (r *Repository) FindElementRootNode(elementId int64) (string, error) {
+func (r *repository) FindElementRootNode(elementId int64) (string, error) {
 	var rootNode string
 	err := r.db.Table("cpe_element").
 		Select("root_node").
@@ -27,7 +36,7 @@ func (r *Repository) FindElementRootNode(elementId int64) (string, error) {
 }
 
 // FindElementSerialNumber 查询设备的 serial_number
-func (r *Repository) FindElementSerialNumber(elementId int64) (string, error) {
+func (r *repository) FindElementSerialNumber(elementId int64) (string, error) {
 	var sn string
 	err := r.db.Table("cpe_element").
 		Select("serial_number").
@@ -37,21 +46,21 @@ func (r *Repository) FindElementSerialNumber(elementId int64) (string, error) {
 }
 
 // FindParamsByElementIdAndNames 查询指定参数名的参数值（用于获取 type 信息）
-func (r *Repository) FindParamsByElementIdAndNames(elementId int64, paramNames []string) ([]ParameterValue, error) {
+func (r *repository) FindParamsByElementIdAndNames(elementId int64, paramNames []string) ([]ParameterValue, error) {
 	var params []ParameterValue
 	err := r.db.Where("element_id = ? AND param_name IN ?", elementId, paramNames).Find(&params).Error
 	return params, err
 }
 
 // FindParamsByElementIdAndNameLike 按参数名前缀模糊查询
-func (r *Repository) FindParamsByElementIdAndNameLike(elementId int64, pattern string) ([]ParameterValue, error) {
+func (r *repository) FindParamsByElementIdAndNameLike(elementId int64, pattern string) ([]ParameterValue, error) {
 	var params []ParameterValue
 	err := r.db.Where("element_id = ? AND param_name LIKE ?", elementId, pattern).Find(&params).Error
 	return params, err
 }
 
 // InsertEventLog 创建 event_log 行并返回自增 ID
-func (r *Repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
+func (r *repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
 	row := struct {
 		Id               int64     `gorm:"primaryKey;autoIncrement"`
 		EventType        string    `gorm:"column:event_type;type:varchar(255)"`

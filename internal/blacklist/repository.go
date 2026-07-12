@@ -12,24 +12,43 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Repository provides data access for blacklist management.
+// Repository defines the data-access contract for blacklist management.
+type Repository interface {
+	Create(entity *ElementBlackList) error
+	Save(entity *ElementBlackList) error
+	FindByID(id int) (*ElementBlackList, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]ElementBlackList, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[ElementBlackList], error)
+	FindBySNAndDeviceType(licenseId int, sn, deviceType string) (*ElementBlackList, error)
+	List(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error)
+	InsertOperationLog(log *BlackListOperationLog) error
+	ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error)
+	LoadAllToRedis() error
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
 // It embeds BaseRepository[ElementBlackList, int] for standard CRUD,
 // and retains module-specific methods for custom queries.
-type Repository struct {
+type repository struct {
 	*baserepo.BaseRepository[ElementBlackList, int]
 	db *gorm.DB
 }
 
-// NewRepository creates a new Repository.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[ElementBlackList, int](db, "id"),
 		db:             db,
 	}
 }
 
 // FindBySNAndDeviceType returns an existing entry (duplicate check).
-func (r *Repository) FindBySNAndDeviceType(licenseId int, sn, deviceType string) (*ElementBlackList, error) {
+func (r *repository) FindBySNAndDeviceType(licenseId int, sn, deviceType string) (*ElementBlackList, error) {
 	var entry ElementBlackList
 	err := r.db.Where("license_id = ? AND sn = ? AND device_type = ?", licenseId, sn, deviceType).First(&entry).Error
 	if err != nil {
@@ -39,7 +58,7 @@ func (r *Repository) FindBySNAndDeviceType(licenseId int, sn, deviceType string)
 }
 
 // List returns paginated blacklist entries.
-func (r *Repository) List(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
+func (r *repository) List(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -83,12 +102,12 @@ func (r *Repository) List(licenseId int, query ListBlackListQuery) ([]ListDevice
 }
 
 // InsertOperationLog creates a blacklist operation log entry.
-func (r *Repository) InsertOperationLog(log *BlackListOperationLog) error {
+func (r *repository) InsertOperationLog(log *BlackListOperationLog) error {
 	return r.db.Create(log).Error
 }
 
 // ListOperationLogs returns paginated operation logs.
-func (r *Repository) ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
+func (r *repository) ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -175,7 +194,7 @@ func DeleteRedisBlackListKey(deviceType, sn string) {
 }
 
 // LoadAllToRedis loads all blacklist entries from DB into Redis (for startup warm-up).
-func (r *Repository) LoadAllToRedis() error {
+func (r *repository) LoadAllToRedis() error {
 	var entries []ElementBlackList
 	if err := r.db.Find(&entries).Error; err != nil {
 		return err
@@ -189,7 +208,7 @@ func (r *Repository) LoadAllToRedis() error {
 
 // ---------- helpers ----------
 
-func (r *Repository) getTenancyNames() map[int]string {
+func (r *repository) getTenancyNames() map[int]string {
 	m := make(map[int]string)
 	type row struct {
 		Id   int    `gorm:"column:id"`

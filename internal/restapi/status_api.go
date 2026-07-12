@@ -17,7 +17,7 @@ import (
 // Request status operations
 // ============================
 
-func (s *Service) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
+func (s *service) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
 	status, err := s.repo.GetRequestStatus(requestId)
 	if err != nil {
 		return nil, apperror.ErrNotFound.WithMessage("request not found")
@@ -30,7 +30,7 @@ func (s *Service) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
 // ============================
 
 // ListDeviceOnlineStatus returns real-time online status for all devices
-func (s *Service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo, error) {
+func (s *service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	devices, err := s.repo.ListAllNonDeletedDevices(licenseId)
@@ -75,7 +75,7 @@ func (s *Service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo
 }
 
 // GetDeviceOnlineStatus returns real-time online status for a single device
-func (s *Service) GetDeviceOnlineStatus(c *gin.Context, elementId int64) (*DeviceOnlineStatusVo, error) {
+func (s *service) GetDeviceOnlineStatus(c *gin.Context, elementId int64) (*DeviceOnlineStatusVo, error) {
 	d, err := s.repo.GetDeviceByElementId(elementId)
 	if err != nil {
 		return nil, apperror.ErrDeviceNotFound
@@ -101,7 +101,7 @@ func (s *Service) GetDeviceOnlineStatus(c *gin.Context, elementId int64) (*Devic
 // ============================
 
 // GetACSSettings returns the ACS configuration via REST API
-func (s *Service) GetACSSettings(c *gin.Context) (*RestACSConfigVo, error) {
+func (s *service) GetACSSettings(c *gin.Context) (*RestACSConfigVo, error) {
 	configJSON, err := s.repo.GetACSConfig()
 	if err != nil {
 		logger.Errorf("Failed to get ACS config: %v", err)
@@ -139,7 +139,7 @@ func (s *Service) GetACSSettings(c *gin.Context) (*RestACSConfigVo, error) {
 }
 
 // UpdateACSSettings updates the ACS configuration via REST API
-func (s *Service) UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequest) error {
+func (s *service) UpdateACSSettings(c *gin.Context, req *RestUpdateACSConfigRequest) error {
 	// Get existing config
 	configJSON, err := s.repo.GetACSConfig()
 	if err != nil {

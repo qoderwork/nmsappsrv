@@ -6,19 +6,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains the business logic for parameter comparison.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for parameter comparison.
+type Service interface {
+	CompareDeviceWithTemplate(deviceID uint, templateID uint) (*CompareResult, error)
+	BatchCompare(deviceIDs []uint, templateID uint) ([]CompareResult, error)
+	ListTemplates() ([]TemplateInfo, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // CompareDeviceWithTemplate fetches the device's actual parameters and the
 // template's expected parameters, then compares them and returns deviations.
-func (s *Service) CompareDeviceWithTemplate(deviceID uint, templateID uint) (*CompareResult, error) {
+func (s *service) CompareDeviceWithTemplate(deviceID uint, templateID uint) (*CompareResult, error) {
 	// 1. Fetch template name
 	templateName, err := s.repo.GetTemplateName(templateID)
 	if err != nil {
@@ -114,7 +121,7 @@ func (s *Service) CompareDeviceWithTemplate(deviceID uint, templateID uint) (*Co
 }
 
 // BatchCompare compares multiple devices against the same template.
-func (s *Service) BatchCompare(deviceIDs []uint, templateID uint) ([]CompareResult, error) {
+func (s *service) BatchCompare(deviceIDs []uint, templateID uint) ([]CompareResult, error) {
 	var results []CompareResult
 	for _, deviceID := range deviceIDs {
 		res, err := s.CompareDeviceWithTemplate(deviceID, templateID)
@@ -132,6 +139,11 @@ func (s *Service) BatchCompare(deviceIDs []uint, templateID uint) ([]CompareResu
 }
 
 // ListTemplates returns available templates for comparison.
-func (s *Service) ListTemplates() ([]TemplateInfo, error) {
+func (s *service) ListTemplates() ([]TemplateInfo, error) {
 	return s.repo.ListTemplates()
+}
+
+// newService creates a Service backed by the given mock Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

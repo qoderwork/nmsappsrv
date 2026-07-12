@@ -13,14 +13,36 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service contains the business logic for parameter management.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for parameter management.
+type Service interface {
+	GetParameters(elementId int64) (*DeviceParameterDetailVo, error)
+	SetParameter(elementId int64, paramName string, value string, username string) error
+	BatchSetParameter(elementId int64, records []SetParameterRecord, username string) error
+	ListParameterLogs(elementId int64, page, pageSize int) ([]ParameterLog, int64, error)
+	PresetParameters(elementId int64, presets map[string]string) error
+	ListParameterSets(licenseId int) ([]ParameterSet, error)
+	CreateParameterSet(ps *ParameterSet) error
+	UpdateParameterSet(ps *ParameterSet) error
+	DeleteParameterSet(id string) error
+	ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
+	CreateParameterTemplate(t *ParameterTemplate) error
+	UpdateParameterTemplate(t *ParameterTemplate) error
+	DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error)
+	TriggerBackup(elementId int64, username string) error
+	ListBackupLogs(elementId int64) ([]ParameterBackupLog, error)
+	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error
+	ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error)
+	ListBatchConfigurationDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------------------------------------------------------------------------
@@ -50,14 +72,14 @@ type setParamEntry struct {
 
 // GetParameters returns enriched parameter data for the given element, including
 // device metadata and full parameter definitions with current values.
-func (s *Service) GetParameters(elementId int64) (*DeviceParameterDetailVo, error) {
+func (s *service) GetParameters(elementId int64) (*DeviceParameterDetailVo, error) {
 	// 1. Get device metadata
 	var deviceInfo struct {
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceName   string `gorm:"column:device_name"`
 		DeviceType   string `gorm:"column:device_type"`
 	}
-	if err := s.repo.db.Table("cpe_element").
+	if err := s.repo.DB().Table("cpe_element").
 		Select("serial_number, device_name, device_type").
 		Where("ne_neid = ? AND deleted = ?", elementId, false).
 		Scan(&deviceInfo).Error; err != nil {
@@ -92,7 +114,7 @@ func (s *Service) GetParameters(elementId int64) (*DeviceParameterDetailVo, erro
 
 // SetParameter updates a parameter value for the given element and dispatches
 // the change to the device via TR-069 SetParameterValues.
-func (s *Service) SetParameter(elementId int64, paramName string, value string, username string) error {
+func (s *service) SetParameter(elementId int64, paramName string, value string, username string) error {
 	ctx := context.Background()
 
 	// 1. Look up device serial number
@@ -100,7 +122,7 @@ func (s *Service) SetParameter(elementId int64, paramName string, value string, 
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceName   string `gorm:"column:device_name"`
 	}
-	if err := s.repo.db.Table("cpe_element").
+	if err := s.repo.DB().Table("cpe_element").
 		Select("serial_number, device_name").
 		Where("ne_neid = ? AND deleted = ?", elementId, false).
 		Scan(&deviceInfo).Error; err != nil {
@@ -112,7 +134,7 @@ func (s *Service) SetParameter(elementId int64, paramName string, value string, 
 
 	// 2. Get old value from element_basic_info_parameter (for audit log)
 	var oldValue string
-	s.repo.db.Table("element_basic_info_parameter").
+	s.repo.DB().Table("element_basic_info_parameter").
 		Select("param_value").
 		Where("element_id = ? AND param_name = ?", elementId, paramName).
 		Scan(&oldValue)
@@ -143,7 +165,7 @@ func (s *Service) SetParameter(elementId int64, paramName string, value string, 
 		"event_log_id":   eventLogId,
 		"issue_time":     now.Format(time.RFC3339),
 	})
-	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+	s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 		Updates(map[string]interface{}{
 			"command_track_data":   string(trackData),
 			"command_issue_time":   now,
@@ -164,7 +186,7 @@ func (s *Service) SetParameter(elementId int64, paramName string, value string, 
 	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
 		logger.Errorf("failed to push SPV to device queue %s: %v", deviceInfo.SerialNumber, err)
 		// Update event_log as failed
-		s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+		s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 			Update("status", 4) // 4=fail
 		return fmt.Errorf("push to device queue: %w", err)
 	}
@@ -191,7 +213,7 @@ func (s *Service) SetParameter(elementId int64, paramName string, value string, 
 
 // BatchSetParameter sets multiple parameters atomically on a single device.
 // Aligns with Java batch SPV: sends a single SetParameterValues RPC with all parameters.
-func (s *Service) BatchSetParameter(elementId int64, records []SetParameterRecord, username string) error {
+func (s *service) BatchSetParameter(elementId int64, records []SetParameterRecord, username string) error {
 	ctx := context.Background()
 
 	// 1. Look up device serial number
@@ -199,7 +221,7 @@ func (s *Service) BatchSetParameter(elementId int64, records []SetParameterRecor
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceName   string `gorm:"column:device_name"`
 	}
-	if err := s.repo.db.Table("cpe_element").
+	if err := s.repo.DB().Table("cpe_element").
 		Select("serial_number, device_name").
 		Where("ne_neid = ? AND deleted = ?", elementId, false).
 		Scan(&deviceInfo).Error; err != nil {
@@ -244,7 +266,7 @@ func (s *Service) BatchSetParameter(elementId int64, records []SetParameterRecor
 		"param_count":    len(records),
 		"issue_time":     now.Format(time.RFC3339),
 	})
-	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+	s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 		Updates(map[string]interface{}{
 			"command_track_data": string(trackData),
 			"command_issue_time": now,
@@ -264,7 +286,7 @@ func (s *Service) BatchSetParameter(elementId int64, records []SetParameterRecor
 	queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
 	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
 		logger.Errorf("failed to push batch SPV to device queue %s: %v", deviceInfo.SerialNumber, err)
-		s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4) // 4=fail
+		s.repo.DB().Table("event_log").Where("id = ?", eventLogId).Update("status", 4) // 4=fail
 		return fmt.Errorf("push to device queue: %w", err)
 	}
 	redis.Expire(ctx, queueKey, 24*time.Hour)
@@ -294,7 +316,7 @@ func (s *Service) BatchSetParameter(elementId int64, records []SetParameterRecor
 // ---------------------------------------------------------------------------
 
 // ListParameterLogs returns a paginated list of parameter change logs.
-func (s *Service) ListParameterLogs(elementId int64, page, pageSize int) ([]ParameterLog, int64, error) {
+func (s *service) ListParameterLogs(elementId int64, page, pageSize int) ([]ParameterLog, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -311,7 +333,7 @@ func (s *Service) ListParameterLogs(elementId int64, page, pageSize int) ([]Para
 
 // PresetParameters sends SPV for a set of preset parameters to a device.
 // This is triggered automatically after device registration/onboarding.
-func (s *Service) PresetParameters(elementId int64, presets map[string]string) error {
+func (s *service) PresetParameters(elementId int64, presets map[string]string) error {
 	if len(presets) == 0 {
 		return nil
 	}
@@ -320,7 +342,7 @@ func (s *Service) PresetParameters(elementId int64, presets map[string]string) e
 	var deviceInfo struct {
 		SerialNumber string `gorm:"column:serial_number"`
 	}
-	if err := s.repo.db.Table("cpe_element").
+	if err := s.repo.DB().Table("cpe_element").
 		Select("serial_number").
 		Where("ne_neid = ? AND deleted = ?", elementId, false).
 		Scan(&deviceInfo).Error; err != nil {
@@ -362,7 +384,7 @@ func (s *Service) PresetParameters(elementId int64, presets map[string]string) e
 		"is_preset":      true,
 		"issue_time":     now.Format(time.RFC3339),
 	})
-	s.repo.db.Table("event_log").Where("id = ?", eventLogId).
+	s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 		Updates(map[string]interface{}{
 			"command_track_data": string(trackData),
 			"command_issue_time": now,
@@ -382,7 +404,7 @@ func (s *Service) PresetParameters(elementId int64, presets map[string]string) e
 	// 7. Push SOAP XML to device queue
 	queueKey := fmt.Sprintf("tr069:queue:%s", deviceInfo.SerialNumber)
 	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
-		s.repo.db.Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
+		s.repo.DB().Table("event_log").Where("id = ?", eventLogId).Update("status", 4)
 		return fmt.Errorf("push to device queue: %w", err)
 	}
 	redis.Expire(ctx, queueKey, 24*time.Hour)
@@ -447,4 +469,9 @@ func ptrInt(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+// newService creates a Service backed by the given mock Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

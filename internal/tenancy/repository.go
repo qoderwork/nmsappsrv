@@ -8,36 +8,54 @@ import (
 	"nmsappsrv/pkg/baserepo"
 )
 
-// Repository provides database operations for tenancy management
-type Repository struct {
+// Repository defines the data-access contract for tenancy management.
+type Repository interface {
+	Create(entity *tenancyModel) error
+	Save(entity *tenancyModel) error
+	FindByID(id int) (*tenancyModel, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]tenancyModel, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[tenancyModel], error)
+
+	ExistsByName(name string) (bool, error)
+	ExistsByNameExcluding(name string, excludeID int) (bool, error)
+	List(nameFilter string, page, pageSize int) ([]tenancyModel, int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	*baserepo.BaseRepository[tenancyModel, int] // embedded generic CRUD for tenancyModel
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[tenancyModel, int](db, "id"),
 		db:             db,
 	}
 }
 
 // ExistsByName checks if a tenancy with the given name already exists
-func (r *Repository) ExistsByName(name string) (bool, error) {
+func (r *repository) ExistsByName(name string) (bool, error) {
 	var count int64
 	err := r.db.Model(&tenancyModel{}).Where("license_name = ?", name).Count(&count).Error
 	return count > 0, err
 }
 
 // ExistsByNameExcluding checks if a tenancy with the given name exists, excluding a specific ID
-func (r *Repository) ExistsByNameExcluding(name string, excludeID int) (bool, error) {
+func (r *repository) ExistsByNameExcluding(name string, excludeID int) (bool, error) {
 	var count int64
 	err := r.db.Model(&tenancyModel{}).Where("license_name = ? AND id != ?", name, excludeID).Count(&count).Error
 	return count > 0, err
 }
 
 // List returns paginated tenancies with optional name filter
-func (r *Repository) List(nameFilter string, page, pageSize int) ([]tenancyModel, int64, error) {
+func (r *repository) List(nameFilter string, page, pageSize int) ([]tenancyModel, int64, error) {
 	query := r.DB.Model(&tenancyModel{})
 	if nameFilter != "" {
 		query = query.Where("license_name LIKE ?", fmt.Sprintf("%%%s%%", nameFilter))

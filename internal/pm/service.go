@@ -11,19 +11,43 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// Service contains PM business logic.
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for PM operations.
+type Service interface {
+	ListKPIs(tenancyId int) ([]PerformanceKpi, error)
+	GetKPI(id string) (*PerformanceKpi, error)
+	CreateKPI(k *PerformanceKpi) error
+	UpdateKPI(k *PerformanceKpi) error
+	DeleteKPI(id string) error
+	ListKPISets(tenancyId int) ([]PerformanceKpiSet, error)
+	CreateKPISet(set *PerformanceKpiSet) error
+	ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error)
+	CreateKPITemplate(t *PerformanceKpiTemplate) error
+	UpdateKPITemplate(t *PerformanceKpiTemplate) error
+	DeleteKPITemplate(id int) error
+	ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog, int64, error)
+	ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error)
+	CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error
+	UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error
+	DeleteKPIAlarmTemplate(id int) error
+	GetDashboardData(tenancyId int, startTime, endTime string) ([]DashboardPmStatisticData, error)
+	GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error)
+	GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error)
+	GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 }
 
 // NewService creates a new PM service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
 }
 
 // ---------- PerformanceKpi ----------
 
-func (s *Service) ListKPIs(tenancyId int) ([]PerformanceKpi, error) {
+func (s *service) ListKPIs(tenancyId int) ([]PerformanceKpi, error) {
 	data, err := s.repo.FindKPIs(tenancyId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPIS_FAILED", 500, "failed to list KPIs")
@@ -31,7 +55,7 @@ func (s *Service) ListKPIs(tenancyId int) ([]PerformanceKpi, error) {
 	return data, nil
 }
 
-func (s *Service) GetKPI(id string) (*PerformanceKpi, error) {
+func (s *service) GetKPI(id string) (*PerformanceKpi, error) {
 	item, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_KPI_FAILED", 404, "KPI not found")
@@ -39,21 +63,21 @@ func (s *Service) GetKPI(id string) (*PerformanceKpi, error) {
 	return item, nil
 }
 
-func (s *Service) CreateKPI(k *PerformanceKpi) error {
+func (s *service) CreateKPI(k *PerformanceKpi) error {
 	if err := s.repo.Create(k); err != nil {
 		return apperror.Wrap(err, "CREATE_KPI_FAILED", 500, "failed to create KPI")
 	}
 	return nil
 }
 
-func (s *Service) UpdateKPI(k *PerformanceKpi) error {
+func (s *service) UpdateKPI(k *PerformanceKpi) error {
 	if err := s.repo.Save(k); err != nil {
 		return apperror.Wrap(err, "UPDATE_KPI_FAILED", 500, "failed to update KPI")
 	}
 	return nil
 }
 
-func (s *Service) DeleteKPI(id string) error {
+func (s *service) DeleteKPI(id string) error {
 	if err := s.repo.DeleteByID(id); err != nil {
 		return apperror.Wrap(err, "DELETE_KPI_FAILED", 500, "failed to delete KPI")
 	}
@@ -62,7 +86,7 @@ func (s *Service) DeleteKPI(id string) error {
 
 // ---------- PerformanceKpiSet ----------
 
-func (s *Service) ListKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
+func (s *service) ListKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
 	data, err := s.repo.FindKPISets(tenancyId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPI_SETS_FAILED", 500, "failed to list KPI sets")
@@ -70,7 +94,7 @@ func (s *Service) ListKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
 	return data, nil
 }
 
-func (s *Service) CreateKPISet(set *PerformanceKpiSet) error {
+func (s *service) CreateKPISet(set *PerformanceKpiSet) error {
 	if err := s.repo.CreateKPISet(set); err != nil {
 		return apperror.Wrap(err, "CREATE_KPI_SET_FAILED", 500, "failed to create KPI set")
 	}
@@ -79,7 +103,7 @@ func (s *Service) CreateKPISet(set *PerformanceKpiSet) error {
 
 // ---------- PerformanceKpiTemplate ----------
 
-func (s *Service) ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
+func (s *service) ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
 	data, err := s.repo.FindKPITemplates(tenancyId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPI_TEMPLATES_FAILED", 500, "failed to list KPI templates")
@@ -87,21 +111,21 @@ func (s *Service) ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, err
 	return data, nil
 }
 
-func (s *Service) CreateKPITemplate(t *PerformanceKpiTemplate) error {
+func (s *service) CreateKPITemplate(t *PerformanceKpiTemplate) error {
 	if err := s.repo.CreateKPITemplate(t); err != nil {
 		return apperror.Wrap(err, "CREATE_KPI_TEMPLATE_FAILED", 500, "failed to create KPI template")
 	}
 	return nil
 }
 
-func (s *Service) UpdateKPITemplate(t *PerformanceKpiTemplate) error {
+func (s *service) UpdateKPITemplate(t *PerformanceKpiTemplate) error {
 	if err := s.repo.UpdateKPITemplate(t); err != nil {
 		return apperror.Wrap(err, "UPDATE_KPI_TEMPLATE_FAILED", 500, "failed to update KPI template")
 	}
 	return nil
 }
 
-func (s *Service) DeleteKPITemplate(id int) error {
+func (s *service) DeleteKPITemplate(id int) error {
 	if err := s.repo.DeleteKPITemplate(id); err != nil {
 		return apperror.Wrap(err, "DELETE_KPI_TEMPLATE_FAILED", 500, "failed to delete KPI template")
 	}
@@ -110,7 +134,7 @@ func (s *Service) DeleteKPITemplate(id int) error {
 
 // ---------- PMFileLog ----------
 
-func (s *Service) ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog, int64, error) {
+func (s *service) ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog, int64, error) {
 	offset := (page - 1) * pageSize
 	data, total, err := s.repo.FindPMFileLogs(tenancyId, offset, pageSize)
 	if err != nil {
@@ -121,7 +145,7 @@ func (s *Service) ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog
 
 // ---------- KpiAlarmTemplate ----------
 
-func (s *Service) ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
+func (s *service) ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
 	data, err := s.repo.FindKPIAlarmTemplates(tenancyId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPI_ALARM_TEMPLATES_FAILED", 500, "failed to list KPI alarm templates")
@@ -129,21 +153,21 @@ func (s *Service) ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, erro
 	return data, nil
 }
 
-func (s *Service) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
+func (s *service) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	if err := s.repo.CreateKPIAlarmTemplate(t); err != nil {
 		return apperror.Wrap(err, "CREATE_KPI_ALARM_TEMPLATE_FAILED", 500, "failed to create KPI alarm template")
 	}
 	return nil
 }
 
-func (s *Service) UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
+func (s *service) UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	if err := s.repo.UpdateKPIAlarmTemplate(t); err != nil {
 		return apperror.Wrap(err, "UPDATE_KPI_ALARM_TEMPLATE_FAILED", 500, "failed to update KPI alarm template")
 	}
 	return nil
 }
 
-func (s *Service) DeleteKPIAlarmTemplate(id int) error {
+func (s *service) DeleteKPIAlarmTemplate(id int) error {
 	if err := s.repo.DeleteKPIAlarmTemplate(id); err != nil {
 		return apperror.Wrap(err, "DELETE_KPI_ALARM_TEMPLATE_FAILED", 500, "failed to delete KPI alarm template")
 	}
@@ -152,7 +176,7 @@ func (s *Service) DeleteKPIAlarmTemplate(id int) error {
 
 // ---------- Dashboard ----------
 
-func (s *Service) GetDashboardData(tenancyId int, startTime, endTime string) ([]DashboardPmStatisticData, error) {
+func (s *service) GetDashboardData(tenancyId int, startTime, endTime string) ([]DashboardPmStatisticData, error) {
 	st, err := time.Parse(time.RFC3339, startTime)
 	if err != nil {
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid start_time format, expected RFC3339")
@@ -170,7 +194,7 @@ func (s *Service) GetDashboardData(tenancyId int, startTime, endTime string) ([]
 
 // ---------- PDCPTraffic ----------
 
-func (s *Service) GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error) {
+func (s *service) GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error) {
 	st, err := time.Parse(time.RFC3339, startTime)
 	if err != nil {
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid start_time format, expected RFC3339")
@@ -189,7 +213,7 @@ func (s *Service) GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PD
 // ---------- Dashboard: Device Online Info ----------
 
 // GetDeviceOnlineInfo 统计 gNB/eNB/CPE 各自在线/离线设备数
-func (s *Service) GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error) {
+func (s *service) GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error) {
 	rows, err := s.repo.FindAllActiveElements(tenancyId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_DEVICE_ONLINE_INFO_FAILED", 500, "failed to get device online info")
@@ -232,7 +256,7 @@ func (s *Service) GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error
 
 // GetProductTypeAndDeviceCount 按产品型号统计设备数量及在线情况
 // mode: "all" 查全部租户, 否则按 tenancyId 过滤
-func (s *Service) GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error) {
+func (s *service) GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error) {
 	var rows []elementRow
 	var err error
 	if mode == "all" {
@@ -286,4 +310,9 @@ func strVal(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// newService creates a Service backed by the given Repository (test/mock helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }

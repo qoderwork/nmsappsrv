@@ -7,18 +7,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository provides database operations for resources
-type Repository struct {
+// Repository defines the data-access contract for resources
+type Repository interface {
+	GetSystemConfig(key string) (string, error)
+	SaveSystemConfig(key, value string) error
+	GetTableStatus() ([]TableStatusVO, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository
+type repository struct {
 	db *gorm.DB
 }
 
 // NewRepository creates a new Repository
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // GetSystemConfig reads a system_config entry by config_key
-func (r *Repository) GetSystemConfig(key string) (string, error) {
+func (r *repository) GetSystemConfig(key string) (string, error) {
 	var cfg systemConfigModel
 	if err := r.db.Where("id = ?", key).First(&cfg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -33,7 +40,7 @@ func (r *Repository) GetSystemConfig(key string) (string, error) {
 }
 
 // SaveSystemConfig upserts a system_config entry
-func (r *Repository) SaveSystemConfig(key, value string) error {
+func (r *repository) SaveSystemConfig(key, value string) error {
 	var cfg systemConfigModel
 	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
@@ -51,7 +58,7 @@ func (r *Repository) SaveSystemConfig(key, value string) error {
 }
 
 // GetTableStatus returns MySQL table sizes via information_schema
-func (r *Repository) GetTableStatus() ([]TableStatusVO, error) {
+func (r *repository) GetTableStatus() ([]TableStatusVO, error) {
 	var results []TableStatusVO
 
 	rows, err := r.db.Raw(`

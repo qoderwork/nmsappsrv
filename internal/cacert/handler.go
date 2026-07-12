@@ -22,7 +22,7 @@ import (
 
 // Handler provides HTTP handlers for CA certificate endpoints
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new Handler

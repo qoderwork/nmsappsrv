@@ -7,17 +7,37 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for MML entities.
+// Repository defines the data-access contract for MML entities.
 // It embeds BaseRepository[MmlExecuteResult, int] for standard CRUD on MmlExecuteResult,
 // and retains module-specific methods for other entity types and custom queries.
-type Repository struct {
+type Repository interface {
+	Create(entity *MmlExecuteResult) error
+	Save(entity *MmlExecuteResult) error
+	FindByID(id int) (*MmlExecuteResult, error)
+	DeleteByID(id int) error
+	DeleteByIDs(ids []int) error
+	SoftDelete(id int) error
+	UpdateFields(id int, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]MmlExecuteResult, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[MmlExecuteResult], error)
+	FindMmlSets(licenseId int) ([]MmlSet, error)
+	FindMmlCommands(setId int) ([]MmlCommand, error)
+	FindMmlCommandParams(commandId int) ([]MmlCommandParam, error)
+	FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+// It embeds BaseRepository[MmlExecuteResult, int] for standard CRUD on MmlExecuteResult,
+// and retains module-specific methods for other entity types and custom queries.
+type repository struct {
 	*baserepo.BaseRepository[MmlExecuteResult, int]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[MmlExecuteResult, int](db, "id"),
 		db:             db,
 	}
@@ -28,7 +48,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // ---------------------------------------------------------------------------
 
 // FindMmlSets returns all MML sets for the given license.
-func (r *Repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
+func (r *repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
 	var sets []MmlSet
 	if err := r.db.Where("license_id = ?", licenseId).Find(&sets).Error; err != nil {
 		logger.Errorf("FindMmlSets error: %v", err)
@@ -42,7 +62,7 @@ func (r *Repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
 // ---------------------------------------------------------------------------
 
 // FindMmlCommands returns all commands belonging to the given MML set.
-func (r *Repository) FindMmlCommands(setId int) ([]MmlCommand, error) {
+func (r *repository) FindMmlCommands(setId int) ([]MmlCommand, error) {
 	var cmds []MmlCommand
 	if err := r.db.Where("mml_set_id = ?", setId).Find(&cmds).Error; err != nil {
 		logger.Errorf("FindMmlCommands error: %v", err)
@@ -56,7 +76,7 @@ func (r *Repository) FindMmlCommands(setId int) ([]MmlCommand, error) {
 // ---------------------------------------------------------------------------
 
 // FindMmlCommandParams returns all parameters for the given command.
-func (r *Repository) FindMmlCommandParams(commandId int) ([]MmlCommandParam, error) {
+func (r *repository) FindMmlCommandParams(commandId int) ([]MmlCommandParam, error) {
 	var params []MmlCommandParam
 	if err := r.db.Where("mml_command_id = ?", commandId).Find(&params).Error; err != nil {
 		logger.Errorf("FindMmlCommandParams error: %v", err)
@@ -70,7 +90,7 @@ func (r *Repository) FindMmlCommandParams(commandId int) ([]MmlCommandParam, err
 // ---------------------------------------------------------------------------
 
 // FindMmlExecuteResults returns a paginated list of results for the given element.
-func (r *Repository) FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error) {
+func (r *repository) FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error) {
 	var results []MmlExecuteResult
 	var total int64
 

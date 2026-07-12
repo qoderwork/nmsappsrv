@@ -39,15 +39,19 @@ type Service interface {
 // service contains the business logic for device management.
 type service struct {
 	repo Repository
-	db   *gorm.DB
 }
 
 // NewService creates a Service backed by a fresh Repository.
-// The *gorm.DB is forwarded via dependency injection to avoid a circular
-// import with pkg/database (which already imports internal/device for
-// model registration in AutoMigrateAll).
+// The *gorm.DB is forwarded to the repository via dependency injection to
+// avoid a circular import with pkg/database (which already imports
+// internal/device for model registration in AutoMigrateAll).
 func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db), db: db}
+	return &service{repo: NewRepository(db)}
+}
+
+// newService builds a Service from an injected Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ---------------------------------------------------------------------------
@@ -418,25 +422,17 @@ func (s *service) checkDeviceQuota(licenseId int, deviceType string, count int) 
 	}
 
 	// Read quota from license table
-	var quota int
-	err := s.db.Table("license").Where("id = ?", licenseId).Scan(&quota).Error
+	quota, err := s.repo.GetLicenseQuota(licenseId)
 	// If we can't read quota, skip check
 	if err != nil || quota <= 0 {
 		return nil
 	}
 
 	// Count existing devices of this type for this license
-	var existing int64
-	query := s.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
-	switch deviceType {
-	case "enb":
-		query = query.Where("device_type = ?", "enb")
-	case "gnb":
-		query = query.Where("device_type = ?", "gnb")
-	default:
-		query = query.Where("device_type = ? OR device_type IS NULL", "cpe")
+	existing, err := s.repo.CountNonDeleted(licenseId, deviceType)
+	if err != nil {
+		existing = 0
 	}
-	query.Count(&existing)
 
 	if int(existing)+count > quota {
 		return fmt.Errorf("device quota exceeded for %s: %d/%d (requesting +%d)", quotaKey, existing, quota, count)
@@ -507,8 +503,8 @@ func (s *service) decryptLocation(encrypted string) string {
 // getLocationEncryptionKey reads the AES key from system_config.
 // Returns empty slice if not configured.
 func (s *service) getLocationEncryptionKey() []byte {
-	var configValue string
-	if err := s.db.Table("system_config").Where("config_key = ?", "location_encryption_key").Limit(1).Scan(&configValue).Error; err == nil && configValue != "" {
+	configValue, err := s.repo.GetLocationEncryptionKey()
+	if err == nil && configValue != "" {
 		// Use SHA-256 to ensure 32-byte key
 		hash := sha256.Sum256([]byte(configValue))
 		return hash[:]

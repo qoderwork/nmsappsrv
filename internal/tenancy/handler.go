@@ -9,7 +9,7 @@ import (
 
 // Handler provides HTTP handlers for tenancy management endpoints
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new Handler

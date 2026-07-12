@@ -10,28 +10,44 @@ import (
 	redisclient "nmsappsrv/pkg/redis"
 )
 
-// Service handles business logic for Dashboard module
-type Service struct {
-	repo *Repository
+// Service defines the business-logic contract for Dashboard module.
+type Service interface {
+	ListCpeOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error)
+	ListGNBOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error)
+	ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenancyId *int) (*ListProductTypeAndDeviceCountVO, error)
+	ListBaseStationStatistics(ctx context.Context, tenancyId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error)
+	ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]ListPDCPTrafficStatisticVO, error)
+	ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*ListDeviceOnlineInfoVO, error)
+	StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error)
 }
 
-// NewService creates a new Service
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
+}
+
+// NewService creates a Service backed by the given Repository.
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ListCpeOnlineStatistics returns CPE online statistics aggregated by time buckets from device_statistic table
-func (s *Service) ListCpeOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error) {
+func (s *service) ListCpeOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error) {
 	return s.listOnlineStatistics(ctx, query, "cpe")
 }
 
 // ListGNBOnlineStatistics returns GNB online statistics aggregated by time buckets from device_statistic table
-func (s *Service) ListGNBOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error) {
+func (s *service) ListGNBOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error) {
 	return s.listOnlineStatistics(ctx, query, "gnb")
 }
 
 // listOnlineStatistics queries device_statistic for devices of a given type, aggregates by time bucket
-func (s *Service) listOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery, deviceType string) ([]TimeAndDataVO, error) {
+func (s *service) listOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery, deviceType string) ([]TimeAndDataVO, error) {
 	// Default time range: last 24 hours
 	endTime := time.Now()
 	startTime := endTime.Add(-24 * time.Hour)
@@ -95,7 +111,7 @@ func (s *Service) listOnlineStatistics(ctx context.Context, query *ListCpeOnline
 }
 
 // ListProductTypeAndDeviceCount returns device count grouped by product type with online/offline status
-func (s *Service) ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenancyId *int) (*ListProductTypeAndDeviceCountVO, error) {
+func (s *service) ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenancyId *int) (*ListProductTypeAndDeviceCountVO, error) {
 	if mode == "" {
 		return nil, apperror.ErrInvalidInput.WithMessage("mode is required")
 	}
@@ -173,7 +189,7 @@ func (s *Service) ListProductTypeAndDeviceCount(ctx context.Context, mode string
 }
 
 // ListBaseStationStatistics returns base station statistics from dashboard_pm_statistic_data
-func (s *Service) ListBaseStationStatistics(ctx context.Context, tenancyId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error) {
+func (s *service) ListBaseStationStatistics(ctx context.Context, tenancyId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error) {
 	rows, err := s.repo.QueryDashboardPmData(ctx, tenancyId, startTime, endTime)
 	if err != nil {
 		return nil, err
@@ -230,7 +246,7 @@ func (s *Service) ListBaseStationStatistics(ctx context.Context, tenancyId *int,
 }
 
 // ListPDCPTrafficStatistic returns PDCP traffic statistics by PLMN
-func (s *Service) ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]ListPDCPTrafficStatisticVO, error) {
+func (s *service) ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]ListPDCPTrafficStatisticVO, error) {
 	results, err := s.repo.ListPDCPTraffic(ctx, startTime, endTime, tenancyId)
 	if err != nil {
 		return nil, err
@@ -253,7 +269,7 @@ func (s *Service) ListPDCPTrafficStatistic(ctx context.Context, startTime, endTi
 }
 
 // ListDeviceOnlineInfo returns counts of online/offline devices by type
-func (s *Service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*ListDeviceOnlineInfoVO, error) {
+func (s *service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*ListDeviceOnlineInfoVO, error) {
 	devices, err := s.repo.ListAllDevices(ctx, tenancyId)
 	if err != nil {
 		return nil, err
@@ -328,7 +344,7 @@ func (s *Service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*Li
 }
 
 // StatisticKPIForDevicelop returns KPI statistics for device groups
-func (s *Service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error) {
+func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error) {
 	if len(deviceGroupIds) == 0 {
 		return nil, apperror.ErrInvalidInput.WithMessage("deviceGroupId is required")
 	}

@@ -22,14 +22,26 @@ import (
 )
 
 // Service contains mail business logic.
-type Service struct {
-	repo   *Repository
+type Service interface {
+	GetConfig() (*MailConfig, error)
+	UpdateConfig(req *UpdateMailConfigRequest) error
+	SendTestMail() error
+	SendEmailCode(username, grantType string) error
+	CheckEmailCode(username, code string) (bool, error)
+	IsEmailAuthEnabled() (bool, error)
+	SendMail(to []string, subject, body string) error
+	GetSuperUserEmail() (string, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo   Repository
 	aesKey []byte // 32-byte AES-256 key
 }
 
 // NewService creates a new mail service.
 // aesKeyHex is a hex-encoded key used for AES-GCM encryption of sensitive fields.
-func NewService(db *gorm.DB, aesKeyHex string) *Service {
+func NewService(db *gorm.DB, aesKeyHex string) Service {
 	key := make([]byte, 32)
 	if aesKeyHex != "" {
 		decoded, err := hex.DecodeString(aesKeyHex)
@@ -37,13 +49,18 @@ func NewService(db *gorm.DB, aesKeyHex string) *Service {
 			copy(key, decoded)
 		}
 	}
-	return &Service{repo: NewRepository(db), aesKey: key}
+	return &service{repo: NewRepository(db), aesKey: key}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // ---------- public methods ----------
 
 // GetConfig reads and decrypts the mail configuration. Password is masked.
-func (s *Service) GetConfig() (*MailConfig, error) {
+func (s *service) GetConfig() (*MailConfig, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return nil, err
@@ -55,7 +72,7 @@ func (s *Service) GetConfig() (*MailConfig, error) {
 }
 
 // UpdateConfig encrypts sensitive fields and persists the mail configuration.
-func (s *Service) UpdateConfig(req *UpdateMailConfigRequest) error {
+func (s *service) UpdateConfig(req *UpdateMailConfigRequest) error {
 	if err := s.validateRequest(req); err != nil {
 		return err
 	}
@@ -82,7 +99,7 @@ func (s *Service) UpdateConfig(req *UpdateMailConfigRequest) error {
 }
 
 // SendTestMail sends a test email to all configured super user addresses.
-func (s *Service) SendTestMail() error {
+func (s *service) SendTestMail() error {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return err
@@ -106,7 +123,7 @@ func (s *Service) SendTestMail() error {
 
 // SendEmailCode generates a 6-digit verification code, stores it in Redis,
 // and emails it to the user.
-func (s *Service) SendEmailCode(username, grantType string) error {
+func (s *service) SendEmailCode(username, grantType string) error {
 	ctx := context.Background()
 
 	// Rate limit: 1 code per minute
@@ -150,7 +167,7 @@ func (s *Service) SendEmailCode(username, grantType string) error {
 }
 
 // CheckEmailCode verifies the submitted code against Redis.
-func (s *Service) CheckEmailCode(username, code string) (bool, error) {
+func (s *service) CheckEmailCode(username, code string) (bool, error) {
 	ctx := context.Background()
 	codeKey := fmt.Sprintf("email_code_%s", username)
 	stored, err := redis.Get(ctx, codeKey)
@@ -165,7 +182,7 @@ func (s *Service) CheckEmailCode(username, code string) (bool, error) {
 }
 
 // IsEmailAuthEnabled checks whether email authentication is enabled.
-func (s *Service) IsEmailAuthEnabled() (bool, error) {
+func (s *service) IsEmailAuthEnabled() (bool, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return false, err
@@ -175,7 +192,7 @@ func (s *Service) IsEmailAuthEnabled() (bool, error) {
 
 // SendMail sends an email to the given recipients using the stored mail config.
 // This is the public entry point used by other modules (e.g. alarm notifier).
-func (s *Service) SendMail(to []string, subject, body string) error {
+func (s *service) SendMail(to []string, subject, body string) error {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return fmt.Errorf("load mail config: %w", err)
@@ -187,7 +204,7 @@ func (s *Service) SendMail(to []string, subject, body string) error {
 
 // GetSuperUserEmail returns the decrypted super-user email addresses
 // (semicolon-separated) from the mail configuration.
-func (s *Service) GetSuperUserEmail() (string, error) {
+func (s *service) GetSuperUserEmail() (string, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return "", err
@@ -197,7 +214,7 @@ func (s *Service) GetSuperUserEmail() (string, error) {
 
 // ---------- repository helpers ----------
 
-func (s *Service) loadConfig() (*MailConfig, error) {
+func (s *service) loadConfig() (*MailConfig, error) {
 	key := "mail"
 	sc, err := s.repo.FindConfigByKey(key)
 	if err != nil {
@@ -216,7 +233,7 @@ func (s *Service) loadConfig() (*MailConfig, error) {
 	return &cfg, nil
 }
 
-func (s *Service) saveConfig(cfg *MailConfig) error {
+func (s *service) saveConfig(cfg *MailConfig) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
@@ -237,7 +254,7 @@ func (s *Service) saveConfig(cfg *MailConfig) error {
 
 // ---------- AES-GCM encryption ----------
 
-func (s *Service) encrypt(plaintext string) string {
+func (s *service) encrypt(plaintext string) string {
 	if plaintext == "" {
 		return ""
 	}
@@ -257,7 +274,7 @@ func (s *Service) encrypt(plaintext string) string {
 	return hex.EncodeToString(ciphertext)
 }
 
-func (s *Service) decrypt(ciphertext string) string {
+func (s *service) decrypt(ciphertext string) string {
 	if ciphertext == "" {
 		return ""
 	}
@@ -287,7 +304,7 @@ func (s *Service) decrypt(ciphertext string) string {
 
 // ---------- validation ----------
 
-func (s *Service) validateRequest(req *UpdateMailConfigRequest) error {
+func (s *service) validateRequest(req *UpdateMailConfigRequest) error {
 	if req.Port < 1 || req.Port > 65535 {
 		return fmt.Errorf("invalid port number")
 	}
@@ -310,7 +327,7 @@ func (s *Service) validateRequest(req *UpdateMailConfigRequest) error {
 
 // ---------- SMTP ----------
 
-func (s *Service) sendMail(cfg *MailConfig, username, password string, to []string, subject, body string) error {
+func (s *service) sendMail(cfg *MailConfig, username, password string, to []string, subject, body string) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",

@@ -11,16 +11,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type Service struct {
-	repo *Repository
+type Service interface {
+	AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest) (*NMSBackupAndRevert, error)
+	ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequest) ([]NMSBackupTaskVo, int64, error)
+	ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskRequest) error
+	RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error
+	DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error
+	RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) error
+	GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, error)
+	UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest) error
+	ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogVo, int64, error)
+	GetBackupLogDetail(req *GetNMSBackupLogDetailRequest) (*NMSBackupAndRevertLog, error)
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+type service struct {
+	repo Repository
+}
+
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
+}
+
+// newService builds a Service from an injected Repository (used by tests).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // AddBackupSchedule creates a new backup schedule definition (nms_backup_and_revert)
-func (s *Service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest) (*NMSBackupAndRevert, error) {
+func (s *service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest) (*NMSBackupAndRevert, error) {
 	username := middleware.GetUsername(c)
 	licenseId := middleware.GetLicenseId(c)
 	now := time.Now()
@@ -66,7 +84,7 @@ func (s *Service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 }
 
 // ListBackupSchedules returns paginated list of backup schedules
-func (s *Service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequest) ([]NMSBackupTaskVo, int64, error) {
+func (s *service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequest) ([]NMSBackupTaskVo, int64, error) {
 	licenseId := middleware.GetLicenseId(c)
 
 	page := req.Page
@@ -104,7 +122,7 @@ func (s *Service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequ
 }
 
 // ModifyBackupSchedule updates an existing backup schedule
-func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskRequest) error {
+func (s *service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskRequest) error {
 	schedule, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.ErrNotFound.WithMessage("backup schedule not found")
@@ -146,7 +164,7 @@ func (s *Service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskR
 }
 
 // RunBackup triggers immediate backup execution for a schedule
-func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error {
+func (s *service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error {
 	username := middleware.GetUsername(c)
 
 	schedule, err := s.repo.FindByID(req.Id)
@@ -226,7 +244,7 @@ func (s *Service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 }
 
 // DeleteBackupSchedule deletes a backup schedule
-func (s *Service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
+func (s *service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
 	if err := s.repo.DeleteByID(req.Id); err != nil {
 		logger.Errorf("Failed to delete backup schedule %d: %v", req.Id, err)
 		return apperror.ErrInternal.WithMessage("failed to delete backup schedule")
@@ -237,7 +255,7 @@ func (s *Service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskR
 }
 
 // RevertBackup triggers restore from a backup schedule's file
-func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) error {
+func (s *service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) error {
 	username := middleware.GetUsername(c)
 
 	schedule, err := s.repo.FindByID(req.Id)
@@ -305,7 +323,7 @@ func (s *Service) RevertBackup(c *gin.Context, req *RevertNMSBackupTaskRequest) 
 }
 
 // GetBackupRetentionConfig reads retention configuration
-func (s *Service) GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, error) {
+func (s *service) GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, error) {
 	config, err := s.repo.GetRetentionConfig()
 	if err != nil {
 		logger.Errorf("Failed to get backup retention config: %v", err)
@@ -317,7 +335,7 @@ func (s *Service) GetBackupRetentionConfig() (*GetBackupAndRestoreConfigDTO, err
 }
 
 // UpdateBackupRetentionConfig updates retention configuration
-func (s *Service) UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest) error {
+func (s *service) UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest) error {
 	config, err := s.repo.GetRetentionConfig()
 	if err != nil {
 		return apperror.ErrInternal.WithMessage("failed to get current config")
@@ -337,7 +355,7 @@ func (s *Service) UpdateBackupRetentionConfig(req *UpdateBackupRetentionRequest)
 }
 
 // ListBackupLogs returns paginated list of backup/revert logs
-func (s *Service) ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogVo, int64, error) {
+func (s *service) ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogVo, int64, error) {
 	page := req.Page
 	pageSize := req.PageSize
 	if page <= 0 {
@@ -369,7 +387,7 @@ func (s *Service) ListBackupLogs(req *ListNMSBackupLogsRequest) ([]NMSBackupLogV
 }
 
 // GetBackupLogDetail returns a single log detail
-func (s *Service) GetBackupLogDetail(req *GetNMSBackupLogDetailRequest) (*NMSBackupAndRevertLog, error) {
+func (s *service) GetBackupLogDetail(req *GetNMSBackupLogDetailRequest) (*NMSBackupAndRevertLog, error) {
 	log, err := s.repo.GetLogById(req.LogId)
 	if err != nil {
 		return nil, apperror.ErrNotFound.WithMessage("backup log not found")

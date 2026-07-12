@@ -11,24 +11,36 @@ import (
 	"nmsappsrv/pkg/logger"
 )
 
-// Service contains NTP business logic.
-type Service struct {
-	repo *Repository
+// Service defines the NTP business-logic contract.
+type Service interface {
+	GetConfig() (*NTPConfig, error)
+	UpdateConfig(req *NTPConfigRequest) error
+	GetStatus() (string, error)
+}
+
+// service is the concrete implementation of Service.
+type service struct {
+	repo Repository
 	mu   sync.Mutex
 }
 
 // NewService creates a new NTP service.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB) Service {
+	return &service{repo: NewRepository(db)}
+}
+
+// newService creates a Service backed by the given Repository (test helper).
+func newService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 // GetConfig reads NTP config from system_config.
-func (s *Service) GetConfig() (*NTPConfig, error) {
+func (s *service) GetConfig() (*NTPConfig, error) {
 	return s.loadConfig()
 }
 
 // UpdateConfig persists NTP config and optionally writes the local ntp.conf file.
-func (s *Service) UpdateConfig(req *NTPConfigRequest) error {
+func (s *service) UpdateConfig(req *NTPConfigRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -56,7 +68,7 @@ func (s *Service) UpdateConfig(req *NTPConfigRequest) error {
 }
 
 // GetStatus reads NTP sync status from the local status file.
-func (s *Service) GetStatus() (string, error) {
+func (s *service) GetStatus() (string, error) {
 	data, err := os.ReadFile("/home/ntp_status")
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -69,7 +81,7 @@ func (s *Service) GetStatus() (string, error) {
 
 // ---------- repository helpers ----------
 
-func (s *Service) loadConfig() (*NTPConfig, error) {
+func (s *service) loadConfig() (*NTPConfig, error) {
 	key := "ntp"
 	sc, err := s.repo.FindConfigByKey(key)
 	if err != nil {
@@ -88,7 +100,7 @@ func (s *Service) loadConfig() (*NTPConfig, error) {
 	return &cfg, nil
 }
 
-func (s *Service) saveConfig(cfg *NTPConfig) error {
+func (s *service) saveConfig(cfg *NTPConfig) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err

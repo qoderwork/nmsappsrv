@@ -11,17 +11,54 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for parameter entities.
-// It embeds BaseRepository[ParameterSet, string] for standard CRUD on ParameterSet,
-// and retains module-specific methods for other entity types and custom queries.
-type Repository struct {
+// Repository defines the data-access contract for parameter entities.
+type Repository interface {
+	// Generic BaseRepository[ParameterSet, string] methods.
+	Create(entity *ParameterSet) error
+	Save(entity *ParameterSet) error
+	FindByID(id string) (*ParameterSet, error)
+	DeleteByID(id string) error
+	DeleteByIDs(ids []string) error
+	SoftDelete(id string) error
+	UpdateFields(id string, fields map[string]interface{}) error
+	FindAll(query *gorm.DB) ([]ParameterSet, error)
+	Count(query *gorm.DB) (int64, error)
+	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[ParameterSet], error)
+
+	// Module-specific methods.
+	FindParametersByElementId(elementId int64) ([]ParameterAttributes, error)
+	FindParameterVosByElementId(elementId int64) ([]ParameterVo, error)
+	FindParameterAttributes(elementId int64, paramName string) (*ParameterAttributes, error)
+	CreateParameterAttributes(pa *ParameterAttributes) error
+	UpdateParameterAttributes(pa *ParameterAttributes) error
+	CreateParameterLog(log *ParameterLog) error
+	FindParameterLogs(elementId int64, offset, limit int) ([]ParameterLog, int64, error)
+	FindParameterSets(licenseId int) ([]ParameterSet, error)
+	FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
+	CreateParameterTemplate(t *ParameterTemplate) error
+	UpdateParameterTemplate(t *ParameterTemplate) error
+	CreateParameterBackupLog(log *ParameterBackupLog) error
+	FindParameterBackupLogs(elementId int64) ([]ParameterBackupLog, error)
+	CreateBatchConfigLog(log *misc.BatchConfigurationLog) error
+	CreateBatchConfigDeviceLog(log *misc.BatchConfigurationDeviceLog) error
+	FindBatchConfigLogs(tenancyId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error)
+	BatchConfigProgress(taskId int64) (total int64, success int64, err error)
+	BatchConfigDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
+	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
+	CreateParameterLogWithID(log *ParameterLog) error
+	DB() *gorm.DB
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+// It embeds BaseRepository[ParameterSet, string] for standard CRUD on ParameterSet.
+type repository struct {
 	*baserepo.BaseRepository[ParameterSet, string]
 	db *gorm.DB
 }
 
 // NewRepository creates a Repository with the given database connection.
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{
 		BaseRepository: baserepo.New[ParameterSet, string](db, "id"),
 		db:             db,
 	}
@@ -34,7 +71,7 @@ func NewRepository(db *gorm.DB) *Repository {
 // FindParametersByElementId returns all parameter attributes for the given
 // element, joined with the parameter table to ensure only valid parameters
 // are returned.
-func (r *Repository) FindParametersByElementId(elementId int64) ([]ParameterAttributes, error) {
+func (r *repository) FindParametersByElementId(elementId int64) ([]ParameterAttributes, error) {
 	var pas []ParameterAttributes
 	if err := r.db.Joins("JOIN parameter ON parameter.id = parameter_attributes.id").
 		Where("parameter_attributes.element_id = ?", elementId).
@@ -48,7 +85,7 @@ func (r *Repository) FindParametersByElementId(elementId int64) ([]ParameterAttr
 // FindParameterVosByElementId returns enriched ParameterVo for a device by joining
 // parameter_attributes + parameter definition + element_basic_info_parameter (current values).
 // This matches Java's getListParameterForDeviceVO behavior.
-func (r *Repository) FindParameterVosByElementId(elementId int64) ([]ParameterVo, error) {
+func (r *repository) FindParameterVosByElementId(elementId int64) ([]ParameterVo, error) {
 	var vos []ParameterVo
 	err := r.db.Raw(`
 		SELECT
@@ -85,7 +122,7 @@ func (r *Repository) FindParameterVosByElementId(elementId int64) ([]ParameterVo
 
 // FindParameterAttributes returns a single parameter attribute row for the
 // given element and parameter name.
-func (r *Repository) FindParameterAttributes(elementId int64, paramName string) (*ParameterAttributes, error) {
+func (r *repository) FindParameterAttributes(elementId int64, paramName string) (*ParameterAttributes, error) {
 	var pa ParameterAttributes
 	if err := r.db.Where("element_id = ? AND parameter_name = ?", elementId, paramName).First(&pa).Error; err != nil {
 		return nil, err
@@ -94,12 +131,12 @@ func (r *Repository) FindParameterAttributes(elementId int64, paramName string) 
 }
 
 // CreateParameterAttributes inserts a new parameter attribute row.
-func (r *Repository) CreateParameterAttributes(pa *ParameterAttributes) error {
+func (r *repository) CreateParameterAttributes(pa *ParameterAttributes) error {
 	return r.db.Create(pa).Error
 }
 
 // UpdateParameterAttributes saves changes to an existing parameter attribute row.
-func (r *Repository) UpdateParameterAttributes(pa *ParameterAttributes) error {
+func (r *repository) UpdateParameterAttributes(pa *ParameterAttributes) error {
 	return r.db.Save(pa).Error
 }
 
@@ -108,13 +145,13 @@ func (r *Repository) UpdateParameterAttributes(pa *ParameterAttributes) error {
 // ---------------------------------------------------------------------------
 
 // CreateParameterLog inserts a new parameter change log entry.
-func (r *Repository) CreateParameterLog(log *ParameterLog) error {
+func (r *repository) CreateParameterLog(log *ParameterLog) error {
 	return r.db.Create(log).Error
 }
 
 // FindParameterLogs returns a paginated list of parameter change logs for the
 // given element together with the total count.
-func (r *Repository) FindParameterLogs(elementId int64, offset, limit int) ([]ParameterLog, int64, error) {
+func (r *repository) FindParameterLogs(elementId int64, offset, limit int) ([]ParameterLog, int64, error) {
 	var logs []ParameterLog
 	var total int64
 
@@ -136,7 +173,7 @@ func (r *Repository) FindParameterLogs(elementId int64, offset, limit int) ([]Pa
 // ---------------------------------------------------------------------------
 
 // FindParameterSets returns all parameter sets for the given license.
-func (r *Repository) FindParameterSets(licenseId int) ([]ParameterSet, error) {
+func (r *repository) FindParameterSets(licenseId int) ([]ParameterSet, error) {
 	var sets []ParameterSet
 	if err := r.db.Where("license_id = ?", licenseId).Find(&sets).Error; err != nil {
 		return nil, err
@@ -149,7 +186,7 @@ func (r *Repository) FindParameterSets(licenseId int) ([]ParameterSet, error) {
 // ---------------------------------------------------------------------------
 
 // FindParameterTemplates returns all parameter templates for the given tenancy.
-func (r *Repository) FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
+func (r *repository) FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
 	var templates []ParameterTemplate
 	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&templates).Error; err != nil {
 		return nil, err
@@ -158,12 +195,12 @@ func (r *Repository) FindParameterTemplates(tenancyId int) ([]ParameterTemplate,
 }
 
 // CreateParameterTemplate inserts a new parameter template.
-func (r *Repository) CreateParameterTemplate(t *ParameterTemplate) error {
+func (r *repository) CreateParameterTemplate(t *ParameterTemplate) error {
 	return r.db.Create(t).Error
 }
 
 // UpdateParameterTemplate saves changes to an existing parameter template.
-func (r *Repository) UpdateParameterTemplate(t *ParameterTemplate) error {
+func (r *repository) UpdateParameterTemplate(t *ParameterTemplate) error {
 	return r.db.Save(t).Error
 }
 
@@ -172,12 +209,12 @@ func (r *Repository) UpdateParameterTemplate(t *ParameterTemplate) error {
 // ---------------------------------------------------------------------------
 
 // CreateParameterBackupLog inserts a new backup log entry.
-func (r *Repository) CreateParameterBackupLog(log *ParameterBackupLog) error {
+func (r *repository) CreateParameterBackupLog(log *ParameterBackupLog) error {
 	return r.db.Create(log).Error
 }
 
 // FindParameterBackupLogs returns all backup logs for the given element.
-func (r *Repository) FindParameterBackupLogs(elementId int64) ([]ParameterBackupLog, error) {
+func (r *repository) FindParameterBackupLogs(elementId int64) ([]ParameterBackupLog, error) {
 	var logs []ParameterBackupLog
 	if err := r.db.Where("element_id = ?", elementId).Find(&logs).Error; err != nil {
 		return nil, err
@@ -190,17 +227,17 @@ func (r *Repository) FindParameterBackupLogs(elementId int64) ([]ParameterBackup
 // ---------------------------------------------------------------------------
 
 // CreateBatchConfigLog inserts a new batch_configuration_log record.
-func (r *Repository) CreateBatchConfigLog(log *misc.BatchConfigurationLog) error {
+func (r *repository) CreateBatchConfigLog(log *misc.BatchConfigurationLog) error {
 	return r.db.Create(log).Error
 }
 
 // CreateBatchConfigDeviceLog inserts a new batch_configuration_device_log record.
-func (r *Repository) CreateBatchConfigDeviceLog(log *misc.BatchConfigurationDeviceLog) error {
+func (r *repository) CreateBatchConfigDeviceLog(log *misc.BatchConfigurationDeviceLog) error {
 	return r.db.Create(log).Error
 }
 
 // FindBatchConfigLogs returns a paginated list of batch configuration logs.
-func (r *Repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error) {
+func (r *repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error) {
 	var logs []misc.BatchConfigurationLog
 	var total int64
 
@@ -218,7 +255,7 @@ func (r *Repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]mi
 }
 
 // BatchConfigProgress returns (total_devices, success_count) for a batch task.
-func (r *Repository) BatchConfigProgress(taskId int64) (total int64, success int64, err error) {
+func (r *repository) BatchConfigProgress(taskId int64) (total int64, success int64, err error) {
 	type row struct {
 		Total   int64
 		Success int64
@@ -235,7 +272,7 @@ func (r *Repository) BatchConfigProgress(taskId int64) (total int64, success int
 }
 
 // BatchConfigDetail returns per-device results for a batch configuration task.
-func (r *Repository) BatchConfigDetail(taskId int64) ([]BatchConfigTaskDetailVo, error) {
+func (r *repository) BatchConfigDetail(taskId int64) ([]BatchConfigTaskDetailVo, error) {
 	var list []BatchConfigTaskDetailVo
 	err := r.db.Raw(`
 		SELECT ce.device_name   AS device_name,
@@ -259,7 +296,7 @@ func (r *Repository) BatchConfigDetail(taskId int64) ([]BatchConfigTaskDetailVo,
 
 // InsertEventLog creates an event_log row for SetParameterValues and returns
 // its auto-generated ID. Uses a local struct to avoid importing the eventlog package.
-func (r *Repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
+func (r *repository) InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error) {
 	row := struct {
 		Id               int64     `gorm:"primaryKey;autoIncrement"`
 		EventType        string    `gorm:"column:event_type;type:varchar(255)"`
@@ -283,7 +320,7 @@ func (r *Repository) InsertEventLog(eventType string, elementId int64, user stri
 }
 
 // CreateParameterLogWithID inserts a parameter_log with a UUID primary key.
-func (r *Repository) CreateParameterLogWithID(log *ParameterLog) error {
+func (r *repository) CreateParameterLogWithID(log *ParameterLog) error {
 	if log.Id == "" {
 		log.Id = uuid.NewString()
 	}
@@ -291,6 +328,6 @@ func (r *Repository) CreateParameterLogWithID(log *ParameterLog) error {
 }
 
 // DB returns the underlying *gorm.DB.
-func (r *Repository) DB() *gorm.DB {
+func (r *repository) DB() *gorm.DB {
 	return r.db
 }

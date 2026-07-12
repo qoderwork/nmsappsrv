@@ -12,7 +12,7 @@ import (
 
 // Handler provides HTTP handlers for Dashboard endpoints
 type Handler struct {
-	svc *Service
+	svc Service
 }
 
 // NewHandler creates a new Handler

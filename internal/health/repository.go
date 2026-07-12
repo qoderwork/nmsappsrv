@@ -6,18 +6,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository handles database operations for health checks
-type Repository struct {
+// Repository defines the data-access contract for health checks
+type Repository interface {
+	GetMysqlGlobalStatus() (map[string]string, error)
+}
+
+// repository is the concrete GORM-backed implementation of Repository.
+type repository struct {
 	db *gorm.DB
 }
 
-// NewRepository creates a new Repository
-func NewRepository(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+// NewRepository creates a Repository with the given database connection.
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
 }
 
 // GetMysqlGlobalStatus executes SHOW GLOBAL STATUS and returns metrics as a map
-func (r *Repository) GetMysqlGlobalStatus() (map[string]string, error) {
+func (r *repository) GetMysqlGlobalStatus() (map[string]string, error) {
 	rows, err := r.db.Raw("SHOW GLOBAL STATUS").Rows()
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_MYSQL_STATUS_FAILED", 500, "failed to get mysql status")
