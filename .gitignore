@@ -30,3 +30,6 @@ go.work
 .env
 .env.local
 .env.*.local
+
+# runtime logs
+internal/user/logs/nmsappsrv.log
