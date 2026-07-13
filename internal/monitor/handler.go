@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -108,6 +109,39 @@ func (h *Handler) GetMonitorData(c *gin.Context) {
 		return
 	}
 	utils.Success(c, items)
+}
+
+// ---------- MonitorStatistics ----------
+
+func (h *Handler) GetMonitorStatistics(c *gin.Context) {
+	parameterId := c.Query("parameter_id")
+	if parameterId == "" {
+		utils.Error(c, 400, "parameter_id is required")
+		return
+	}
+	var elementIds []int64
+	if s := c.Query("element_ids"); s != "" {
+		for _, part := range strings.Split(s, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			id, err := strconv.ParseInt(part, 10, 64)
+			if err != nil {
+				utils.Error(c, 400, "invalid element_ids")
+				return
+			}
+			elementIds = append(elementIds, id)
+		}
+	}
+	startTime := c.Query("start_time")
+	endTime := c.Query("end_time")
+	stat, err := h.svc.GetMonitorStatistics(parameterId, elementIds, startTime, endTime)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, stat)
 }
 
 // ---------- MonitorElements ----------

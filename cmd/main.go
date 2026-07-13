@@ -452,6 +452,26 @@ func main() {
 	paramScheduler := parameter.NewScheduler(db)
 	mgr.Add(workerTask("param-scheduler", paramScheduler.Start, paramScheduler.Stop))
 
+	// Monitor data ingestion (5-min cron): actively polls devices for each enabled
+	// monitor task and persists samples into monitor_data via the tr069 GPV response
+	// hook (mirrors Java MonitorValueTask + GetCpeStatisticMessageProcessor).
+	tr069.DefaultSender = tr069OpSender
+	monitorCollector := monitor.NewCollector(db)
+	tr069.MonitorGPVCallback = monitorCollector.HandleGPVResponse
+	if err := mainScheduler.AddJob("monitor-collect", "0 */5 * * * *", monitorCollector.RunOnce); err != nil {
+		logger.Errorf("failed to register monitor-collect cron job: %v", err)
+	}
+	// Retention: prune monitor_data older than 90 days (daily at 03:10).
+	if err := mainScheduler.AddJob("monitor-data-retention", "0 10 3 * * *", func() {
+		if n, err := monitorCollector.Cleanup(time.Now().AddDate(0, 0, -90)); err != nil {
+			logger.Errorf("monitor data retention failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("monitor data retention pruned %d samples", n)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register monitor-data-retention cron job: %v", err)
+	}
+
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)
 	resourceCollector := resources.NewCollector()
 	mgr.Add(workerTask("resource-collector", resourceCollector.Start, resourceCollector.Stop))

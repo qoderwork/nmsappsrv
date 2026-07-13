@@ -8,6 +8,23 @@ import (
 	"nmsappsrv/pkg/apperror"
 )
 
+// MonitorStatPoint is a single monitor_data sample in a statistics series.
+type MonitorStatPoint struct {
+	ElementId  int64     `json:"element_id"`
+	SampleTime time.Time `json:"sample_time"`
+	Value      float64   `json:"value"`
+}
+
+// MonitorStatistics is the aggregated time-series for a parameter over a window.
+type MonitorStatistics struct {
+	ParameterId string            `json:"parameter_id"`
+	Points      []MonitorStatPoint `json:"points"`
+	Avg         float64           `json:"avg"`
+	Min         float64           `json:"min"`
+	Max         float64           `json:"max"`
+	Count       int               `json:"count"`
+}
+
 // Service defines the monitor business-logic contract.
 type Service interface {
 	ListMonitorTasks(licenseId int) ([]MonitorTask, error)
@@ -16,6 +33,7 @@ type Service interface {
 	UpdateMonitorTask(t *MonitorTask) error
 	DeleteMonitorTask(id int) error
 	GetMonitorData(elementId int64, parameterId string, startTime, endTime string) ([]MonitorData, error)
+	GetMonitorStatistics(parameterId string, elementIds []int64, startTime, endTime string) (*MonitorStatistics, error)
 	GetMonitorElements(taskId int) ([]MonitorElements, error)
 	SaveMonitorElements(taskId int, elementIds []int64) error
 	GetMonitorParameters(taskId int) ([]MonitorParameters, error)
@@ -71,6 +89,48 @@ func (s *service) GetMonitorData(elementId int64, parameterId string, startTime,
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid end_time format, expected RFC3339")
 	}
 	return s.repo.FindMonitorData(elementId, parameterId, st, et)
+}
+
+// GetMonitorStatistics returns the aggregated time-series for a parameter across the
+// given elements and time window (mirrors Java getMonitorStatistics).
+func (s *service) GetMonitorStatistics(parameterId string, elementIds []int64, startTime, endTime string) (*MonitorStatistics, error) {
+	st, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		return nil, apperror.ErrInvalidInput.WithMessage("invalid start_time format, expected RFC3339")
+	}
+	et, err := time.Parse(time.RFC3339, endTime)
+	if err != nil {
+		return nil, apperror.ErrInvalidInput.WithMessage("invalid end_time format, expected RFC3339")
+	}
+	rows, err := s.repo.FindMonitorDataSeries(parameterId, elementIds, st, et)
+	if err != nil {
+		return nil, err
+	}
+	stat := &MonitorStatistics{ParameterId: parameterId, Points: make([]MonitorStatPoint, 0, len(rows))}
+	if len(rows) == 0 {
+		return stat, nil
+	}
+	var sum float64
+	stat.Min = *rows[0].Value
+	stat.Max = *rows[0].Value
+	for _, r := range rows {
+		v := *r.Value
+		stat.Points = append(stat.Points, MonitorStatPoint{
+			ElementId:  *r.ElementId,
+			SampleTime: *r.SampleTime,
+			Value:      v,
+		})
+		sum += v
+		if v < stat.Min {
+			stat.Min = v
+		}
+		if v > stat.Max {
+			stat.Max = v
+		}
+	}
+	stat.Count = len(rows)
+	stat.Avg = sum / float64(stat.Count)
+	return stat, nil
 }
 
 // ---------- MonitorElements ----------

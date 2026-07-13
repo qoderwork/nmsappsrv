@@ -160,6 +160,14 @@ func (ep *EventProcessor) processGetParameterValuesResponse(ctx context.Context,
 		return
 	}
 
+	// If this GPV was issued by the monitor collector, persist the samples into
+	// monitor_data via the registered callback (set by the monitor package).
+	if opID := extractOperationID(eventLog); opID != "" && strings.HasPrefix(opID, "monitor:") {
+		if MonitorGPVCallback != nil {
+			MonitorGPVCallback(sn, opID, params)
+		}
+	}
+
 	// Look up device to get neId for lock key
 	var cpe device.CpeElement
 	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error; err != nil {
@@ -459,4 +467,19 @@ func (ep *EventProcessor) processFault(ctx context.Context, soapXml string, sn s
 			}
 		}
 	}
+}
+
+// extractOperationID returns the operation_id embedded in an event_log's
+// command_track_data JSON, used to correlate GPV responses back to their issuer.
+func extractOperationID(eventLog *eventlog.EventLog) string {
+	if eventLog == nil || eventLog.CommandTrackData == nil {
+		return ""
+	}
+	var track struct {
+		OperationID string `json:"operation_id"`
+	}
+	if err := json.Unmarshal([]byte(*eventLog.CommandTrackData), &track); err != nil {
+		return ""
+	}
+	return track.OperationID
 }

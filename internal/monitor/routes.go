@@ -11,6 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.PUT("/monitor-tasks/:id", h.UpdateMonitorTask)
 	rg.DELETE("/monitor-tasks/:id", h.DeleteMonitorTask)
 	rg.GET("/monitor-data", h.GetMonitorData)
+	rg.GET("/monitor-statistics", h.GetMonitorStatistics)
 	rg.GET("/monitor-elements", h.GetMonitorElements)
 	rg.PUT("/monitor-elements", h.SaveMonitorElements)
 	rg.GET("/monitor-parameters", h.GetMonitorParameters)

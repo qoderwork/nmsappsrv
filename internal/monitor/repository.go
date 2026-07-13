@@ -23,7 +23,11 @@ type Repository interface {
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[MonitorTask], error)
 	FindMonitorTasks(licenseId int) ([]MonitorTask, error)
+	FindEnabledMonitorTasks() ([]MonitorTask, error)
 	FindMonitorData(elementId int64, parameterId string, startTime, endTime time.Time) ([]MonitorData, error)
+	FindMonitorDataSeries(parameterId string, elementIds []int64, start, end time.Time) ([]MonitorData, error)
+	SaveMonitorData(rows []MonitorData) error
+	DeleteMonitorDataBefore(before time.Time) (int64, error)
 	FindMonitorElements(taskId int) ([]MonitorElements, error)
 	SaveMonitorElements(taskId int, elementIds []int64) error
 	FindMonitorParameters(taskId int) ([]MonitorParameters, error)
@@ -54,12 +58,45 @@ func (r *repository) FindMonitorTasks(licenseId int) ([]MonitorTask, error) {
 	return items, err
 }
 
+// FindEnabledMonitorTasks returns all monitor tasks with enable = true.
+func (r *repository) FindEnabledMonitorTasks() ([]MonitorTask, error) {
+	var items []MonitorTask
+	err := r.db.Where("enable = ?", true).Find(&items).Error
+	return items, err
+}
+
+// SaveMonitorData batch-inserts monitor_data sample rows.
+func (r *repository) SaveMonitorData(rows []MonitorData) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return r.db.Create(&rows).Error
+}
+
+// DeleteMonitorDataBefore prunes monitor_data samples older than the given time.
+func (r *repository) DeleteMonitorDataBefore(before time.Time) (int64, error) {
+	res := r.db.Where("sample_time < ?", before).Delete(&MonitorData{})
+	return res.RowsAffected, res.Error
+}
+
 // ---------- MonitorData ----------
 
 func (r *repository) FindMonitorData(elementId int64, parameterId string, startTime, endTime time.Time) ([]MonitorData, error) {
 	var items []MonitorData
 	err := r.db.Where("element_id = ? AND parameter_id = ? AND sample_time BETWEEN ? AND ?",
 		elementId, parameterId, startTime, endTime).Find(&items).Error
+	return items, err
+}
+
+// FindMonitorDataSeries returns monitor_data samples for a parameter across the given
+// elements and time window, ordered by sample_time (used by getMonitorStatistics).
+func (r *repository) FindMonitorDataSeries(parameterId string, elementIds []int64, start, end time.Time) ([]MonitorData, error) {
+	var items []MonitorData
+	q := r.db.Where("parameter_id = ? AND sample_time BETWEEN ? AND ?", parameterId, start, end)
+	if len(elementIds) > 0 {
+		q = q.Where("element_id IN ?", elementIds)
+	}
+	err := q.Order("sample_time ASC").Find(&items).Error
 	return items, err
 }
 
