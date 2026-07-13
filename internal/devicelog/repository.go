@@ -59,14 +59,14 @@ func (r *repository) FindDeviceRootNode(elementId int64) (*string, error) {
 }
 
 func (r *repository) DeleteByElementId(elementId int64) error {
-	return r.db.Where("element_id = ?", elementId).Delete(&NeLog{}).Error
+	return r.db.Where("ne_id = ?", elementId).Delete(&NeLog{}).Error
 }
 
 func (r *repository) FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error) {
 	var logs []NeLog
 	var total int64
 
-	query := r.db.Where("element_id = ?", elementId)
+	query := r.db.Where("ne_id = ?", elementId)
 	query.Model(&NeLog{}).Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&logs).Error
@@ -80,7 +80,7 @@ func (r *repository) FindByElementId(elementId int64, offset, limit int) ([]NeLo
 
 func (r *repository) FindAllByElementId(elementId int64) ([]NeLog, error) {
 	var logs []NeLog
-	err := r.db.Where("element_id = ?", elementId).Find(&logs).Error
+	err := r.db.Where("ne_id = ?", elementId).Find(&logs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +93,11 @@ func (r *repository) FindByFilter(elementId *int64, deviceType *string, status *
 
 	query := r.db.Table("ne_log").
 		Select("ne_log.*, cpe_element.device_name, cpe_element.serial_number").
-		Joins("LEFT JOIN cpe_element ON ne_log.element_id = cpe_element.ne_neid").
+		Joins("LEFT JOIN cpe_element ON ne_log.ne_id = cpe_element.ne_neid").
 		Where("cpe_element.deleted = ?", false)
 
 	if elementId != nil {
-		query = query.Where("ne_log.element_id = ?", *elementId)
+		query = query.Where("ne_log.ne_id = ?", *elementId)
 	}
 	if deviceType != nil && *deviceType != "" {
 		query = query.Where("cpe_element.device_type = ?", *deviceType)
