@@ -26,11 +26,11 @@ import (
 type Service interface {
 	GetDevice(id int64) (*CpeElement, error)
 	ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
-	CreateDevice(elem *CpeElement) error
+	CreateDevice(elem *CpeElement, licenseId int) error
 	UpdateDevice(elem *CpeElement) error
 	DeleteDevice(id int64) error
 	ListGroups(licenseId int) ([]DeviceGroup, error)
-	CreateGroup(g *DeviceGroup) error
+	CreateGroup(g *DeviceGroup, licenseId int) error
 	UpdateGroup(g *DeviceGroup) error
 	DeleteGroup(id string) error
 	ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error)
@@ -88,7 +88,10 @@ func (s *service) ListDevices(licenseId int, keyword string, page, pageSize int)
 }
 
 // CreateDevice applies sensible defaults and persists a new device.
-func (s *service) CreateDevice(elem *CpeElement) error {
+func (s *service) CreateDevice(elem *CpeElement, licenseId int) error {
+	if licenseId > 0 {
+		elem.LicenseId = &licenseId
+	}
 	elem.LoadedBasicInfo = false
 	elem.IsInitialized = false
 	elem.Deleted = false
@@ -131,7 +134,10 @@ func (s *service) ListGroups(licenseId int) ([]DeviceGroup, error) {
 
 // CreateGroup generates a random 32-char hex ID when none is supplied, then
 // persists the group.
-func (s *service) CreateGroup(g *DeviceGroup) error {
+func (s *service) CreateGroup(g *DeviceGroup, licenseId int) error {
+	if licenseId > 0 {
+		g.LicenseId = &licenseId
+	}
 	if g.Id == "" {
 		g.Id = generateHexID()
 	}
@@ -422,7 +428,7 @@ func (s *service) checkDeviceQuota(licenseId int, deviceType string, count int) 
 	}
 
 	// Read quota from license table
-	quota, err := s.repo.GetLicenseQuota(licenseId)
+	quota, err := s.repo.GetLicenseQuota(licenseId, deviceType)
 	// If we can't read quota, skip check
 	if err != nil || quota <= 0 {
 		return nil

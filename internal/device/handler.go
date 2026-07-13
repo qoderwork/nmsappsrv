@@ -100,7 +100,8 @@ func (h *Handler) CreateDevice(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.CreateDevice(&elem); err != nil {
+	licenseId := middleware.GetLicenseId(c)
+	if err := h.svc.CreateDevice(&elem, licenseId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -191,7 +192,8 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.CreateGroup(&g); err != nil {
+	licenseId := middleware.GetLicenseId(c)
+	if err := h.svc.CreateGroup(&g, licenseId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to create group")
 		return
 	}

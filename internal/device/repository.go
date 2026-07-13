@@ -28,7 +28,7 @@ type Repository interface {
 	AddElementsToGroup(groupId string, elementIds []int64) error
 
 	// System/license lookups previously done via a raw *gorm.DB in the service.
-	GetLicenseQuota(licenseId int) (int, error)
+	GetLicenseQuota(licenseId int, deviceType string) (int, error)
 	CountNonDeleted(licenseId int, deviceType string) (int64, error)
 	GetLocationEncryptionKey() (string, error)
 }
@@ -240,10 +240,19 @@ func (r *repository) AddElementsToGroup(groupId string, elementIds []int64) erro
 // System / license lookups (route former raw-db access through the repo)
 // ---------------------------------------------------------------------------
 
-// GetLicenseQuota reads the device quota integer from the license table.
-func (r *repository) GetLicenseQuota(licenseId int) (int, error) {
+// GetLicenseQuota reads the device quota for a given device type from the
+// license (tenancy) table. The column is selected based on deviceType:
+// "enb" -> enb_quantity, "gnb" -> gnb_quantity, default -> cpe_quantity.
+func (r *repository) GetLicenseQuota(licenseId int, deviceType string) (int, error) {
+	quotaCol := "cpe_quantity"
+	switch deviceType {
+	case "enb":
+		quotaCol = "enb_quantity"
+	case "gnb":
+		quotaCol = "gnb_quantity"
+	}
 	var quota int
-	if err := r.db.Table("license").Where("id = ?", licenseId).Scan(&quota).Error; err != nil {
+	if err := r.db.Table("license").Select(quotaCol).Where("id = ?", licenseId).Scan(&quota).Error; err != nil {
 		return 0, err
 	}
 	return quota, nil

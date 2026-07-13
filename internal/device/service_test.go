@@ -31,7 +31,7 @@ type mockRepository struct {
 	countNonDeletedByDeviceTypeFn func(deviceType string, licenseId int, generation string) int64
 	findDefaultGroupsFn           func(licenseId int) ([]DeviceGroup, error)
 	addElementsToGroupFn          func(groupId string, elementIds []int64) error
-	getLicenseQuotaFn            func(licenseId int) (int, error)
+	getLicenseQuotaFn            func(licenseId int, deviceType string) (int, error)
 	countNonDeletedFn            func(licenseId int, deviceType string) (int64, error)
 	getLocationEncryptionKeyFn   func() (string, error)
 }
@@ -155,9 +155,9 @@ func (m *mockRepository) AddElementsToGroup(groupId string, elementIds []int64) 
 	return nil
 }
 
-func (m *mockRepository) GetLicenseQuota(licenseId int) (int, error) {
+func (m *mockRepository) GetLicenseQuota(licenseId int, deviceType string) (int, error) {
 	if m.getLicenseQuotaFn != nil {
-		return m.getLicenseQuotaFn(licenseId)
+		return m.getLicenseQuotaFn(licenseId, deviceType)
 	}
 	return 0, nil
 }
@@ -296,7 +296,7 @@ func TestService_CreateDevice(t *testing.T) {
 		Deleted:         true, // should be overridden to false
 	}
 
-	err := svc.CreateDevice(elem)
+	err := svc.CreateDevice(elem, 7)
 	assert.NoError(t, err)
 
 	// Verify the service applied default values.
@@ -304,6 +304,9 @@ func TestService_CreateDevice(t *testing.T) {
 	assert.False(t, capturedElem.LoadedBasicInfo)
 	assert.False(t, capturedElem.IsInitialized)
 	assert.False(t, capturedElem.Deleted)
+	// Verify the tenant license id is injected from the auth context.
+	assert.NotNil(t, capturedElem.LicenseId)
+	assert.Equal(t, 7, *capturedElem.LicenseId)
 }
 
 func TestService_CreateDevice_RepoError(t *testing.T) {
@@ -314,7 +317,7 @@ func TestService_CreateDevice_RepoError(t *testing.T) {
 	}
 	svc := newTestService(repo)
 
-	err := svc.CreateDevice(&CpeElement{})
+	err := svc.CreateDevice(&CpeElement{}, 7)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "db connection lost")
 }

@@ -20,11 +20,11 @@ import (
 type mockService struct {
 	getDeviceFn     func(id int64) (*CpeElement, error)
 	listDevicesFn   func(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
-	createDeviceFn  func(elem *CpeElement) error
+	createDeviceFn  func(elem *CpeElement, licenseId int) error
 	updateDeviceFn  func(elem *CpeElement) error
 	deleteDeviceFn  func(id int64) error
 	listGroupsFn    func(licenseId int) ([]DeviceGroup, error)
-	createGroupFn   func(g *DeviceGroup) error
+	createGroupFn   func(g *DeviceGroup, licenseId int) error
 	updateGroupFn   func(g *DeviceGroup) error
 	deleteGroupFn   func(id string) error
 	importDevicesFn func(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error)
@@ -44,9 +44,9 @@ func (m *mockService) ListDevices(licenseId int, keyword string, page, pageSize 
 	return nil, 0, nil
 }
 
-func (m *mockService) CreateDevice(elem *CpeElement) error {
+func (m *mockService) CreateDevice(elem *CpeElement, licenseId int) error {
 	if m.createDeviceFn != nil {
-		return m.createDeviceFn(elem)
+		return m.createDeviceFn(elem, licenseId)
 	}
 	return nil
 }
@@ -72,9 +72,9 @@ func (m *mockService) ListGroups(licenseId int) ([]DeviceGroup, error) {
 	return nil, nil
 }
 
-func (m *mockService) CreateGroup(g *DeviceGroup) error {
+func (m *mockService) CreateGroup(g *DeviceGroup, licenseId int) error {
 	if m.createGroupFn != nil {
-		return m.createGroupFn(g)
+		return m.createGroupFn(g, licenseId)
 	}
 	return nil
 }
