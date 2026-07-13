@@ -326,36 +326,36 @@ func (r *Repository) UpdateAlarmComment(id int64, comment string) error {
 // SystemConfig – alarm sync config
 // ---------------------------------------------------------------------------
 
-// GetSystemConfig reads a system_config entry by config_key.
+// GetSystemConfig reads a system_config entry by id (the key).
 // Returns ("", nil) when the key does not exist.
 func (r *Repository) GetSystemConfig(key string) (string, error) {
 	var cfg SystemConfig
-	if err := r.db.Where("config_key = ?", key).First(&cfg).Error; err != nil {
+	if err := r.db.Where("id = ?", key).First(&cfg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}
 		return "", err
 	}
-	if cfg.Value == nil {
+	if cfg.Config == nil {
 		return "", nil
 	}
-	return *cfg.Value, nil
+	return *cfg.Config, nil
 }
 
-// SaveSystemConfig upserts a system_config entry by config_key.
+// SaveSystemConfig upserts a system_config entry by id (the key).
 func (r *Repository) SaveSystemConfig(key, value string) error {
 	var cfg SystemConfig
-	err := r.db.Where("config_key = ?", key).First(&cfg).Error
+	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			cfg = SystemConfig{
-				Key:   &key,
-				Value: &value,
+				Id:     key,
+				Config: &value,
 			}
 			return r.db.Create(&cfg).Error
 		}
 		return err
 	}
-	cfg.Value = &value
+	cfg.Config = &value
 	return r.db.Save(&cfg).Error
 }

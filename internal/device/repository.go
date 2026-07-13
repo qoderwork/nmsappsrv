@@ -279,10 +279,20 @@ func (r *repository) CountNonDeleted(licenseId int, deviceType string) (int64, e
 }
 
 // GetLocationEncryptionKey reads the AES key string from system_config.
+// The live table uses an "id" varchar PK and a "config" longtext column, so the
+// key is matched against id and the value is read from config.
 func (r *repository) GetLocationEncryptionKey() (string, error) {
-	var configValue string
-	if err := r.db.Table("system_config").Where("config_key = ?", "location_encryption_key").Limit(1).Scan(&configValue).Error; err != nil {
+	var row struct {
+		Config *string `gorm:"column:config"`
+	}
+	if err := r.db.Table("system_config").
+		Where("id = ?", "location_encryption_key").
+		Limit(1).
+		Scan(&row).Error; err != nil {
 		return "", err
 	}
-	return configValue, nil
+	if row.Config == nil {
+		return "", nil
+	}
+	return *row.Config, nil
 }

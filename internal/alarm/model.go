@@ -146,10 +146,11 @@ type AlarmTemplate struct {
 func (AlarmTemplate) TableName() string { return "alarm_template" }
 
 // SystemConfig maps to the system_config table for key-value configuration storage.
+// The live table (migrated by site.SystemConfig) uses an "id" varchar PK and a
+// "config" longtext column — not config_key/config_value.
 type SystemConfig struct {
-	Id    int     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex" json:"key"`
-	Value *string `gorm:"column:config_value;type:longtext" json:"value"`
+	Id     string  `gorm:"primaryKey;type:varchar(32)" json:"id"`
+	Config *string `gorm:"column:config;type:longtext" json:"config"`
 }
 
 func (SystemConfig) TableName() string { return "system_config" }
