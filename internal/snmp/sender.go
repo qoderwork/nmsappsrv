@@ -21,8 +21,11 @@ func SendTrap(connInfo SnmpConnectionInfo, params []SnmpParameter) error {
 	}
 
 	switch connInfo.Version {
-	case 1:
+	case 0:
 		snmpClient.Version = gosnmp.Version1
+		snmpClient.Community = connInfo.Community
+	case 1:
+		snmpClient.Version = gosnmp.Version2c
 		snmpClient.Community = connInfo.Community
 	case 2:
 		snmpClient.Version = gosnmp.Version2c

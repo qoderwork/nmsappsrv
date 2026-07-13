@@ -4,7 +4,7 @@ package snmp
 type SnmpConnectionInfo struct {
 	IP                     string `json:"ip"`
 	Port                   int    `json:"port"`
-	Version                int    `json:"version"` // 1=v1, 2=v2c, 3=v3
+	Version                int    `json:"version"` // 0=v1, 1=v2c, 3=v3 (snmp4j 整数约定)
 	Community              string `json:"community"`
 	Username               string `json:"username"`
 	Password               string `json:"password"`
