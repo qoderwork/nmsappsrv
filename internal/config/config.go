@@ -22,6 +22,7 @@ type Config struct {
 	HA            HAConfig            `mapstructure:"ha"`
 	PlatformFiles PlatformFilesConfig `mapstructure:"platform_files"`
 	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat"`
+	Upgrade       UpgradeConfig       `mapstructure:"upgrade"`
 }
 
 // HAConfig holds High Availability configuration for VIP monitoring.
@@ -117,6 +118,14 @@ type HeartbeatConfig struct {
 	Enabled         bool   `mapstructure:"enabled"`
 	IntervalSeconds int    `mapstructure:"interval_seconds"`
 	SASEndpoint     string `mapstructure:"sas_endpoint"`
+}
+
+// UpgradeConfig holds firmware-upgrade file storage settings.
+type UpgradeConfig struct {
+	// UploadDir is the local directory where uploaded upgrade files are persisted.
+	// The absolute path is stored in the upgrade_file.file_path column and served
+	// to devices via the file-server endpoint.
+	UploadDir string `mapstructure:"upload_dir" yaml:"upload_dir"`
 }
 
 // PlatformFilesConfig holds configurable paths for platform file downloads

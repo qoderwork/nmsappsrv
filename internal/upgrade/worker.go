@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
@@ -17,6 +18,17 @@ import (
 )
 
 const upgradeQueue = "queue:upgrade"
+
+// deviceDownloadURL builds the URL handed to a device (CPE) in the TR-069 Download
+// command. It must be reachable by the device, so it is based on the configured
+// file-server IP, not a local disk path.
+func deviceDownloadURL(fileId int) string {
+	base := "http://localhost" // default; overridden by config.tr069.file_server_ip
+	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
+		base = config.Cfg.TR069.FileServerIp
+	}
+	return fmt.Sprintf("%s/acs-file-server/upgrade/downloadFile/%d", base, fileId)
+}
 
 // UpgradeMessage is the JSON payload pushed to the upgrade queue.
 type UpgradeMessage struct {
@@ -150,10 +162,6 @@ func (w *UpgradeWorker) handleUpgrade(ctx context.Context, msg *UpgradeMessage, 
 		return
 	}
 
-	filePath := ""
-	if upFile.FilePath != nil {
-		filePath = *upFile.FilePath
-	}
 	fileSize := 0
 	if upFile.FileSize != nil {
 		fileSize = int(*upFile.FileSize)
@@ -168,7 +176,7 @@ func (w *UpgradeWorker) handleUpgrade(ctx context.Context, msg *UpgradeMessage, 
 	dl := &soap.Download{
 		CommandKey: commandKey,
 		FileType:   "1 Firmware Upgrade Image",
-		URL:        filePath,
+		URL:        deviceDownloadURL(upFile.Id),
 		FileSize:   fileSize,
 	}
 
@@ -200,10 +208,6 @@ func (w *UpgradeWorker) handleRollback(ctx context.Context, msg *UpgradeMessage,
 		return
 	}
 
-	filePath := ""
-	if upFile.FilePath != nil {
-		filePath = *upFile.FilePath
-	}
 	fileSize := 0
 	if upFile.FileSize != nil {
 		fileSize = int(*upFile.FileSize)
@@ -217,7 +221,7 @@ func (w *UpgradeWorker) handleRollback(ctx context.Context, msg *UpgradeMessage,
 	dl := &soap.Download{
 		CommandKey: commandKey,
 		FileType:   "1 Firmware Upgrade Image",
-		URL:        filePath,
+		URL:        deviceDownloadURL(upFile.Id),
 		FileSize:   fileSize,
 	}
 

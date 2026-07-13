@@ -386,6 +386,7 @@ func main() {
 	// Public routes (no auth)
 	health.RegisterPublicRoutes(router, healthH)
 	cacert.RegisterPublicRoutes(router, cacertH)
+	upgrade.RegisterPublicRoutes(router, upgradeH)
 
 	// ========== REST API (Northbound) — offset-based pagination ==========
 	rest := router.Group("/api/rest/v1")

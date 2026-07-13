@@ -52,3 +52,10 @@ func RegisterShutdownRoutes(rg *gin.RouterGroup, h *ShutdownHandler) {
 	rg.DELETE("/shutdown-tasks/:id", h.DeleteShutdownTask)
 	rg.GET("/shutdown-tasks/:id/results", h.ListShutdownResults)
 }
+
+// RegisterPublicRoutes registers device-facing (no web-auth) upgrade file routes.
+// The firmware is served to CPEs via TR-069 Download, which the device fetches
+// directly over HTTP, so no bearer token is involved.
+func RegisterPublicRoutes(rg gin.IRouter, h *Handler) {
+	rg.GET("/acs-file-server/upgrade/downloadFile/:id", h.DownloadUpgradeFileRaw)
+}

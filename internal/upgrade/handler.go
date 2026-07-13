@@ -3,7 +3,9 @@ package upgrade
 import (
 	"io"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -41,15 +43,62 @@ func (h *Handler) ListUpgradeFiles(c *gin.Context) {
 	utils.Paginated(c, data, total, page, pageSize)
 }
 
-// UploadUpgradeFile handles POST /files
+// UploadUpgradeFile handles POST /upgrade-files
+// Accepts a multipart form with the file under the "file" field plus optional
+// metadata form fields (version, device_type, product_type, file_type). The file
+// bytes are persisted to local storage and the absolute path is recorded so the
+// worker can hand a device-reachable URL to TR-069 Download.
 func (h *Handler) UploadUpgradeFile(c *gin.Context) {
-	var f UpgradeFile
-	if err := c.ShouldBindJSON(&f); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "file is required")
 		return
 	}
 
-	if err := h.svc.UploadUpgradeFile(&f); err != nil {
+	src, err := fileHeader.Open()
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to open uploaded file")
+		return
+	}
+	defer src.Close()
+
+	data, err := io.ReadAll(src)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to read uploaded file")
+		return
+	}
+
+	tenancyId := middleware.GetLicenseId(c)
+	username := middleware.GetUsername(c)
+
+	storedPath, err := saveUpgradeFile(tenancyId, fileHeader.Filename, data)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to persist upgrade file: "+err.Error())
+		return
+	}
+
+	now := time.Now()
+	fileName := fileHeader.Filename
+	version := c.PostForm("version")
+	deviceType := c.PostForm("device_type")
+	productType := c.PostForm("product_type")
+	fileType := c.PostForm("file_type")
+
+	f := &UpgradeFile{
+		FileName:         &fileName,
+		FilePath:         &storedPath,
+		Version:          &version,
+		DeviceType:       &deviceType,
+		ProductType:      &productType,
+		FileType:         &fileType,
+		FileSize:         int64Ptr(int64(len(data))),
+		OriginalFileName: &fileName,
+		TenancyId:        &tenancyId,
+		User:             &username,
+		UploadTime:       &now,
+	}
+
+	if err := h.svc.UploadUpgradeFile(f); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to upload upgrade file")
 		return
 	}
@@ -473,6 +522,38 @@ func (h *Handler) DownloadUpgradeFile(c *gin.Context) {
 	c.File(filePath)
 }
 
+// DownloadUpgradeFileRaw serves the upgrade file bytes to devices (CPE) over the
+// file-server endpoint. It is device-facing (no web-auth) and is the URL handed to
+// TR-069 Download, so the device can fetch the firmware directly.
+func (h *Handler) DownloadUpgradeFileRaw(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid file id")
+		return
+	}
+
+	file, err := h.svc.ViewUpgradeFile(id)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, "upgrade file not found")
+		return
+	}
+
+	filePath := ""
+	if file.FilePath != nil {
+		filePath = *file.FilePath
+	}
+	if filePath == "" {
+		utils.Error(c, http.StatusNotFound, "upgrade file not available")
+		return
+	}
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		utils.Error(c, http.StatusNotFound, "upgrade file not found on disk")
+		return
+	}
+
+	c.File(filePath)
+}
+
 // ViewUpgradeFile handles GET /upgrade-files/:id
 func (h *Handler) ViewUpgradeFile(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -542,7 +623,10 @@ func (h *Handler) UploadUpgradeFileByPiecemeal(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.UploadUpgradeFileByPiecemeal(&req, chunkData); err != nil {
+	tenancyId := middleware.GetLicenseId(c)
+	username := middleware.GetUsername(c)
+
+	if err := h.svc.UploadUpgradeFileByPiecemeal(&req, chunkData, tenancyId, username); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

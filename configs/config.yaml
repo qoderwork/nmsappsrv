@@ -72,3 +72,6 @@ platform_files:
   rsa_public_key_path: "./cert/password/publicKey.pem"
   nms_manual_doc_path: "./docs/nms_manual.pdf"
   platform_log_dir: "./logs/platform"
+
+upgrade:
+  upload_dir: ./data/upgrade-files

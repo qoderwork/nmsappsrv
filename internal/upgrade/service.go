@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -52,7 +53,7 @@ type Service interface {
 	DownloadUpgradeFile(id int) (*UpgradeFile, error)
 	ViewUpgradeFile(id int) (*UpgradeFile, error)
 	UpdateUpgradeFile(f *UpgradeFile) error
-	UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte) error
+	UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenancyId int, user string) error
 }
 
 // service is the concrete implementation of Service.
@@ -801,7 +802,10 @@ func (s *service) UpdateUpgradeFile(f *UpgradeFile) error {
 }
 
 // UploadUpgradeFileByPiecemeal handles chunked file upload.
-func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte) error {
+// Each chunk is cached in Redis; once every chunk has arrived the chunks are
+// reassembled, persisted to local storage, and the absolute path is recorded so
+// the worker can hand a device-reachable URL to TR-069 Download.
+func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenancyId int, user string) error {
 	ctx := context.Background()
 
 	// Store chunk in Redis with a key based on uploadId and chunk index
@@ -820,15 +824,36 @@ func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chun
 	// Check if all chunks are uploaded
 	chunks := redis.HGetAll(ctx, metaKey)
 	if len(chunks) >= req.TotalChunks {
-		// All chunks received - assemble file record
+		// All chunks received - assemble and persist to local storage.
+		var buf bytes.Buffer
+		for i := 0; i < req.TotalChunks; i++ {
+			ck := fmt.Sprintf("upgrade_chunk:%s:%d", req.UploadId, i)
+			data, err := redis.Get(ctx, ck)
+			if err != nil {
+				return fmt.Errorf("missing chunk %d: %w", i, err)
+			}
+			if _, err := buf.Write([]byte(data)); err != nil {
+				return fmt.Errorf("failed to assemble chunk %d: %w", i, err)
+			}
+		}
+
+		storedPath, err := saveUpgradeFile(tenancyId, req.FileName, buf.Bytes())
+		if err != nil {
+			return fmt.Errorf("failed to persist assembled file: %w", err)
+		}
+
 		now := time.Now()
 		file := &UpgradeFile{
-			FileName:    &req.FileName,
-			Version:     &req.Version,
-			DeviceType:  &req.DeviceType,
-			FileSize:    &req.TotalSize,
-			UploadTime:  &now,
-			ProductType: &req.ProductType,
+			FileName:         &req.FileName,
+			FilePath:         &storedPath,
+			Version:          &req.Version,
+			DeviceType:       &req.DeviceType,
+			FileSize:         &req.TotalSize,
+			UploadTime:       &now,
+			ProductType:      &req.ProductType,
+			OriginalFileName: &req.FileName,
+			TenancyId:        &tenancyId,
+			User:             &user,
 		}
 		if err := s.repo.Create(file); err != nil {
 			return fmt.Errorf("failed to create upgrade file record: %w", err)
