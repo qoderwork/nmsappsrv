@@ -38,7 +38,7 @@ func (h *Handler) GetConfig(c *gin.Context) {
 	utils.Success(c, cfg)
 }
 
-// SaveConfig saves the device auth configuration.
+// SaveConfig saves the device auth configuration for the current tenant.
 func (h *Handler) SaveConfig(c *gin.Context) {
 	var cfg DeviceAuthConfig
 	if err := c.ShouldBindJSON(&cfg); err != nil {
@@ -46,7 +46,10 @@ func (h *Handler) SaveConfig(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.SaveConfig(&cfg); err != nil {
+	licenseId, _ := c.Get("license_id")
+	lid, _ := licenseId.(string)
+
+	if err := h.svc.SaveConfig(&cfg, lid); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
