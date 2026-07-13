@@ -247,7 +247,7 @@ func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, user
 		existing, _ := s.repo.FindTimerByElementId(int64(eid))
 		if existing != nil {
 			existing.Deadline = &deadline
-			existing.SshStatus = strPtr("1")
+			existing.SshStatus = strPtr("0") // SSH_STATUS_DISENABLE, aligned with Java buildSshAccessTimerTask
 			existing.LatestModifyTime = &now
 			s.repo.UpdateTimer(existing)
 		} else {
@@ -255,7 +255,7 @@ func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, user
 				TenancyName:      &tenancyName,
 				TenancyId:        &tenancyId,
 				ElementId:        int64Ptr(int64(eid)),
-				SshStatus:        strPtr("1"),
+				SshStatus:        strPtr("0"), // SSH_STATUS_DISENABLE, aligned with Java buildSshAccessTimerTask
 				DeviceName:       &deviceName,
 				SerialNumber:     &sn,
 				Deadline:         &deadline,
