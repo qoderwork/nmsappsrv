@@ -21,7 +21,7 @@ type Service interface {
 	GetCaFileByID(ctx context.Context, id int) (*CaFile, error)
 	CreateCaFileRecord(ctx context.Context, fileName, url, description, createBy string) error
 	GetCaFilePath() string
-	SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string) error
+	SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string, tenancyId int) error
 	ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]map[string]interface{}, int64, error)
 	GetCaTaskDetail(ctx context.Context, id int) (map[string]interface{}, error)
 	DeleteCaTasks(ctx context.Context, ids []int) error
@@ -121,7 +121,7 @@ func (s *service) GetCaFilePath() string {
 // ---------- CaTask operations ----------
 
 // SaveCaTask creates a CA deployment task and dispatches TR-069 commands to devices
-func (s *service) SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string) error {
+func (s *service) SaveCaTask(ctx context.Context, taskName string, caFileId int, scope string, deviceIds []int64, groupIds []string, username string, tenancyId int) error {
 	// Validate CA file exists
 	caFile, err := s.repo.FindByID(caFileId)
 	if err != nil {
@@ -136,6 +136,10 @@ func (s *service) SaveCaTask(ctx context.Context, taskName string, caFileId int,
 		Status:     strPtr("0"), // pending
 		CreateBy:   &username,
 		CreateTime: &now,
+	}
+	// Write tenant key so the task is visible under the owner tenant's ListCaTasks filter.
+	if tenancyId > 0 {
+		task.TenancyId = &tenancyId
 	}
 	if err := s.repo.CreateCaTask(ctx, task); err != nil {
 		return apperror.Wrap(err, "CA_TASK_CREATE_FAILED", 500, "failed to create CA task")

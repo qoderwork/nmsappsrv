@@ -206,9 +206,10 @@ func (h *Handler) SaveCaTask(c *gin.Context) {
 	}
 
 	username := middleware.GetUsername(c)
+	licenseId := middleware.GetLicenseId(c)
 	ctx := context.Background()
 
-	if err := h.svc.SaveCaTask(ctx, req.TaskName, req.CaFileId, req.Scope, req.DeviceIds, req.GroupIds, username); err != nil {
+	if err := h.svc.SaveCaTask(ctx, req.TaskName, req.CaFileId, req.Scope, req.DeviceIds, req.GroupIds, username, licenseId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
