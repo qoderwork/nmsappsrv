@@ -2,243 +2,265 @@ package tcpdump
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"nmsappsrv/pkg/logger"
-
-	"gorm.io/gorm"
 )
 
 const (
-	defaultCaptureDir = "./data/tcpdump"
-	defaultInterface  = "eth0"
+	// defaultCaptureDir mirrors Java's /home/files/tcpdump_file — the shared
+	// volume all (api/comm/core) containers wrote captures into and the api
+	// container listed/served from.
+	defaultCaptureDir = "/home/files/tcpdump_file"
+	// defaultInterface mirrors Java's hardcoded "eth0". In Java each
+	// api/comm/core container captured on its own eth0 (the device-facing NIC
+	// for comm/core). nmsappsrv is a single host process, so its eth0 is the
+	// device-facing NIC — behaviourally identical to Java.
+	defaultInterface = "eth0"
+	// ipInfoPath mirrors Java's /home/ip.info used by listNetworkCards.
+	ipInfoPath = "/home/ip.info"
 )
 
-// Service encapsulates tcpdump business logic: starting/stopping captures and
-// managing the lifecycle of capture tasks.
+// Service encapsulates tcpdump business logic: starting captures (fire-and-forget,
+// matching Java's @Async TCPDumpHelper) and managing the capture-file lifecycle
+// (list/download/delete) — all file-based, exactly like Java (no task table).
 type Service struct {
-	db         *gorm.DB
 	captureDir string
-	mu         sync.Mutex
-	// activeTasks tracks running OS processes keyed by task ID so we can kill them.
-	activeTasks map[int64]*os.Process
+	iface      string
 }
 
-// NewService creates a Service backed by db. It ensures the capture output
-// directory exists.
-func NewService(db *gorm.DB) *Service {
+// NewService creates a Service. db is accepted for signature compatibility with
+// the rest of the app but is unused: tcpdump is purely file-based in nmsappsrv,
+// as it was in nms-serv.
+func NewService(db interface{}) *Service {
 	dir := defaultCaptureDir
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		logger.Errorf("tcpdump: failed to create capture dir %s: %v", dir, err)
 	}
-	return &Service{
-		db:          db,
-		captureDir:  dir,
-		activeTasks: make(map[int64]*os.Process),
-	}
-}
-
-// StartCapture creates a TcpdumpTask record and launches tcpdump in a
-// background goroutine. The task runs on the NMS server itself (or can be
-// extended to SSH/TR-069 to a remote device).
-func (s *Service) StartCapture(req *StartRequest) (int64, error) {
-	iface := req.Interface
+	iface := os.Getenv("TCPDUMP_IFACE")
 	if iface == "" {
 		iface = defaultInterface
 	}
-
-	task := &TcpdumpTask{
-		ElementId:   req.ElementId,
-		Interface:   iface,
-		Filter:      req.Filter,
-		Duration:    req.Duration,
-		PacketCount: req.PacketCount,
-		Status:      StatusRunning,
-		CreateTime:  time.Now(),
-	}
-
-	if err := s.db.Create(task).Error; err != nil {
-		return 0, fmt.Errorf("tcpdump: failed to create task: %w", err)
-	}
-
-	// Build the output file path
-	startTs := task.CreateTime.Format("20060102150405")
-	endTs := task.CreateTime.Add(time.Duration(req.Duration) * time.Second).Format("20060102150405")
-	fileName := fmt.Sprintf("tcpdump_%d_%s_%s.pcap", req.ElementId, startTs, endTs)
-	task.FilePath = filepath.Join(s.captureDir, fileName)
-
-	// Persist the file path
-	s.db.Model(task).Update("file_path", task.FilePath)
-
-	// Launch the actual tcpdump process asynchronously
-	go s.runCapture(task, iface)
-
-	return task.Id, nil
+	return &Service{captureDir: dir, iface: iface}
 }
 
-// runCapture executes the tcpdump command and updates the task when done.
-func (s *Service) runCapture(task *TcpdumpTask, iface string) {
-	// Build tcpdump command: timeout <duration> tcpdump -i <iface> [-c count] [-w file] [filter]
-	args := []string{
-		fmt.Sprintf("%d", task.Duration),
-		"/usr/bin/tcpdump",
-		"-i", iface,
-		"-w", task.FilePath,
+// DoCapture launches a tcpdump process in the background (fire-and-forget, like
+// Java's @Async TCPDumpHelper.doTcpdump). The capture runs for `duration` seconds
+// and writes a .pcap file named "<container>_<start>_<end>.pcap" into the capture
+// directory — byte-for-byte the same filename scheme and command Java used.
+func (s *Service) DoCapture(req *DoCaptureRequest) error {
+	if strings.TrimSpace(req.Container) == "" {
+		return fmt.Errorf("container must not be empty")
 	}
-	if task.PacketCount > 0 {
-		args = append(args, "-c", fmt.Sprintf("%d", task.PacketCount))
-	}
-	if task.Filter != "" {
-		args = append(args, task.Filter)
+	if req.Duration < 0 {
+		return fmt.Errorf("duration must not be negative")
 	}
 
+	start := time.Now()
+	end := start.Add(time.Duration(req.Duration) * time.Second)
+	fileName := buildCaptureFileName(req.Container, start, end)
+	filePath := filepath.Join(s.captureDir, fileName)
+
+	// Mirror Java's command array exactly:
+	//   /usr/bin/timeout <duration> /usr/bin/tcpdump -i eth0 -w <file>
+	args := []string{
+		strconv.Itoa(req.Duration),
+		"/usr/bin/tcpdump",
+		"-i", s.iface,
+		"-w", filePath,
+	}
 	cmd := exec.Command("/usr/bin/timeout", args...)
 
 	if err := cmd.Start(); err != nil {
-		s.failTask(task, fmt.Sprintf("failed to start tcpdump: %v", err))
-		return
+		return fmt.Errorf("tcpdump: failed to start capture: %w", err)
 	}
 
-	// Track the process so StopCapture can kill it
-	s.mu.Lock()
-	s.activeTasks[task.Id] = cmd.Process
-	s.mu.Unlock()
-
-	defer func() {
-		s.mu.Lock()
-		delete(s.activeTasks, task.Id)
-		s.mu.Unlock()
+	// Fire-and-forget: log on completion, no task tracking (matches Java).
+	go func() {
+		err := cmd.Wait()
+		if err != nil {
+			exitCode := -1
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			}
+			// 124 = timeout fired (expected), 143 = SIGTERM (expected),
+			// 0 = clean exit. Anything else is a real failure.
+			if exitCode != 124 && exitCode != 143 && exitCode != 0 {
+				logger.Errorf("tcpdump: capture %s exited with code %d: %v", fileName, exitCode, err)
+				return
+			}
+		}
+		logger.Infof("tcpdump: capture %s finished", fileName)
 	}()
 
-	err := cmd.Wait()
-
-	// timeout exits with 124 when the timer fires; tcpdump may also exit with
-	// non-zero when it receives SIGTERM from timeout. Both are expected.
-	if err != nil {
-		exitCode := -1
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		}
-		// 124 = timeout killed the process (expected), 143 = SIGTERM (expected)
-		if exitCode != 124 && exitCode != 143 && exitCode != 0 {
-			s.failTask(task, fmt.Sprintf("tcpdump exited with code %d: %v", exitCode, err))
-			return
-		}
-	}
-
-	// Gather file info
-	var fileSize int64
-	if info, statErr := os.Stat(task.FilePath); statErr == nil {
-		fileSize = info.Size()
-	}
-
-	now := time.Now()
-	s.db.Model(task).Updates(map[string]interface{}{
-		"status":    StatusDone,
-		"end_time":  now,
-		"file_size": fileSize,
-	})
-
-	logger.Infof("tcpdump: task %d completed, file=%s, size=%d bytes", task.Id, task.FilePath, fileSize)
-}
-
-// StopCapture kills a running tcpdump process for the given task ID.
-func (s *Service) StopCapture(taskId int64) error {
-	s.mu.Lock()
-	proc, ok := s.activeTasks[taskId]
-	s.mu.Unlock()
-
-	if !ok {
-		return fmt.Errorf("task %d is not running", taskId)
-	}
-
-	if err := proc.Kill(); err != nil {
-		return fmt.Errorf("failed to kill tcpdump for task %d: %w", taskId, err)
-	}
-
-	logger.Infof("tcpdump: task %d stopped by user", taskId)
 	return nil
 }
 
-// ListTasks returns all tcpdump tasks, newest first.
-func (s *Service) ListTasks() ([]TcpdumpTask, error) {
-	var tasks []TcpdumpTask
-	if err := s.db.Order("create_time DESC").Find(&tasks).Error; err != nil {
+// ListNetworkCards returns the available network interfaces. Mirrors Java's
+// listNetworkCards: read /home/ip.info ("<ip> <name>" per line) when present,
+// otherwise enumerate the host's interfaces with a representative IPv4 address.
+func (s *Service) ListNetworkCards() ([]NetworkCard, error) {
+	if cards, err := readIPInfo(ipInfoPath); err == nil {
+		return cards, nil
+	}
+	return enumerateHostInterfaces()
+}
+
+// ListFiles returns all capture files in the capture directory, newest first,
+// mirroring Java's listTcpdumpFiles (reads /home/files/tcpdump_file).
+func (s *Service) ListFiles() ([]TcpdumpFile, error) {
+	entries, err := os.ReadDir(s.captureDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []TcpdumpFile{}, nil
+		}
 		return nil, err
 	}
-	return tasks, nil
-}
 
-// GetTask returns a single task by ID.
-func (s *Service) GetTask(id int64) (*TcpdumpTask, error) {
-	var task TcpdumpTask
-	if err := s.db.First(&task, id).Error; err != nil {
-		return nil, err
-	}
-	return &task, nil
-}
-
-// DeleteTask removes the task record and its capture file from disk.
-func (s *Service) DeleteTask(id int64) error {
-	task, err := s.GetTask(id)
-	if err != nil {
-		return err
+	files := make([]TcpdumpFile, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, statErr := e.Info()
+		if statErr != nil {
+			continue
+		}
+		files = append(files, TcpdumpFile{
+			FileName:   e.Name(),
+			ModifyTime: info.ModTime().UnixMilli(),
+		})
 	}
 
-	// Refuse to delete a running task
-	if task.Status == StatusRunning {
-		return fmt.Errorf("cannot delete running task %d; stop it first", id)
-	}
-
-	// Remove the file from disk
-	if task.FilePath != "" {
-		_ = os.Remove(task.FilePath)
-	}
-
-	return s.db.Delete(&TcpdumpTask{}, id).Error
-}
-
-// GetTaskFilePath returns the file path for a task (used by the download handler).
-func (s *Service) GetTaskFilePath(id int64) (string, error) {
-	task, err := s.GetTask(id)
-	if err != nil {
-		return "", err
-	}
-	if task.Status != StatusDone {
-		return "", fmt.Errorf("task %d has not completed yet (status=%d)", id, task.Status)
-	}
-	if _, statErr := os.Stat(task.FilePath); statErr != nil {
-		return "", fmt.Errorf("capture file not found: %s", task.FilePath)
-	}
-	return task.FilePath, nil
-}
-
-// failTask marks a task as failed with the given error message.
-func (s *Service) failTask(task *TcpdumpTask, errMsg string) {
-	now := time.Now()
-	s.db.Model(task).Updates(map[string]interface{}{
-		"status":        StatusFailed,
-		"end_time":      now,
-		"error_message": errMsg,
+	// Newest first, matching Java's sort by modifyTime descending.
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].ModifyTime > files[j].ModifyTime
 	})
-	logger.Errorf("tcpdump: task %d failed: %s", task.Id, errMsg)
+	return files, nil
 }
 
-// sanitizeFilter performs basic sanitization on the pcap filter expression to
-// prevent shell injection. Only alphanumeric, spaces, and common pcap filter
-// tokens are allowed.
-func sanitizeFilter(filter string) string {
-	allowed := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .:-/()!<>=&|"
-	var b strings.Builder
-	for _, r := range filter {
-		if strings.ContainsRune(allowed, r) {
-			b.WriteRune(r)
+// DownloadPath resolves a safe on-disk path for the named capture file.
+// Mirrors Java's FileUtil.isValidFileName guard against path traversal.
+func (s *Service) DownloadPath(name string) (string, error) {
+	if !isValidFileName(name) {
+		return "", fmt.Errorf("invalid file name: %q", name)
+	}
+	full := filepath.Join(s.captureDir, name)
+	if _, err := os.Stat(full); err != nil {
+		return "", fmt.Errorf("capture file not found: %s", name)
+	}
+	return full, nil
+}
+
+// DeleteFile removes a single capture file from disk.
+func (s *Service) DeleteFile(name string) error {
+	if !isValidFileName(name) {
+		return fmt.Errorf("invalid file name: %q", name)
+	}
+	full := filepath.Join(s.captureDir, name)
+	if _, err := os.Stat(full); err != nil {
+		return fmt.Errorf("capture file not found: %s", name)
+	}
+	return os.Remove(full)
+}
+
+// BatchDelete removes multiple capture files, skipping any that are missing or
+// have invalid names (per-file failure does not abort the rest).
+func (s *Service) BatchDelete(names []string) error {
+	var firstErr error
+	for _, name := range names {
+		if !isValidFileName(name) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("invalid file name: %q", name)
+			}
+			continue
+		}
+		full := filepath.Join(s.captureDir, name)
+		if _, err := os.Stat(full); err != nil {
+			continue // missing — skip
+		}
+		if err := os.Remove(full); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return b.String()
+	return firstErr
+}
+
+// buildCaptureFileName mirrors Java's TCPDumpHelper filename scheme:
+// "<container>_<yyyyMMddHHmmss>_<yyyyMMddHHmmss>.pcap".
+func buildCaptureFileName(container string, start, end time.Time) string {
+	return fmt.Sprintf("%s_%s_%s.pcap",
+		container,
+		start.Format("20060102150405"),
+		end.Format("20060102150405"),
+	)
+}
+
+// isValidFileName rejects anything that could escape the capture directory:
+// empty names, path separators, or ".." segments.
+func isValidFileName(name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return false
+	}
+	// filepath.Base strips a leading "./" but keeps a bare name; ensure the
+	// cleaned base exactly equals the input (no directory components).
+	return filepath.Base(name) == name
+}
+
+// readIPInfo parses a "<ip> <name>" per-line file (Java's /home/ip.info).
+func readIPInfo(path string) ([]NetworkCard, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cards []NetworkCard
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			cards = append(cards, NetworkCard{IP: fields[0], Name: fields[1]})
+		}
+	}
+	return cards, nil
+}
+
+// enumerateHostInterfaces returns each host network interface with its first
+// non-loopback IPv4 address (used when /home/ip.info is absent).
+func enumerateHostInterfaces() ([]NetworkCard, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var cards []NetworkCard
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, addrErr := iface.Addrs()
+		if addrErr != nil {
+			continue
+		}
+		ip := ""
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP.To4() != nil {
+				ip = ipNet.IP.String()
+				break
+			}
+		}
+		cards = append(cards, NetworkCard{IP: ip, Name: iface.Name})
+	}
+	return cards, nil
 }

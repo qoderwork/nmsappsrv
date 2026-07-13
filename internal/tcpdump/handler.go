@@ -2,7 +2,6 @@ package tcpdump
 
 import (
 	"net/http"
-	"strconv"
 
 	"nmsappsrv/pkg/utils"
 
@@ -10,112 +9,95 @@ import (
 	"gorm.io/gorm"
 )
 
-// Handler exposes HTTP handlers for tcpdump endpoints.
+// Handler exposes HTTP handlers for tcpdump endpoints. The contract mirrors
+// Java's TcpdumpManagementController (/api/v2/...): listNetworkCards,
+// doTcpdump, listTcpdumpFiles, downloadTcpdumpFile, deleteTcpdumpFile,
+// batchDeleteTcpdumpFile — expressed in nmsappsrv's RESTful /api/v1 style.
 type Handler struct {
 	svc *Service
 }
 
-// NewHandler creates a Handler backed by a fresh Service.
+// NewHandler creates a Handler. db is forwarded for signature compatibility
+// (tcpdump is file-based and does not use the database).
 func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{svc: NewService(db)}
 }
 
-// StartCapture handles POST /tcpdump/start
-func (h *Handler) StartCapture(c *gin.Context) {
-	var req StartRequest
+// ListNetworkCards handles GET /tcpdump/network-cards
+// (Java GET /api/v2/listNetworkCards).
+func (h *Handler) ListNetworkCards(c *gin.Context) {
+	cards, err := h.svc.ListNetworkCards()
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, cards)
+}
+
+// DoCapture handles POST /tcpdump/capture (Java POST /api/v2/doTcpdump).
+func (h *Handler) DoCapture(c *gin.Context) {
+	var req DoCaptureRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request: elementId and duration are required")
+		utils.Error(c, http.StatusBadRequest, "invalid request: duration and container are required")
 		return
 	}
-
-	// Sanitize the filter expression
-	if req.Filter != "" {
-		req.Filter = sanitizeFilter(req.Filter)
+	if err := h.svc.DoCapture(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
 	}
+	utils.Success(c, nil)
+}
 
-	taskId, err := h.svc.StartCapture(&req)
+// ListFiles handles GET /tcpdump/files (Java POST /api/v2/listTcpdumpFiles).
+func (h *Handler) ListFiles(c *gin.Context) {
+	files, err := h.svc.ListFiles()
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	utils.Success(c, StartResponse{TaskId: taskId})
+	utils.Success(c, files)
 }
 
-// StopCapture handles POST /tcpdump/stop/:taskId
-func (h *Handler) StopCapture(c *gin.Context) {
-	taskId, err := strconv.ParseInt(c.Param("taskId"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid task id")
+// DownloadFile handles GET /tcpdump/files/:name/download
+// (Java GET /api/v2/downloadTcpdumpFile?fileName=...).
+func (h *Handler) DownloadFile(c *gin.Context) {
+	name := c.Param("name")
+	if !isValidFileName(name) {
+		utils.Error(c, http.StatusBadRequest, "invalid file name")
 		return
 	}
-
-	if err := h.svc.StopCapture(taskId); err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	utils.OK(c, "ok")
-}
-
-// ListTasks handles GET /tcpdump/tasks
-func (h *Handler) ListTasks(c *gin.Context) {
-	tasks, err := h.svc.ListTasks()
-	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	utils.Success(c, tasks)
-}
-
-// GetTask handles GET /tcpdump/tasks/:id
-func (h *Handler) GetTask(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid task id")
-		return
-	}
-
-	task, err := h.svc.GetTask(id)
-	if err != nil {
-		utils.Error(c, http.StatusNotFound, "task not found")
-		return
-	}
-
-	utils.Success(c, task)
-}
-
-// DownloadCapture handles GET /tcpdump/tasks/:id/download
-func (h *Handler) DownloadCapture(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid task id")
-		return
-	}
-
-	filePath, err := h.svc.GetTaskFilePath(id)
+	path, err := h.svc.DownloadPath(name)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	c.Header("Content-Type", "application/vnd.tcpdump.pcap")
-	c.Header("Content-Disposition", "attachment; filename=capture.pcap")
-	c.File(filePath)
+	c.Header("Content-Disposition", "attachment; filename="+name)
+	c.File(path)
 }
 
-// DeleteTask handles DELETE /tcpdump/tasks/:id
-func (h *Handler) DeleteTask(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid task id")
+// DeleteFile handles DELETE /tcpdump/files/:name
+// (Java POST /api/v2/deleteTcpdumpFile).
+func (h *Handler) DeleteFile(c *gin.Context) {
+	name := c.Param("name")
+	if err := h.svc.DeleteFile(name); err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	utils.Success(c, nil)
+}
 
-	if err := h.svc.DeleteTask(id); err != nil {
+// BatchDeleteFiles handles POST /tcpdump/files/batch-delete
+// (Java POST /api/v2/batchDeleteTcpdumpFile).
+func (h *Handler) BatchDeleteFiles(c *gin.Context) {
+	var req BatchDeleteFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request: fileNames are required")
+		return
+	}
+	if err := h.svc.BatchDelete(req.FileNames); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	utils.OK(c, "deleted")
+	utils.Success(c, nil)
 }
