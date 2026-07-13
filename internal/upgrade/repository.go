@@ -302,16 +302,16 @@ func MarshalElementIds(ids []int64) string {
 // Task lifecycle: Cancel
 // ---------------------------------------------------------------------------
 
-// CancelUpgradeTask sets an upgrade task status to cancelled (status=5).
+// CancelUpgradeTask sets an upgrade task status to cancelled (status=4, aligned with Java UpgradeTask status enum: 1=Waiting,2=Executing,3=Executed,4=Cancelled).
 func (r *repository) CancelUpgradeTask(id int) error {
 	return r.db.Model(&UpgradeTask{}).Where("id = ? AND status IN (1, 2)", id).
-		Update("status", 5).Error
+		Update("status", 4).Error
 }
 
-// CancelRollbackTask sets a rollback task status to cancelled (status=5).
+// CancelRollbackTask sets a rollback task status to cancelled (status=4, see CancelUpgradeTask for enum).
 func (r *repository) CancelRollbackTask(id int) error {
 	return r.db.Model(&RollbackTask{}).Where("id = ? AND status IN (1, 2)", id).
-		Update("status", 5).Error
+		Update("status", 4).Error
 }
 
 // ---------------------------------------------------------------------------
