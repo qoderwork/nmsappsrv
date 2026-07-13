@@ -8,11 +8,13 @@ import (
 	"nmsappsrv/pkg/baserepo"
 )
 
-// systemConfigModel maps to the system_config table (shared with misc package).
+// systemConfigModel maps to the system_config table.
+// The real table schema (id varchar PK + config longtext) is owned/migrated by
+// site.SystemConfig and shared by platform/resources/deviceauth. Any other
+// column naming (config_key/config_value) does not match the live table.
 type systemConfigModel struct {
-	Id    int     `gorm:"primaryKey;autoIncrement"`
-	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex"`
-	Value *string `gorm:"column:config_value;type:longtext"`
+	Id     string  `gorm:"primaryKey;column:id;type:varchar(32)"`
+	Config *string `gorm:"column:config;type:longtext"`
 }
 
 func (systemConfigModel) TableName() string { return "system_config" }
@@ -31,36 +33,36 @@ func NewSystemSettingsRepository(db *gorm.DB) *SystemSettingsRepository {
 	}
 }
 
-// GetSystemConfig reads a system_config entry by config_key.
+// GetSystemConfig reads a system_config entry by id (config key).
 func (r *SystemSettingsRepository) GetSystemConfig(key string) (string, error) {
 	var cfg systemConfigModel
-	if err := r.db.Where("config_key = ?", key).First(&cfg).Error; err != nil {
+	if err := r.db.Where("id = ?", key).First(&cfg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}
 		return "", apperror.Wrap(err, "GET_SYSTEM_CONFIG_FAILED", 500, "failed to get system config")
 	}
-	if cfg.Value == nil {
+	if cfg.Config == nil {
 		return "", nil
 	}
-	return *cfg.Value, nil
+	return *cfg.Config, nil
 }
 
-// SaveSystemConfig upserts a system_config entry by config_key.
+// SaveSystemConfig upserts a system_config entry by id (config key).
 func (r *SystemSettingsRepository) SaveSystemConfig(key, value string) error {
 	var cfg systemConfigModel
-	err := r.db.Where("config_key = ?", key).First(&cfg).Error
+	err := r.db.Where("id = ?", key).First(&cfg).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			cfg = systemConfigModel{
-				Key:   &key,
-				Value: &value,
+				Id:     key,
+				Config: &value,
 			}
 			return r.db.Create(&cfg).Error
 		}
 		return apperror.Wrap(err, "QUERY_SYSTEM_CONFIG_FAILED", 500, "failed to query system config")
 	}
-	cfg.Value = &value
+	cfg.Config = &value
 	return r.db.Save(&cfg).Error
 }
 
