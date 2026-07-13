@@ -15,19 +15,60 @@ import (
 // ParameterTemplate
 // ---------------------------------------------------------------------------
 
+// deployParamValue is a template parameter's TR-069 path together with its
+// DEFINED (target) value, as read from parameter_template_has_parameter.
+type deployParamValue struct {
+	ParamPath  string `gorm:"column:path"`
+	ParamValue string `gorm:"column:parameter_value"`
+}
+
+// buildDeploySPV converts template-defined parameter values into the SPV
+// entries/dispatched structs that are sent to the device. The values pushed are
+// the template's DEFINED values (对齐 Java), never the device's current values.
+func buildDeploySPV(params []deployParamValue) ([]setParamEntry, []soap.ParameterValueStruct) {
+	entries := make([]setParamEntry, len(params))
+	spv := make([]soap.ParameterValueStruct, len(params))
+	for i, p := range params {
+		entries[i] = setParamEntry{ParamName: p.ParamPath, ParamValue: p.ParamValue}
+		spv[i] = soap.ParameterValueStruct{Name: p.ParamPath, Value: p.ParamValue, Type: "xsd:string"}
+	}
+	return entries, spv
+}
+
 // ListParameterTemplates returns all templates for the given tenancy.
 func (s *service) ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
 	return s.repo.FindParameterTemplates(tenancyId)
 }
 
-// CreateParameterTemplate persists a new parameter template.
-func (s *service) CreateParameterTemplate(t *ParameterTemplate) error {
-	return s.repo.CreateParameterTemplate(t)
+// CreateParameterTemplate persists a new parameter template together with its
+// parameter list and DEFINED values.
+func (s *service) CreateParameterTemplate(req *ParameterTemplateRequest) error {
+	t := &ParameterTemplate{
+		Name:        req.Name,
+		Description: req.Description,
+		TenancyId:   req.TenancyId,
+		IsDefault:   req.IsDefault,
+	}
+	if err := s.repo.CreateParameterTemplate(t); err != nil {
+		return err
+	}
+	return s.repo.SaveTemplateParameters(t.Id, req.Parameters)
 }
 
-// UpdateParameterTemplate persists changes to an existing parameter template.
-func (s *service) UpdateParameterTemplate(t *ParameterTemplate) error {
-	return s.repo.UpdateParameterTemplate(t)
+// UpdateParameterTemplate persists changes to an existing parameter template
+// and replaces its parameter list (with DEFINED values).
+func (s *service) UpdateParameterTemplate(req *ParameterTemplateRequest) error {
+	t := &ParameterTemplate{
+		Id:          req.ID,
+		Name:        req.Name,
+		Description: req.Description,
+		TenancyId:   req.TenancyId,
+		IsDefault:   req.IsDefault,
+	}
+	if err := s.repo.UpdateParameterTemplate(t); err != nil {
+		return err
+	}
+	return s.repo.SaveTemplateParameters(req.ID, req.Parameters)
 }
 
 // ---------------------------------------------------------------------------
@@ -45,8 +86,9 @@ type DeployTemplateStatus struct {
 }
 
 // DeployTemplate deploys a parameter template to the specified target devices.
-// It loads the template's parameter paths, reads the desired values from
-// element_basic_info_parameter for each device, and sends SPV commands via TR-069.
+// It loads the template's parameter paths, reads the DEFINED (target) values
+// stored in parameter_template_has_parameter, and sends SPV commands via TR-069.
+// 对齐 Java ParameterDeploymentTemplate: 下发的是模板"定义值", 而非设备当前值.
 func (s *service) DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error) {
 	if len(elementIds) == 0 {
 		return nil, fmt.Errorf("no target devices specified")
@@ -96,30 +138,30 @@ func (s *service) DeployTemplate(templateId int64, elementIds []int64, username 
 		status.SerialNumber = deviceInfo.SerialNumber
 		status.DeviceName = deviceInfo.DeviceName
 
-		// 3. Read desired parameter values from element_basic_info_parameter
-		var paramValues []struct {
-			ParamName  string `gorm:"column:param_name"`
-			ParamValue string `gorm:"column:param_value"`
-		}
-		s.repo.DB().Table("element_basic_info_parameter").
-			Select("param_name, param_value").
-			Where("element_id = ? AND param_name IN ?", elementId, paramPaths).
-			Scan(&paramValues)
-
-		if len(paramValues) == 0 {
-			status.Message = "no parameter values found for device"
+		// 3. Read DEFINED (target) values from parameter_template_has_parameter.
+		//    对齐 Java: 下发模板中"定义"的值, 而非设备当前值(element_basic_info_parameter).
+		var paramValues []deployParamValue
+		if err := s.repo.DB().Raw(`
+			SELECT p.path AS path, COALESCE(pth.parameter_value, '') AS parameter_value
+			FROM parameter_template_has_parameter pth
+			JOIN parameter p ON p.id = pth.parameter_id
+			WHERE pth.template_id = ? AND p.path IS NOT NULL AND p.path != ''
+		`, templateId).Scan(&paramValues).Error; err != nil {
+			status.Message = fmt.Sprintf("load template defined values: %v", err)
 			results = append(results, status)
 			s.insertDeployLog(templateId, elementId, 0, false, status.Message, now)
 			continue
 		}
 
-		// 4. Build SPV entries
-		entries := make([]setParamEntry, len(paramValues))
-		spvParams := make([]soap.ParameterValueStruct, len(paramValues))
-		for i, pv := range paramValues {
-			entries[i] = setParamEntry{ParamName: pv.ParamName, ParamValue: pv.ParamValue}
-			spvParams[i] = soap.ParameterValueStruct{Name: pv.ParamName, Value: pv.ParamValue, Type: "xsd:string"}
+		if len(paramValues) == 0 {
+			status.Message = "template has no defined parameter values to deploy"
+			results = append(results, status)
+			s.insertDeployLog(templateId, elementId, 0, false, status.Message, now)
+			continue
 		}
+
+		// 4. Build SPV entries from the template's DEFINED values
+		entries, spvParams := buildDeploySPV(paramValues)
 		opParamJSON, _ := json.Marshal(entries)
 
 		// 5. Create event_log (status=1 pending)

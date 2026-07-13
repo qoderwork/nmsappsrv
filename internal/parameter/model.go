@@ -65,11 +65,11 @@ type DeviceParameterDetailVo struct {
 
 // ParameterAttributes 对应 parameter_attributes 表 (UUID主键)
 type ParameterAttributes struct {
-	Id             string  `gorm:"primaryKey;type:varchar(32)" json:"id"`
-	ParameterName  *string `gorm:"column:parameter_name;type:varchar(255);uniqueIndex:idx_elem_param" json:"parameter_name"`
-	ElementId      *int64  `gorm:"column:element_id;uniqueIndex:idx_elem_param" json:"element_id"`
-	Notification   *int    `gorm:"column:notification" json:"notification"`
-	AccessList     *string `gorm:"column:access_list;type:varchar(255)" json:"access_list"`
+	Id            string  `gorm:"primaryKey;type:varchar(32)" json:"id"`
+	ParameterName *string `gorm:"column:parameter_name;type:varchar(255);uniqueIndex:idx_elem_param" json:"parameter_name"`
+	ElementId     *int64  `gorm:"column:element_id;uniqueIndex:idx_elem_param" json:"element_id"`
+	Notification  *int    `gorm:"column:notification" json:"notification"`
+	AccessList    *string `gorm:"column:access_list;type:varchar(255)" json:"access_list"`
 }
 
 func (ParameterAttributes) TableName() string { return "parameter_attributes" }
@@ -140,13 +140,33 @@ type ParameterTemplate struct {
 func (ParameterTemplate) TableName() string { return "parameter_template" }
 
 // ParameterTemplateHasParameter 对应 parameter_template_has_parameter 表
+// parameter_value 存储该模板为该参数定义的(目标)值 —— 对齐 Java
+// ParameterDeploymentTemplate.parameters 中 path->value 的语义: 下发时推送
+// 的是模板"定义值", 而非设备当前值.
 type ParameterTemplateHasParameter struct {
-	Id          int64   `gorm:"primaryKey;autoIncrement" json:"id"`
-	TemplateId  *int64  `gorm:"column:template_id" json:"template_id"`
-	ParameterId *string `gorm:"column:parameter_id;type:varchar(32)" json:"parameter_id"`
+	Id             int64   `gorm:"primaryKey;autoIncrement" json:"id"`
+	TemplateId     *int64  `gorm:"column:template_id" json:"template_id"`
+	ParameterId    *string `gorm:"column:parameter_id;type:varchar(32)" json:"parameter_id"`
+	ParameterValue *string `gorm:"column:parameter_value;type:varchar(1024)" json:"parameter_value"`
 }
 
 func (ParameterTemplateHasParameter) TableName() string { return "parameter_template_has_parameter" }
+
+// TemplateParameter 是部署模板中单个参数条目, 携带其 DEFINED(目标)值.
+type TemplateParameter struct {
+	ParameterId string `json:"parameterId" binding:"required"`
+	Value       string `json:"value"`
+}
+
+// ParameterTemplateRequest 是创建/更新参数模板的 JSON 请求体: 模板头 + 参数列表(含定义值).
+type ParameterTemplateRequest struct {
+	ID          int64               `json:"id"`
+	Name        *string             `json:"name"`
+	Description *string             `json:"description"`
+	TenancyId   *int                `json:"tenancy_id"`
+	IsDefault   *bool               `json:"is_default"`
+	Parameters  []TemplateParameter `json:"parameters"`
+}
 
 // ParameterDeploymentLog 对应 parameter_deployment_log 表 (对齐Java ParameterDeploymentLog entity)
 type ParameterDeploymentLog struct {
@@ -164,14 +184,14 @@ func (ParameterDeploymentLog) TableName() string { return "parameter_deployment_
 
 // DeployTemplateLogVo is the API response VO for deploy template log queries (对齐Java ParameterDeploymentLogVO).
 type DeployTemplateLogVo struct {
-	Id            int64   `json:"id"`
-	TenancyName   string  `json:"tenancyName"`
-	TemplateName  string  `json:"templateName"`
-	DeviceName    string  `json:"deviceName"`
-	SerialNumber  string  `json:"serialNumber"`
-	OperationTime string  `json:"operationTime"`
-	Info          string  `json:"info"`
-	Result        *bool   `json:"result"`
+	Id            int64  `json:"id"`
+	TenancyName   string `json:"tenancyName"`
+	TemplateName  string `json:"templateName"`
+	DeviceName    string `json:"deviceName"`
+	SerialNumber  string `json:"serialNumber"`
+	OperationTime string `json:"operationTime"`
+	Info          string `json:"info"`
+	Result        *bool  `json:"result"`
 }
 
 // ---------- Batch Parameter Configuration DTOs ----------
@@ -243,13 +263,13 @@ func (TR069Parameter) TableName() string { return "tr069_parameter" }
 
 // ModelTreeNode represents a node in the device parameter tree.
 type ModelTreeNode struct {
-	Name       string          `json:"name"`
-	Path       string          `json:"path"`
-	Value      string          `json:"value,omitempty"`
-	ParamType  string          `json:"paramType,omitempty"`
-	Writable   bool            `json:"writable"`
-	IsObject   bool            `json:"isObject"`
-	Children   []ModelTreeNode `json:"children,omitempty"`
+	Name      string          `json:"name"`
+	Path      string          `json:"path"`
+	Value     string          `json:"value,omitempty"`
+	ParamType string          `json:"paramType,omitempty"`
+	Writable  bool            `json:"writable"`
+	IsObject  bool            `json:"isObject"`
+	Children  []ModelTreeNode `json:"children,omitempty"`
 }
 
 // AddObjectRequest is the JSON body for POST /model-tree/:elementId/add-object.

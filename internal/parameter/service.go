@@ -25,8 +25,8 @@ type Service interface {
 	UpdateParameterSet(ps *ParameterSet) error
 	DeleteParameterSet(id string) error
 	ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
-	CreateParameterTemplate(t *ParameterTemplate) error
-	UpdateParameterTemplate(t *ParameterTemplate) error
+	CreateParameterTemplate(req *ParameterTemplateRequest) error
+	UpdateParameterTemplate(req *ParameterTemplateRequest) error
 	DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error)
 	ListDeployTemplateLogs(templateId int64, page, pageSize int) ([]DeployTemplateLogVo, int64, error)
 	TriggerBackup(elementId int64, username string) error
@@ -186,8 +186,8 @@ func (s *service) SetParameter(elementId int64, paramName string, value string, 
 	})
 	s.repo.DB().Table("event_log").Where("id = ?", eventLogId).
 		Updates(map[string]interface{}{
-			"command_track_data":   string(trackData),
-			"command_issue_time":   now,
+			"command_track_data": string(trackData),
+			"command_issue_time": now,
 		})
 
 	// 7. Cache track data in Redis for response processing

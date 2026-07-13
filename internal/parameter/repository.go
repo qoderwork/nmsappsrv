@@ -37,6 +37,7 @@ type Repository interface {
 	FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
 	CreateParameterTemplate(t *ParameterTemplate) error
 	UpdateParameterTemplate(t *ParameterTemplate) error
+	SaveTemplateParameters(templateId int64, params []TemplateParameter) error
 	CreateParameterBackupLog(log *ParameterBackupLog) error
 	FindParameterBackupLogs(elementId int64) ([]ParameterBackupLog, error)
 	CreateBatchConfigLog(log *misc.BatchConfigurationLog) error
@@ -212,6 +213,39 @@ func (r *repository) CreateParameterTemplate(t *ParameterTemplate) error {
 // UpdateParameterTemplate saves changes to an existing parameter template.
 func (r *repository) UpdateParameterTemplate(t *ParameterTemplate) error {
 	return r.db.Save(t).Error
+}
+
+// SaveTemplateParameters replaces ALL parameter associations (with their DEFINED
+// values) for a template. Templates are edited as a full set, so this deletes
+// the existing rows then bulk-inserts the new ones inside a transaction.
+// 对齐 Java ParameterDeploymentTemplate: 模板携带的是"定义值"而非设备当前值.
+func (r *repository) SaveTemplateParameters(templateId int64, params []TemplateParameter) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("template_id = ?", templateId).
+			Delete(&ParameterTemplateHasParameter{}).Error; err != nil {
+			return err
+		}
+		if len(params) == 0 {
+			return nil
+		}
+		return tx.Create(toTemplateParamRows(templateId, params)).Error
+	})
+}
+
+// toTemplateParamRows maps a template's DEFINED parameter values into the
+// association rows stored in parameter_template_has_parameter.
+func toTemplateParamRows(templateId int64, params []TemplateParameter) []ParameterTemplateHasParameter {
+	rows := make([]ParameterTemplateHasParameter, 0, len(params))
+	for _, p := range params {
+		pid := p.ParameterId
+		val := p.Value
+		rows = append(rows, ParameterTemplateHasParameter{
+			TemplateId:     &templateId,
+			ParameterId:    &pid,
+			ParameterValue: &val,
+		})
+	}
+	return rows
 }
 
 // ---------------------------------------------------------------------------

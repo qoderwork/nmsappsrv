@@ -188,17 +188,17 @@ func (h *Handler) ListParameterTemplates(c *gin.Context) {
 
 // CreateParameterTemplate handles POST /
 func (h *Handler) CreateParameterTemplate(c *gin.Context) {
-	var t ParameterTemplate
-	if err := c.ShouldBindJSON(&t); err != nil {
+	var req ParameterTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if err := h.svc.CreateParameterTemplate(&t); err != nil {
+	if err := h.svc.CreateParameterTemplate(&req); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to create parameter template")
 		return
 	}
-	utils.Success(c, t)
+	utils.Success(c, nil)
 }
 
 // UpdateParameterTemplate handles PUT /:id
@@ -209,18 +209,18 @@ func (h *Handler) UpdateParameterTemplate(c *gin.Context) {
 		return
 	}
 
-	var t ParameterTemplate
-	if err := c.ShouldBindJSON(&t); err != nil {
+	var req ParameterTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	t.Id = id
+	req.ID = id
 
-	if err := h.svc.UpdateParameterTemplate(&t); err != nil {
+	if err := h.svc.UpdateParameterTemplate(&req); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to update parameter template")
 		return
 	}
-	utils.Success(c, t)
+	utils.Success(c, nil)
 }
 
 // DeployTemplate handles POST /parameter/templates/:templateId/deploy
