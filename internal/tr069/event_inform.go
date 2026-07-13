@@ -350,26 +350,38 @@ func (ep *EventProcessor) handlePCIChange(ctx context.Context, sn string, paramM
 }
 
 // handleMMLReport processes "X 681D64 MMLREPORT" event.
-// Java: extracts CMDUID and result, updates mml_execute_result, sends web callback.
+// Java: matches Device.mml.CMDUID (uid) and the parameter whose NAME ends with
+// "MMLReport" (result text), then fills result + result_returned_time.
+// Per Java, the result-return uplink does NOT change status (status=3 is set by
+// the SPV-response handler when the device ACKs the command).
 func (ep *EventProcessor) handleMMLReport(ctx context.Context, sn string, paramMap map[string]string) {
 	uid := paramMap["Device.mml.CMDUID"]
 	if uid == "" {
 		return
 	}
 
-	reportValue := paramMap["Device.mml.ReportValue"]
+	// The result text arrives on a parameter whose name ends with "MMLReport"
+	// (e.g. Device.mml.MTN.MMLReport). Fall back to Device.mml.ReportValue.
+	reportValue := ""
+	for k, v := range paramMap {
+		if strings.HasSuffix(k, "MMLReport") {
+			reportValue = v
+			break
+		}
+	}
+	if reportValue == "" {
+		reportValue = paramMap["Device.mml.ReportValue"]
+	}
 	logger.Infof("device %s: MML report uid=%s", sn, uid)
 
-	// Update mml_execute_result by uid
+	// Update mml_execute_result by uid (result text + returned time only).
 	now := time.Now()
 	result := struct {
 		ResultReturnedTime *time.Time `gorm:"column:result_returned_time"`
 		Result             *string    `gorm:"column:result"`
-		Status             *string    `gorm:"column:status"`
 	}{
 		ResultReturnedTime: &now,
 		Result:             stringPtr(reportValue),
-		Status:             stringPtr("completed"),
 	}
 
 	if err := ep.db.Table("mml_execute_result").

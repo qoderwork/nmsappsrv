@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +25,12 @@ type MMLMessage struct {
 	Command   string                 `json:"command"`
 	Params    map[string]interface{} `json:"params"`
 	ResultId  int                    `json:"result_id"`
+	// CmdUid is the correlation key written to Device.mml.CMDUID on the device,
+	// echoed back in the MMLREPORT Inform so the result can be matched (对齐 Java CMDUID).
+	CmdUid string `json:"cmd_uid"`
+	// CmdType is the MML command category (e.g. "MTN") used in the downlink path
+	// Device.mml.<CmdType>.CMD (对齐 Java command.getType()).
+	CmdType string `json:"cmd_type"`
 }
 
 // MMLWorker consumes messages from the MML queue and dispatches
@@ -119,8 +127,10 @@ func (w *MMLWorker) pollLoop() {
 }
 
 // processMmlCommand handles a single MML command message.
-// It looks up the device, builds TR-069 parameters from the MML command,
-// and sends them via SetParameterValues.
+// It looks up the device and sends the MML command to the device over TR-069
+// via the Device.mml.* downlink channel (对齐 Java singleExecuteMML):
+//   - Device.mml.CMDUID = correlation UUID
+//   - Device.mml.<type>.CMD = MML command text (built by buildMML)
 func (w *MMLWorker) processMmlCommand(msg *MMLMessage) {
 	// 1. Look up the device serial number from element_id
 	var sn string
@@ -134,57 +144,56 @@ func (w *MMLWorker) processMmlCommand(msg *MMLMessage) {
 		First(&dev).Error; err != nil {
 		faultMsg := fmt.Sprintf("device %d not found: %v", msg.ElementId, err)
 		logger.Errorf("MML worker: %s", faultMsg)
-		w.updateResultStatus(msg.ResultId, 3, faultMsg)
+		UpdateResultStatusOnAck(w.db, msg.ResultId, false, faultMsg)
 		return
 	}
 
 	if dev.SerialNumber == nil || *dev.SerialNumber == "" {
 		faultMsg := fmt.Sprintf("device %d has no serial number", msg.ElementId)
 		logger.Errorf("MML worker: %s", faultMsg)
-		w.updateResultStatus(msg.ResultId, 3, faultMsg)
+		UpdateResultStatusOnAck(w.db, msg.ResultId, false, faultMsg)
 		return
 	}
 	sn = *dev.SerialNumber
 
-	// 2. Build TR-069 parameter values from the MML command.
-	// The MML command string is sent as a vendor-specific parameter value.
-	// The parameter path encodes the command name so the device can interpret it.
-	paramName := fmt.Sprintf("Device.VendorMML.Command.%s", msg.Command)
-	paramValue := msg.Command
-
-	// If there are additional parameters, encode them as JSON in a sibling parameter
-	if len(msg.Params) > 0 {
-		paramsJSON, err := json.Marshal(msg.Params)
-		if err == nil {
-			paramValue = string(paramsJSON)
-		}
+	// 2. Build the MML command text and the two TR-069 params written in a single SPV.
+	cmdType := msg.CmdType
+	if cmdType == "" {
+		cmdType = "MML"
+	}
+	mmlText := buildMML(msg.Command, msg.Params)
+	cmdUid := msg.CmdUid
+	if cmdUid == "" {
+		cmdUid = fmt.Sprintf("mml-%d", msg.ResultId)
 	}
 
 	spvParams := []soap.ParameterValueStruct{
-		{
-			Name:  paramName,
-			Value: paramValue,
-		},
+		{Name: "Device.mml.CMDUID", Value: cmdUid, Type: "xsd:string"},
+		{Name: fmt.Sprintf("Device.mml.%s.CMD", cmdType), Value: mmlText, Type: "xsd:string"},
 	}
 
-	// 3. Send SetParameterValues to the device
-	operationId := fmt.Sprintf("mml_%d_%d", msg.ResultId, time.Now().Unix())
+	// 3. Send SetParameterValues to the device. The operationId carries the result
+	//    id (mml:<resultId>) so processSetParameterValuesResponse can mark the
+	//    result delivered (status=3) when the device ACKs (对齐 Java MmlMessageProcessor).
+	operationId := fmt.Sprintf("mml:%d", msg.ResultId)
 	paramKey := fmt.Sprintf("mml_%d", msg.ResultId)
 
 	if err := w.opSender.SendSetParameterValues(sn, spvParams, paramKey, operationId); err != nil {
 		faultMsg := fmt.Sprintf("SPV send failed for device %d (SN=%s): %v", msg.ElementId, sn, err)
 		logger.Errorf("MML worker: %s", faultMsg)
-		w.updateResultStatus(msg.ResultId, 3, faultMsg)
+		UpdateResultStatusOnAck(w.db, msg.ResultId, false, faultMsg)
 		return
 	}
 
-	// 4. Update result status to 2 (sent)
+	// 4. Mark status=2 (dispatched to device). status=3 (delivered) is set by the
+	//    SPV-response handler once the device ACKs the SetParameterValues.
 	w.updateResultStatus(msg.ResultId, 2, "")
-	logger.Infof("MML worker: command=%s sent to device %d (SN=%s), operationId=%s", msg.Command, msg.ElementId, sn, operationId)
+	logger.Infof("MML worker: command=%s sent to device %d (SN=%s), operationId=%s, cmdUid=%s",
+		msg.Command, msg.ElementId, sn, operationId, cmdUid)
 }
 
 // updateResultStatus updates the MmlExecuteResult status in the database.
-// status: 0=pending, 2=sent, 3=failed
+// status: 0=created, 2=dispatched, 3=delivered(ACK). Failures are encoded via has_fault.
 func (w *MMLWorker) updateResultStatus(resultId int, status int, faultString string) {
 	updates := map[string]interface{}{
 		"status": status,
@@ -195,5 +204,65 @@ func (w *MMLWorker) updateResultStatus(resultId int, status int, faultString str
 	}
 	if err := w.db.Model(&MmlExecuteResult{}).Where("id = ?", resultId).Updates(updates).Error; err != nil {
 		logger.Errorf("MML worker: failed to update result %d status: %v", resultId, err)
+	}
+}
+
+// UpdateResultStatusOnAck is invoked by the TR-069 SPV-response handler when the
+// device ACKs (or faults on) the SetParameterValues that carried an MML command.
+// 对齐 Java: status=3 means "delivered to device"; success vs failure is encoded
+// in has_fault (a failed ACK still lands in status=3 with has_fault=true).
+func UpdateResultStatusOnAck(db *gorm.DB, resultId int, success bool, faultString string) {
+	updates := map[string]interface{}{"status": 3}
+	if !success {
+		updates["has_fault"] = true
+		if faultString != "" {
+			updates["fault_string"] = faultString
+		}
+	}
+	if err := db.Model(&MmlExecuteResult{}).Where("id = ?", resultId).Updates(updates).Error; err != nil {
+		logger.Errorf("mml: failed to update result %d status on ACK: %v", resultId, err)
+	}
+}
+
+// buildMML assembles the MML command text from a command name and its parameters,
+// 对齐 Java MmlManagementServiceImpl.buildMML:
+//
+//	<CMD>:<NAME1>=<VAL1>,<NAME2>=<VAL2>;
+//
+// Values are NOT quoted; keys are sorted for deterministic output.
+func buildMML(command string, params map[string]interface{}) string {
+	if len(params) == 0 {
+		return command + ";"
+	}
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	sb.WriteString(command)
+	sb.WriteString(":")
+	for i, k := range keys {
+		sb.WriteString(k)
+		sb.WriteString("=")
+		sb.WriteString(paramValueToString(params[k]))
+		if i != len(keys)-1 {
+			sb.WriteString(",")
+		}
+	}
+	sb.WriteString(";")
+	return sb.String()
+}
+
+// paramValueToString renders an MML parameter value (values are unquoted in MML).
+func paramValueToString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", val)
 	}
 }

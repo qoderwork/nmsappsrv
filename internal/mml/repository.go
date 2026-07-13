@@ -24,6 +24,7 @@ type Repository interface {
 	FindMmlSets(licenseId int) ([]MmlSet, error)
 	FindMmlCommands(setId int) ([]MmlCommand, error)
 	FindMmlCommandParams(commandId int) ([]MmlCommandParam, error)
+	FindMmlCommandByCommand(command string) (*MmlCommand, error)
 	FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error)
 	FindBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
 	FindBatchProcessFileByID(id int) (*BatchProcessFile, error)
@@ -91,6 +92,16 @@ func (r *repository) FindMmlCommandParams(commandId int) ([]MmlCommandParam, err
 		return nil, err
 	}
 	return params, nil
+}
+
+// FindMmlCommandByCommand resolves a command definition by its command name, used
+// to derive the MML command category (type) for the Device.mml.<type>.CMD downlink path.
+func (r *repository) FindMmlCommandByCommand(command string) (*MmlCommand, error) {
+	var cmd MmlCommand
+	if err := r.db.Where("command = ?", command).First(&cmd).Error; err != nil {
+		return nil, err
+	}
+	return &cmd, nil
 }
 
 // ---------------------------------------------------------------------------

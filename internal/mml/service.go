@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	"nmsappsrv/internal/mq"
 	"nmsappsrv/pkg/logger"
 
@@ -60,12 +62,26 @@ func (s *service) GetMmlCommandParams(commandId int) ([]MmlCommandParam, error) 
 
 // ExecuteMml creates a pending execution result record (status=0) and
 // enqueues the MML command to the Redis queue for async dispatch.
+// It generates a CMDUID (correlation key, 对齐 Java UUID) and resolves the
+// command category (type) used by the Device.mml.<type>.CMD downlink path.
 func (s *service) ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error) {
 	now := time.Now()
+
+	// Generate the correlation key written to Device.mml.CMDUID and echoed back
+	// by the device in the MMLREPORT Inform (对齐 Java CMDUID).
+	cmdUid := uuid.NewString()
+
+	// Resolve the MML command category for the downlink path Device.mml.<type>.CMD.
+	cmdType := "MML"
+	if cmd, err := s.repo.FindMmlCommandByCommand(command); err == nil && cmd != nil &&
+		cmd.Type != nil && *cmd.Type != "" {
+		cmdType = *cmd.Type
+	}
+
 	result := &MmlExecuteResult{
 		ElementId:     &elementId,
 		Command:       &command,
-		Uid:           &uid,
+		Uid:           &cmdUid,
 		User:          &username,
 		Status:        0,
 		OperationTime: &now,
@@ -81,6 +97,8 @@ func (s *service) ExecuteMml(elementId int64, command string, uid string, userna
 		Command:   command,
 		Params:    params,
 		ResultId:  result.Id,
+		CmdUid:    cmdUid,
+		CmdType:   cmdType,
 	}
 	if err := mq.Enqueue(context.Background(), mq.MMLQueue, msg); err != nil {
 		logger.Errorf("failed to enqueue MML command to queue: %v", err)

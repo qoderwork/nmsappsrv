@@ -48,8 +48,8 @@ import (
 	"nmsappsrv/internal/snmp"
 	sshmod "nmsappsrv/internal/ssh"
 	"nmsappsrv/internal/systemsettings"
-	"nmsappsrv/internal/tenancy"
 	"nmsappsrv/internal/tcpdump"
+	"nmsappsrv/internal/tenancy"
 	"nmsappsrv/internal/topology"
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/upgrade"
@@ -458,6 +458,13 @@ func main() {
 	tr069.DefaultSender = tr069OpSender
 	monitorCollector := monitor.NewCollector(db)
 	tr069.MonitorGPVCallback = monitorCollector.HandleGPVResponse
+
+	// MML command result delivery: when the device ACKs (or faults on) the SPV that
+	// carried an MML command, mark the execution result delivered (status=3) and
+	// record success/failure via has_fault (对齐 Java MmlMessageProcessor).
+	tr069.MMLResponseCallback = func(resultId int, success bool, faultString string) {
+		mml.UpdateResultStatusOnAck(db, resultId, success, faultString)
+	}
 	if err := mainScheduler.AddJob("monitor-collect", "0 */5 * * * *", monitorCollector.RunOnce); err != nil {
 		logger.Errorf("failed to register monitor-collect cron job: %v", err)
 	}

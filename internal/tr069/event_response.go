@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -239,10 +240,26 @@ func (ep *EventProcessor) processSetParameterValuesResponse(ctx context.Context,
 		logger.Warnf("SPV response for SN=%s returned status=%d", sn, status)
 		eventLog.Status = intPtr(status)
 		eventLog.FaultInfo = stringPtr(fmt.Sprintf("SPV failed with status %d", status))
+
+		// If this SPV carried an MML command, mark the execution result delivered
+		// with has_fault (对齐 Java MmlMessageProcessor on SOAP fault path).
+		if opID := extractOperationID(eventLog); opID != "" && strings.HasPrefix(opID, "mml:") {
+			if MMLResponseCallback != nil {
+				MMLResponseCallback(parseMMLResultID(opID), false, fmt.Sprintf("SPV failed with status %d", status))
+			}
+		}
 		return
 	}
 
 	eventLog.Status = intPtr(0) // success
+
+	// If this SPV carried an MML command, mark the execution result delivered
+	// (status=3). Success is encoded by has_fault=false (对齐 Java MmlMessageProcessor).
+	if opID := extractOperationID(eventLog); opID != "" && strings.HasPrefix(opID, "mml:") {
+		if MMLResponseCallback != nil {
+			MMLResponseCallback(parseMMLResultID(opID), true, "")
+		}
+	}
 
 	// Extract the parameter names that were set from the tracking data.
 	// The command_track_data contains the operationParam JSON with paramName/paramValue.
@@ -482,4 +499,15 @@ func extractOperationID(eventLog *eventlog.EventLog) string {
 		return ""
 	}
 	return track.OperationID
+}
+
+// parseMMLResultID extracts the numeric MML result id from an "mml:<id>" operation id.
+func parseMMLResultID(opID string) int {
+	if !strings.HasPrefix(opID, "mml:") {
+		return 0
+	}
+	if n, err := strconv.Atoi(strings.TrimPrefix(opID, "mml:")); err == nil {
+		return n
+	}
+	return 0
 }

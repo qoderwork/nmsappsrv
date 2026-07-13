@@ -14,3 +14,12 @@ var DefaultSender *OperationSender
 // It is declared here (not in the monitor package) to avoid an import cycle:
 // monitor imports tr069 (to send GPV + set this hook), but tr069 must not import monitor.
 var MonitorGPVCallback func(sn, operationId string, values []soap.ParameterValueStruct)
+
+// MMLResponseCallback is invoked by the SetParameterValues response handler when
+// an SPV response arrives whose operationId starts with "mml:". The mml package
+// registers this at startup to mark the execution result delivered (status=3)
+// and record success/failure via has_fault (对齐 Java MmlMessageProcessor).
+//
+// It is declared here (not in the mml package) to avoid an import cycle:
+// mml imports tr069 (to send the SPV + set this hook), but tr069 must not import mml.
+var MMLResponseCallback func(resultId int, success bool, faultString string)
