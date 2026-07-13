@@ -17,7 +17,7 @@ import (
 type Service interface {
 	ListCbsdInfos(licenseId int, page, pageSize int) ([]CbsdInfo, int64, error)
 	GetCbsdInfo(sn string, licenseId int) (*CbsdInfo, error)
-	RegisterCbsd(info *CbsdInfo) error
+	RegisterCbsd(info *CbsdInfo, licenseId int) error
 	UpdateCbsdInfo(info *CbsdInfo) error
 	DeregisterCbsd(id string) error
 	ListCbrsLogs(cbsdId string, logType string, page, pageSize int) ([]CbrsLog, int64, error)
@@ -77,8 +77,13 @@ func (s *service) GetCbsdInfo(sn string, licenseId int) (*CbsdInfo, error) {
 	return s.repo.FindCbsdInfoBySN(sn, licenseId)
 }
 
-// RegisterCbsd persists a new CBSD registration.
-func (s *service) RegisterCbsd(info *CbsdInfo) error {
+// RegisterCbsd persists a new CBSD registration, stamping the tenant
+// license id from the authenticated context so the record is isolated per
+// tenant (mirrors Java nms-serv behaviour).
+func (s *service) RegisterCbsd(info *CbsdInfo, licenseId int) error {
+	if licenseId > 0 {
+		info.LicenseId = &licenseId
+	}
 	return s.repo.Create(info)
 }
 

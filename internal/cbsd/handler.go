@@ -78,7 +78,8 @@ func (h *Handler) RegisterCBSD(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.RegisterCbsd(&info); err != nil {
+	licenseId := middleware.GetLicenseId(c)
+	if err := h.svc.RegisterCbsd(&info, licenseId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to register CBSD")
 		return
 	}
