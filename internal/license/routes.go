@@ -15,3 +15,11 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.PUT("/license/entra-endpoints/:id", h.UpdateEntraEndpoint)
 	rg.DELETE("/license/entra-endpoints/:id", h.DeleteEntraEndpoint)
 }
+
+// RegisterPublicRoutes registers license endpoints that must stay open before a
+// license is activated, so an administrator can upload one and inspect status.
+// These are NOT placed behind the license gate.
+func RegisterPublicRoutes(rg *gin.RouterGroup, h *Handler) {
+	rg.POST("/license/upload", h.UploadLicenseFile)
+	rg.GET("/license/info", h.GetLicenseInfo)
+}

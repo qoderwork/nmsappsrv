@@ -75,3 +75,19 @@ platform_files:
 
 upgrade:
   upload_dir: ./data/upgrade-files
+
+license:
+  # Gate all authenticated endpoints unless a valid license is active.
+  # Override at runtime with NMS_LICENSE_REQUIRED=false for a dev/test instance.
+  required: true
+  # Where the verified envelope is persisted on disk (survives restarts).
+  install_dir: ./data/license
+  # Empty => embedded default public key is used. Set to a PKIX PEM path to
+  # rotate the verifying key without recompiling.
+  # public_key_path: ""
+  # Empty => <install_dir>/.maxclock. Persists the anti-rollback max-time.
+  # max_clock_file: ""
+  # Dev/test only: force the verifying fingerprint (e.g. the value emitted by
+  # `license-tool fingerprint` on the target host). Leave empty in production so
+  # the real host system-uuid (dmidecode -s system-uuid) is used.
+  # machine_fingerprint_override: ""

@@ -1,6 +1,8 @@
 package license
 
 import (
+	"errors"
+
 	"nmsappsrv/pkg/baserepo"
 
 	"gorm.io/gorm"
@@ -28,7 +30,17 @@ type Repository interface {
 	CreateEntraEndpoint(e *EntraEndpoint) error
 	UpdateEntraEndpoint(e *EntraEndpoint) error
 	DeleteEntraEndpoint(id string) error
+
+	// L-2 enforcement persistence.
+	UpsertActiveLicense(l *License) error
+	GetActiveLicense() (*License, error)
+	UpsertBaseStationLicense(e *BaseStationLicense) error
 }
+
+// activeSlot is the fixed slot value for the single canonical enforced license.
+const activeSlot = "active"
+
+func ptrStr(s string) *string { return &s }
 
 // repository is the concrete GORM-backed implementation of Repository.
 type repository struct {
@@ -105,4 +117,50 @@ func (r *repository) UpdateEntraEndpoint(e *EntraEndpoint) error {
 // DeleteEntraEndpoint removes an Entra endpoint by ID.
 func (r *repository) DeleteEntraEndpoint(id string) error {
 	return r.db.Where("id = ?", id).Delete(&EntraEndpoint{}).Error
+}
+
+// ---------------------------------------------------------------------------
+// L-2 enforcement persistence
+// ---------------------------------------------------------------------------
+
+// UpsertActiveLicense writes the single canonical "active" license row.
+func (r *repository) UpsertActiveLicense(l *License) error {
+	l.Slot = ptrStr(activeSlot)
+	var existing License
+	err := r.db.Where("slot = ?", activeSlot).First(&existing).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return r.db.Create(l).Error
+		}
+		return err
+	}
+	l.Id = existing.Id
+	return r.db.Save(l).Error
+}
+
+// GetActiveLicense returns the canonical "active" license row, or nil if none.
+func (r *repository) GetActiveLicense() (*License, error) {
+	var l License
+	if err := r.db.Where("slot = ?", activeSlot).First(&l).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &l, nil
+}
+
+// UpsertBaseStationLicense creates or updates a base station license row,
+// keyed by element_id.
+func (r *repository) UpsertBaseStationLicense(e *BaseStationLicense) error {
+	var existing BaseStationLicense
+	err := r.db.Where("element_id = ?", e.ElementId).First(&existing).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return r.db.Create(e).Error
+		}
+		return err
+	}
+	e.Id = existing.Id
+	return r.db.Save(e).Error
 }

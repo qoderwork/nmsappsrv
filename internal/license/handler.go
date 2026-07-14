@@ -1,10 +1,12 @@
 package license
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/qoderwork/go-infra/licensing"
 
 	"nmsappsrv/pkg/utils"
 
@@ -14,11 +16,12 @@ import (
 // Handler exposes HTTP handlers for license-related endpoints.
 type Handler struct {
 	svc Service
+	enf *Enforcer
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(db)}
+func NewHandler(db *gorm.DB, enf *Enforcer) *Handler {
+	return &Handler{svc: NewService(db), enf: enf}
 }
 
 // ---------------------------------------------------------------------------
@@ -171,4 +174,84 @@ func (h *Handler) DeleteEntraEndpoint(c *gin.Context) {
 		return
 	}
 	utils.Success(c, nil)
+}
+
+// ---------------------------------------------------------------------------
+// L-2 license enforcement endpoints (public — must stay open before activation)
+// ---------------------------------------------------------------------------
+
+// UploadLicenseFile handles POST /license/upload (public).
+// It accepts a multipart .lic envelope, verifies it, and activates it.
+func (h *Handler) UploadLicenseFile(c *gin.Context) {
+	if h.enf == nil {
+		utils.Error(c, http.StatusServiceUnavailable, "license enforcer not configured")
+		return
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "missing license file (multipart field 'file')")
+		return
+	}
+	f, err := file.Open()
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "cannot open uploaded file")
+		return
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "cannot read uploaded file")
+		return
+	}
+
+	lic, err := h.enf.VerifyAndStore(raw, file.Filename)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	utils.Success(c, gin.H{
+		"message":    "license activated",
+		"subject":    lic.Subject,
+		"issuer":     lic.Issuer,
+		"product":    lic.Product,
+		"expiry":     lic.Expiry,
+		"not_before": lic.NotBefore,
+		"features":   lic.Features,
+		"capacity":   lic.Capacity,
+		"machine":    machineFP(lic),
+	})
+}
+
+// GetLicenseInfo handles GET /license/info (public) — reports enforcement state.
+func (h *Handler) GetLicenseInfo(c *gin.Context) {
+	if h.enf == nil {
+		utils.Error(c, http.StatusServiceUnavailable, "license enforcer not configured")
+		return
+	}
+	lic, status, detail := h.enf.GetActive()
+	resp := gin.H{
+		"required": h.enf.Required(),
+		"status":   status,
+		"detail":   detail,
+	}
+	if lic != nil {
+		resp["subject"] = lic.Subject
+		resp["issuer"] = lic.Issuer
+		resp["product"] = lic.Product
+		resp["expiry"] = lic.Expiry
+		resp["not_before"] = lic.NotBefore
+		resp["features"] = lic.Features
+		resp["capacity"] = lic.Capacity
+		resp["machine_fingerprint"] = machineFP(lic)
+	}
+	utils.Success(c, resp)
+}
+
+// machineFP returns the license's bound machine fingerprint, or "".
+func machineFP(lic *licensing.License) string {
+	if lic == nil || lic.Machine == nil {
+		return ""
+	}
+	return lic.Machine.Fingerprint
 }

@@ -20,6 +20,27 @@ type License struct {
 	LogoBase64           *string    `gorm:"column:logo_base64;type:longtext" json:"logo_base64"`
 	GnbQuantity          *int       `gorm:"column:gnb_quantity" json:"gnb_quantity"`
 	CpeQuantity          *int       `gorm:"column:cpe_quantity" json:"cpe_quantity"`
+
+	// --- L-2 signed-license enforcement fields (go-infra/licensing) ---
+	// Slot marks the canonical enforced license row ("active"). Unique so there
+	// is exactly one active license. Null for the legacy Java-compatible rows.
+	Slot *string `gorm:"column:slot;type:varchar(32);uniqueIndex" json:"-"`
+	// Subject/Issuer are copied from the verified signed license for display.
+	Subject *string `gorm:"column:subject;type:varchar(255)" json:"subject,omitempty"`
+	Issuer  *string `gorm:"column:issuer;type:varchar(255)" json:"issuer,omitempty"`
+	// Features/Capacity are JSON-encoded slices/maps from the signed license.
+	Features *string `gorm:"column:features;type:longtext" json:"features,omitempty"`
+	Capacity *string `gorm:"column:capacity;type:longtext" json:"capacity,omitempty"`
+	// NotBefore is the signed license validity start (may be nil).
+	NotBefore *time.Time `gorm:"column:not_before" json:"not_before,omitempty"`
+	// MachineFingerprint is the host binding the license was issued for.
+	MachineFingerprint *string `gorm:"column:machine_fingerprint;type:varchar(255);index" json:"machine_fingerprint,omitempty"`
+	// Status is the enforcement state: active | expired | invalid | missing.
+	Status *string `gorm:"column:status;type:varchar(32)" json:"status,omitempty"`
+	// VerifiedAt is when the active license was last verified & activated.
+	VerifiedAt *time.Time `gorm:"column:verified_at" json:"verified_at,omitempty"`
+	// LicenseFilePath is the on-disk path of the verified envelope (informational).
+	LicenseFilePath *string `gorm:"column:license_file_path;type:varchar(512)" json:"license_file_path,omitempty"`
 }
 
 func (License) TableName() string { return "license" }

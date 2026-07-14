@@ -166,6 +166,16 @@ func main() {
 
 	router := gin.New()
 
+	// 5a. 初始化 License Enforcer（L-2 发照/校验主流程）
+	licenseRepo := license.NewRepository(db)
+	licenseEnf, err := license.NewEnforcer(cfg.License, licenseRepo)
+	if err != nil {
+		logger.Fatalf("license enforcer init failed: %v", err)
+	}
+	if err := licenseEnf.LoadPersisted(); err != nil {
+		logger.Warnf("license: failed to load persisted license: %v", err)
+	}
+
 	// 全局中间件
 	router.Use(gin.Recovery())
 	router.Use(metrics.Middleware())
@@ -218,7 +228,7 @@ func main() {
 	deviceH := device.NewHandler(db)
 	alarmH := alarm.NewHandler(db)
 	userH := user.NewHandler(db)
-	licenseH := license.NewHandler(db)
+	licenseH := license.NewHandler(db, licenseEnf)
 	parameterH := parameter.NewHandler(db)
 	upgradeH := upgrade.NewHandler(db)
 	eventlogH := eventlog.NewHandler(db)
@@ -335,10 +345,14 @@ func main() {
 	{
 		// ===== 认证（公开） =====
 		user.RegisterPublicRoutes(api, userH)
+		// License upload/info must stay public so an admin can activate a license
+		// before any gating is in effect.
+		license.RegisterPublicRoutes(api, licenseH)
 
 		// ===== 需要认证的路由 =====
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())
+		auth.Use(middleware.LicenseMiddleware(licenseEnf))
 		{
 			device.RegisterRoutes(auth, deviceH)
 			site.RegisterRoutes(auth, siteH)
@@ -391,6 +405,7 @@ func main() {
 	// ========== REST API (Northbound) — offset-based pagination ==========
 	rest := router.Group("/api/rest/v1")
 	rest.Use(middleware.AuthMiddleware())
+	rest.Use(middleware.LicenseMiddleware(licenseEnf))
 	{
 		restapi.RegisterRoutes(rest, restapiH)
 	}

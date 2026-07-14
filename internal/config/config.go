@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"nmsappsrv/pkg/logger"
@@ -23,6 +24,28 @@ type Config struct {
 	PlatformFiles PlatformFilesConfig `mapstructure:"platform_files"`
 	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat"`
 	Upgrade       UpgradeConfig       `mapstructure:"upgrade"`
+	License       LicenseConfig       `mapstructure:"license"`
+}
+
+// LicenseConfig controls L-2 license enforcement (go-infra/licensing).
+//
+//	required                   gate all authenticated endpoints unless disabled
+//	                          (public build or runtime override). Default true.
+//	public_key_path           override the embedded default public key (PKIX PEM).
+//	                          Empty => embedded default is used.
+//	install_dir               where the active, verified license envelope is
+//	                          persisted on disk (survives restarts).
+//	max_clock_file            persisted "max time seen" (unix seconds) for the
+//	                          anti-rollback check. Empty => <install_dir>/.maxclock.
+//	machine_fingerprint_override  force the verifying fingerprint (dev/test only).
+//	                          Leave empty in production so the real host
+//	                          system-uuid (dmidecode -s system-uuid) is used.
+type LicenseConfig struct {
+	Required                   bool   `mapstructure:"required"`
+	PublicKeyPath              string `mapstructure:"public_key_path"`
+	InstallDir                 string `mapstructure:"install_dir"`
+	MaxClockFile               string `mapstructure:"max_clock_file"`
+	MachineFingerprintOverride string `mapstructure:"machine_fingerprint_override"`
 }
 
 // HAConfig holds High Availability configuration for VIP monitoring.
@@ -153,6 +176,9 @@ func Load(configPath ...string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// Defaults (overridable via config file or NMS_* env vars).
+	v.SetDefault("license.required", true)
+
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
@@ -171,6 +197,14 @@ func Load(configPath ...string) (*Config, error) {
 	}
 	if Cfg.PlatformFiles.PlatformLogDir == "" {
 		Cfg.PlatformFiles.PlatformLogDir = "./logs/platform"
+	}
+
+	// Defaults for license enforcement storage.
+	if Cfg.License.InstallDir == "" {
+		Cfg.License.InstallDir = "./data/license"
+	}
+	if Cfg.License.MaxClockFile == "" {
+		Cfg.License.MaxClockFile = filepath.Join(Cfg.License.InstallDir, ".maxclock")
 	}
 
 	// Validate required fields
