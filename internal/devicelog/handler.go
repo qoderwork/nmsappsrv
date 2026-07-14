@@ -113,7 +113,7 @@ func (h *Handler) ListLogFiles(c *gin.Context) {
 		return
 	}
 
-	files, total, err := h.svc.ListLogFiles(&req)
+	files, total, err := h.svc.ListLogFiles(c, &req)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

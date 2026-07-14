@@ -93,11 +93,14 @@ func (h *Handler) SetSSHAccessTimer(c *gin.Context) {
 	}
 	tenancyId := middleware.GetLicenseId(c)
 	username := middleware.GetUsername(c)
-	if err := h.svc.SetAccessTimer(&req, tenancyId, username); err != nil {
-		utils.Error(c, http.StatusInternalServerError, err.Error())
+	operationIds, err := h.svc.SetAccessTimer(&req, tenancyId, username)
+	if err != nil {
+		utils.HandleError(c, err)
 		return
 	}
-	utils.OK(c, "ok")
+	// Return the per-device operation IDs so the frontend can poll progress,
+	// mirroring Java's Result<List<Long>>.operationIds.
+	utils.OK(c, operationIds)
 }
 
 // ListSSHAccessTimer handles POST /listSSHAccessTimer

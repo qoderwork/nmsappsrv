@@ -494,6 +494,48 @@ func main() {
 		logger.Errorf("failed to register monitor-data-retention cron job: %v", err)
 	}
 
+	// Device statistics fill (hourly cron): snapshot each device's online/active
+	// state into device_statistic so the dashboard's online-statistics endpoints
+	// have data to aggregate. One row per device per hour (idempotent per bucket).
+	// Closes P1 cluster 5 (dashboard data source) + the missing dashboard-fill job
+	// in P1 cluster 9.
+	if err := mainScheduler.AddJob("device-statistic-fill", "0 0 * * * *", func() {
+		ctx := context.Background()
+		bucket := time.Now().Truncate(time.Hour)
+		if n, err := device.FillDeviceStatistic(ctx, db, bucket); err != nil {
+			logger.Errorf("device-statistic-fill failed for %s: %v", bucket, err)
+		} else {
+			logger.Infof("device-statistic-fill: wrote %d device snapshots for %s", n, bucket)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register device-statistic-fill cron job: %v", err)
+	}
+	// Bootstrap: seed the last 24 hourly buckets on startup so the dashboard is not
+	// empty on first run. Past buckets reflect current liveness (a seed, not real
+	// history) and are overwritten by the hourly job going forward.
+	go func() {
+		ctx := context.Background()
+		now := time.Now()
+		for h := 0; h < 24; h++ {
+			bucket := now.Add(-time.Duration(h) * time.Hour).Truncate(time.Hour)
+			if _, err := device.FillDeviceStatistic(ctx, db, bucket); err != nil {
+				logger.Warnf("device-statistic backfill for %s failed: %v", bucket, err)
+			}
+		}
+		logger.Infof("device-statistic backfill complete (last 24h seeded)")
+	}()
+
+	// Login-log retention (daily at 04:10): prune login_log older than 90 days.
+	// Closes the "log cleanup" part of P1 cluster 9 (Java FileAndMysqlLogDeleteTask).
+	if err := mainScheduler.AddJob("login-log-retention", "0 10 4 * * *", func() {
+		cutoff := time.Now().AddDate(0, 0, -90)
+		if err := db.Where("login_time < ?", cutoff).Delete("login_log").Error; err != nil {
+			logger.Errorf("login-log retention failed: %v", err)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register login-log retention cron job: %v", err)
+	}
+
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)
 	resourceCollector := resources.NewCollector()
 	mgr.Add(workerTask("resource-collector", resourceCollector.Start, resourceCollector.Stop))

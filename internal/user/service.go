@@ -56,19 +56,77 @@ func NewService(db *gorm.DB) Service {
 // Auth
 // ---------------------------------------------------------------------------
 
-// Login validates credentials and returns the user on success.
+// Login validates credentials and enforces the login security gate:
+//   - disabled accounts (Enable == false) are rejected outright;
+//   - accounts locked by too many recent failures are rejected until the lock
+//     window (UserLockMinutes) elapses, after which they auto-unlock;
+//   - every failed password attempt increments the per-user error counter and
+//     locks the account once it reaches DefaultMaxLoginFailedTimes;
+//   - a successful login resets the counter and records the login time.
+//
+// The gate operates entirely on existing sys_user columns (Enable,
+// LoginErrorTimes, LastLockTime, LastLoginTime) via repo.UpdateUserFields, so
+// it reuses the same primitives already exposed by UnlockUser / GetLoginFailedTimes.
 func (s *service) Login(username, password string) (*SysUser, error) {
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
 		return nil, apperror.ErrInvalidCredentials
 	}
 
+	// 1) Account disabled by an administrator.
+	if u.Enable != nil && !*u.Enable {
+		return nil, apperror.ErrUserDisabled
+	}
+
+	// 2) Account locked due to too many failed attempts?
+	if u.LoginErrorTimes != nil && *u.LoginErrorTimes >= DefaultMaxLoginFailedTimes {
+		locked := u.LastLockTime != nil && time.Since(*u.LastLockTime) < UserLockMinutes*time.Minute
+		if locked {
+			return nil, apperror.ErrUserLocked
+		}
+		// Lock window has elapsed (or LastLockTime was never set): auto-unlock
+		// so the user can retry, then fall through to the password check.
+		if err := s.repo.UpdateUserFields(u.Id, map[string]interface{}{
+			"login_error_times": 0,
+			"last_lock_time":    nil,
+		}); err != nil {
+			logger.Warnf("login: failed to auto-unlock user %q: %v", username, err)
+		}
+		u.LoginErrorTimes = intPtr(0)
+		u.LastLockTime = nil
+	}
+
 	if u.Password == nil {
 		return nil, apperror.ErrInvalidCredentials
 	}
 
+	// 3) Verify the password.
 	if err := bcrypt.CompareHashAndPassword([]byte(*u.Password), []byte(password)); err != nil {
+		// Increment the failure counter and lock the account at the threshold.
+		newCount := 1
+		if u.LoginErrorTimes != nil {
+			newCount = *u.LoginErrorTimes + 1
+		}
+		fields := map[string]interface{}{
+			"login_error_times": newCount,
+			"login_error_time":  time.Now(),
+		}
+		if newCount >= DefaultMaxLoginFailedTimes {
+			fields["last_lock_time"] = time.Now()
+		}
+		if err := s.repo.UpdateUserFields(u.Id, fields); err != nil {
+			logger.Warnf("login: failed to record failed attempt for %q: %v", username, err)
+		}
 		return nil, apperror.ErrInvalidCredentials
+	}
+
+	// 4) Success: reset the counter, clear the lock, record the login time.
+	if err := s.repo.UpdateUserFields(u.Id, map[string]interface{}{
+		"login_error_times": 0,
+		"last_lock_time":    nil,
+		"last_login_time":   time.Now(),
+	}); err != nil {
+		logger.Warnf("login: failed to reset login state for %q: %v", username, err)
 	}
 
 	return u, nil

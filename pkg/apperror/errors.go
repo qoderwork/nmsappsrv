@@ -78,7 +78,16 @@ var (
 	ErrDeviceAlreadyExist = ErrConflict.WithMessage("device already exists")
 	ErrUserNotFound       = ErrNotFound.WithMessage("user not found")
 	ErrInvalidCredentials = ErrUnauthorized.WithMessage("invalid username or password")
+	// ErrUserDisabled is returned when an administrator has disabled the account.
+	ErrUserDisabled = ErrUnauthorized.WithMessage("account is disabled, contact your administrator")
+	// ErrUserLocked is returned when the account is locked due to too many
+	// consecutive failed login attempts within the lock window.
+	ErrUserLocked = ErrUnauthorized.WithMessage("account is locked due to too many failed login attempts")
 	ErrAlarmNotFound      = ErrNotFound.WithMessage("alarm not found")
+	// ErrDefaultGroupProtected is returned when an attempt is made to delete a
+	// device group that is flagged as the system default group. Default groups
+	// are protected so that every tenancy always retains at least one group.
+	ErrDefaultGroupProtected = ErrForbidden.WithMessage("the default group cannot be deleted")
 )
 
 // IsNotFound checks if an error is a "not found" type error.

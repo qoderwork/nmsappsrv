@@ -16,6 +16,7 @@ type Repository interface {
 	Update(elem *CpeElement) error
 	SoftDelete(id int64) error
 	FindGroups(licenseId int) ([]DeviceGroup, error)
+	FindGroupByID(id string) (*DeviceGroup, error)
 	CreateGroup(g *DeviceGroup) error
 	UpdateGroup(g *DeviceGroup) error
 	DeleteGroup(id string) error
@@ -123,6 +124,16 @@ func (r *repository) FindGroups(licenseId int) ([]DeviceGroup, error) {
 		return nil, err
 	}
 	return groups, nil
+}
+
+// FindGroupByID returns a single device group by its primary key, or
+// gorm.ErrRecordNotFound if no such group exists.
+func (r *repository) FindGroupByID(id string) (*DeviceGroup, error) {
+	var group DeviceGroup
+	if err := r.db.Where("id = ?", id).First(&group).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
 }
 
 // CreateGroup inserts a new device group.

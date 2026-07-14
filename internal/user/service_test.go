@@ -134,6 +134,7 @@ func TestService_Login(t *testing.T) {
 				assert.Equal(t, "testuser", username)
 				return testUser, nil
 			},
+			updateUserFieldsFn: func(int, map[string]interface{}) error { return nil },
 		}
 		svc := newTestService(repo)
 
@@ -149,6 +150,7 @@ func TestService_Login(t *testing.T) {
 			findUserByUsernameFn: func(username string) (*SysUser, error) {
 				return testUser, nil
 			},
+			updateUserFieldsFn: func(int, map[string]interface{}) error { return nil },
 		}
 		svc := newTestService(repo)
 
@@ -189,6 +191,131 @@ func TestService_Login(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, u)
 		assert.Contains(t, err.Error(), "invalid username or password")
+	})
+
+	t.Run("disabled account returns ErrUserDisabled", func(t *testing.T) {
+		disabledUser := &SysUser{
+			Id:       3,
+			Username: strPtr("disabled"),
+			Password: &hashedPwd,
+			Enable:   boolPtr(false),
+		}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return disabledUser, nil
+			},
+		}
+		svc := newTestService(repo)
+
+		u, err := svc.Login("disabled", "correct-password")
+		assert.Error(t, err)
+		assert.Nil(t, u)
+		assert.Contains(t, err.Error(), "account is disabled")
+	})
+
+	t.Run("locked account within window returns ErrUserLocked", func(t *testing.T) {
+		recent := time.Now().Add(-time.Minute) // 1 min ago, inside the 30-min window
+		lockedUser := &SysUser{
+			Id:              4,
+			Username:        strPtr("locked"),
+			Password:        &hashedPwd,
+			LoginErrorTimes: intPtr(DefaultMaxLoginFailedTimes),
+			LastLockTime:    &recent,
+		}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return lockedUser, nil
+			},
+		}
+		svc := newTestService(repo)
+
+		u, err := svc.Login("locked", "correct-password")
+		assert.Error(t, err)
+		assert.Nil(t, u)
+		assert.Contains(t, err.Error(), "account is locked")
+	})
+
+	t.Run("expired lock auto-unlocks and logs in", func(t *testing.T) {
+		expired := time.Now().Add(-(UserLockMinutes + 1) * time.Minute)
+		lockedUser := &SysUser{
+			Id:              5,
+			Username:        strPtr("expiredlock"),
+			Password:        &hashedPwd,
+			LoginErrorTimes: intPtr(DefaultMaxLoginFailedTimes),
+			LastLockTime:    &expired,
+		}
+		var captured map[string]interface{}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return lockedUser, nil
+			},
+			updateUserFieldsFn: func(id int, fields map[string]interface{}) error {
+				captured = fields
+				return nil
+			},
+		}
+		svc := newTestService(repo)
+
+		u, err := svc.Login("expiredlock", "correct-password")
+		assert.NoError(t, err)
+		assert.NotNil(t, u)
+		// The final (success) write must have reset the counter.
+		assert.Equal(t, 0, captured["login_error_times"])
+	})
+
+	t.Run("wrong password increments error counter", func(t *testing.T) {
+		user := &SysUser{
+			Id:              6,
+			Username:        strPtr("incrementme"),
+			Password:        &hashedPwd,
+			LoginErrorTimes: intPtr(2),
+		}
+		var captured map[string]interface{}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return user, nil
+			},
+			updateUserFieldsFn: func(id int, fields map[string]interface{}) error {
+				captured = fields
+				return nil
+			},
+		}
+		svc := newTestService(repo)
+
+		u, err := svc.Login("incrementme", "wrong-password")
+		assert.Error(t, err)
+		assert.Nil(t, u)
+		assert.Equal(t, 3, captured["login_error_times"])
+		// Threshold not reached yet -> account must NOT be locked.
+		_, hasLock := captured["last_lock_time"]
+		assert.False(t, hasLock)
+	})
+
+	t.Run("wrong password at threshold locks account", func(t *testing.T) {
+		user := &SysUser{
+			Id:              7,
+			Username:        strPtr("lockme"),
+			Password:        &hashedPwd,
+			LoginErrorTimes: intPtr(DefaultMaxLoginFailedTimes - 1),
+		}
+		var captured map[string]interface{}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return user, nil
+			},
+			updateUserFieldsFn: func(id int, fields map[string]interface{}) error {
+				captured = fields
+				return nil
+			},
+		}
+		svc := newTestService(repo)
+
+		_, err := svc.Login("lockme", "wrong-password")
+		assert.Error(t, err)
+		assert.Equal(t, DefaultMaxLoginFailedTimes, captured["login_error_times"])
+		// Reaching the threshold must engage the lock.
+		_, hasLock := captured["last_lock_time"]
+		assert.True(t, hasLock)
 	})
 }
 

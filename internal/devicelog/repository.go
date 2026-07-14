@@ -25,9 +25,9 @@ type Repository interface {
 
 	// Module-specific methods.
 	DeleteByElementId(elementId int64) error
-	FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error)
+	FindByElementId(elementId int64, licenseId *int, offset, limit int) ([]NeLog, int64, error)
 	FindAllByElementId(elementId int64) ([]NeLog, error)
-	FindByFilter(elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error)
+	FindByFilter(licenseId *int, elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error)
 	FindDeviceRootNode(elementId int64) (*string, error)
 }
 
@@ -62,11 +62,14 @@ func (r *repository) DeleteByElementId(elementId int64) error {
 	return r.db.Where("ne_id = ?", elementId).Delete(&NeLog{}).Error
 }
 
-func (r *repository) FindByElementId(elementId int64, offset, limit int) ([]NeLog, int64, error) {
+func (r *repository) FindByElementId(elementId int64, licenseId *int, offset, limit int) ([]NeLog, int64, error) {
 	var logs []NeLog
 	var total int64
 
 	query := r.db.Where("ne_id = ?", elementId)
+	if licenseId != nil {
+		query = query.Where("license_id = ?", *licenseId)
+	}
 	query.Model(&NeLog{}).Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&logs).Error
@@ -87,7 +90,7 @@ func (r *repository) FindAllByElementId(elementId int64) ([]NeLog, error) {
 	return logs, nil
 }
 
-func (r *repository) FindByFilter(elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error) {
+func (r *repository) FindByFilter(licenseId *int, elementId *int64, deviceType *string, status *int, offset, limit int) ([]LogCollectionResultVo, int64, error) {
 	var results []LogCollectionResultVo
 	var total int64
 
@@ -96,6 +99,9 @@ func (r *repository) FindByFilter(elementId *int64, deviceType *string, status *
 		Joins("LEFT JOIN cpe_element ON ne_log.ne_id = cpe_element.ne_neid").
 		Where("cpe_element.deleted = ?", false)
 
+	if licenseId != nil {
+		query = query.Where("ne_log.license_id = ?", *licenseId)
+	}
 	if elementId != nil {
 		query = query.Where("ne_log.ne_id = ?", *elementId)
 	}

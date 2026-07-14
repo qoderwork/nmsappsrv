@@ -150,7 +150,20 @@ func (s *service) UpdateGroup(g *DeviceGroup) error {
 }
 
 // DeleteGroup removes a group and its element associations.
+// Default groups are protected from deletion to preserve the invariant that
+// every tenancy always has at least one group.
 func (s *service) DeleteGroup(id string) error {
+	group, err := s.repo.FindGroupByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Nothing to delete — preserve prior no-op behaviour.
+			return nil
+		}
+		return err
+	}
+	if group.DefaultGroup {
+		return apperror.ErrDefaultGroupProtected
+	}
 	return s.repo.DeleteGroup(id)
 }
 

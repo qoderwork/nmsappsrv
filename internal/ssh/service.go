@@ -1,15 +1,15 @@
 package ssh
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/internal/tr069"
+	"nmsappsrv/internal/tr069/soap"
+	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
-	"nmsappsrv/pkg/redis"
 )
 
 // Repository defines the data-access contract for SSH management.
@@ -165,7 +165,7 @@ type Service interface {
 	DeleteLabel(id int) error
 	ListLabels(tenancyId int) ([]SSHLabel, error)
 	UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error
-	SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) error
+	SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) ([]string, error)
 	ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessTimerVO, int64, error)
 	StartExpiredChecker()
 }
@@ -219,23 +219,31 @@ func (s *service) UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error {
 
 // ---------- SSH Access Timer methods ----------
 
-func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) error {
+func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) ([]string, error) {
 	elementIds := req.ElementIds
 	if req.DeviceGroupIds != nil && len(req.DeviceGroupIds) > 0 {
 		groupIds, err := s.repo.FindElementIdsByGroup(req.DeviceGroupIds)
 		if err != nil {
-			return fmt.Errorf("resolve device groups: %w", err)
+			return nil, fmt.Errorf("resolve device groups: %w", err)
 		}
 		elementIds = append(elementIds, groupIds...)
 	}
 	if len(elementIds) == 0 {
-		return fmt.Errorf("no devices selected")
+		return nil, fmt.Errorf("no devices selected")
+	}
+
+	if req.Deadline <= 0 {
+		return nil, apperror.ErrInvalidInput.WithMessage("deadline must be a positive number of minutes")
 	}
 
 	deadline := time.Now().Add(time.Duration(req.Deadline) * time.Minute)
 	tenancyName := s.repo.GetTenancyName(tenancyId)
-	ctx := context.Background()
 	now := time.Now()
+
+	// operationIds are returned to the caller (and the frontend) so the
+	// async TR-069 pushes can be polled for progress — mirrors Java's
+	// Result<List<Long>> returned by setDeadlineToDevices.
+	var operationIds []string
 
 	for _, eid := range elementIds {
 		sn, deviceName, err := s.repo.FindElementInfo(int64(eid))
@@ -264,21 +272,26 @@ func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, user
 			s.repo.CreateTimer(task)
 		}
 
-		// Push TR-069 SetParamValue to enable SSH
-		msg := operationMessage{
-			EventType:      "SetParamValue",
-			NeNeid:         int64(eid),
-			Operation:      "SetParamValue",
-			OperationParam: "Device.SecurityManagement.SshEnable=true",
-			OperationUser:  username,
-			ExpiredAt:      now.Add(5 * time.Minute).UnixMilli(),
+		// Push TR-069 SetParameterValues to enable SSH through the shared
+		// OperationSender. This both delivers the SPV to the device queue
+		// (tr069:queue:<sn>, consumed by the ACS) and registers a track
+		// record carrying the operationId — the literal "operation_queue"
+		// LPush used previously was never consumed by the ACS, so devices
+		// never received the enable/disable.
+		operationId := fmt.Sprintf("ssh:%d:%d", eid, time.Now().UnixMilli())
+		operationIds = append(operationIds, operationId)
+		spv := []soap.ParameterValueStruct{
+			{Name: "Device.SecurityManagement.SshEnable", Value: "true", Type: "xsd:boolean"},
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, "operation_queue", string(msgJSON)); err != nil {
+		if tr069.DefaultSender == nil {
+			logger.Errorf("ssh_timer: tr069.DefaultSender not wired; cannot push enable SSH for %d", eid)
+			continue
+		}
+		if err := tr069.DefaultSender.SendSetParameterValues(sn, spv, "", operationId); err != nil {
 			logger.Errorf("ssh_timer: push enable SSH for %d: %v", eid, err)
 		}
 	}
-	return nil
+	return operationIds, nil
 }
 
 func (s *service) ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessTimerVO, int64, error) {
@@ -327,7 +340,6 @@ func (s *service) processExpiredTasks() {
 		logger.Errorf("ssh_timer: find expired: %v", err)
 		return
 	}
-	ctx := context.Background()
 	now := time.Now()
 
 	for _, t := range tasks {
@@ -336,18 +348,20 @@ func (s *service) processExpiredTasks() {
 			eid = *t.ElementId
 		}
 
-		// Push TR-069 to disable SSH
-		msg := operationMessage{
-			EventType:      "SetParamValue",
-			NeNeid:         eid,
-			Operation:      "SetParamValue",
-			OperationParam: "Device.SecurityManagement.SshEnable=false",
-			OperationUser:  "system",
-			ExpiredAt:      now.Add(5 * time.Minute).UnixMilli(),
+		// Push TR-069 to disable SSH through the shared OperationSender so the
+		// SPV actually reaches the device (the former "operation_queue" LPush
+		// was never consumed by the ACS).
+		sn, _, _ := s.repo.FindElementInfo(eid)
+		operationId := fmt.Sprintf("ssh_disable:%d:%d", eid, time.Now().UnixMilli())
+		spv := []soap.ParameterValueStruct{
+			{Name: "Device.SecurityManagement.SshEnable", Value: "false", Type: "xsd:boolean"},
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, "operation_queue", string(msgJSON)); err != nil {
-			logger.Errorf("ssh_timer: push disable SSH for %d: %v", eid, err)
+		if tr069.DefaultSender != nil && sn != "" {
+			if err := tr069.DefaultSender.SendSetParameterValues(sn, spv, "", operationId); err != nil {
+				logger.Errorf("ssh_timer: push disable SSH for %d: %v", eid, err)
+			}
+		} else {
+			logger.Errorf("ssh_timer: tr069.DefaultSender not wired or sn empty; cannot push disable SSH for %d", eid)
 		}
 
 		disabled := "0"

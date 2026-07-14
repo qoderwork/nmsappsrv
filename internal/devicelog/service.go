@@ -21,7 +21,7 @@ type Service interface {
 	DeleteAllLogFile(req *DeleteAllLogFileRequest) error
 	DeleteLogFile(req *DeleteLogFileRequest) error
 	GetLogFile(logId int64) (string, error)
-	ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, error)
+	ListLogFiles(c *gin.Context, req *ListLogFileRequest) ([]LogFileVo, int64, error)
 	EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUploadRequest) error
 	DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUploadRequest) error
 }
@@ -88,8 +88,11 @@ func (s *service) ListLogCollectionResults(c *gin.Context, req *ListLogCollectio
 		req.PageSize = 10
 	}
 
+	// Tenant isolation: every caller is scoped to its own license; filter the
+	// joined ne_log rows by license_id so one tenant cannot read another's logs.
+	licenseId := middleware.GetLicenseId(c)
 	offset := (req.Page - 1) * req.PageSize
-	results, total, err := s.repo.FindByFilter(req.ElementId, req.DeviceType, req.Status, offset, req.PageSize)
+	results, total, err := s.repo.FindByFilter(&licenseId, req.ElementId, req.DeviceType, req.Status, offset, req.PageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -159,7 +162,7 @@ func (s *service) GetLogFile(logId int64) (string, error) {
 	return *log.FilePath, nil
 }
 
-func (s *service) ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, error) {
+func (s *service) ListLogFiles(c *gin.Context, req *ListLogFileRequest) ([]LogFileVo, int64, error) {
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -167,8 +170,11 @@ func (s *service) ListLogFiles(req *ListLogFileRequest) ([]LogFileVo, int64, err
 		req.PageSize = 10
 	}
 
+	// Tenant isolation: scope the element's log files to the caller's license so
+	// a user cannot read another tenant's files by passing a foreign elementId.
+	licenseId := middleware.GetLicenseId(c)
 	offset := (req.Page - 1) * req.PageSize
-	logs, total, err := s.repo.FindByElementId(req.ElementId, offset, req.PageSize)
+	logs, total, err := s.repo.FindByElementId(req.ElementId, &licenseId, offset, req.PageSize)
 	if err != nil {
 		return nil, 0, err
 	}

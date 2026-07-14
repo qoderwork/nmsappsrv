@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
 )
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ type mockRepository struct {
 	updateFn                      func(elem *CpeElement) error
 	softDeleteFn                  func(id int64) error
 	findGroupsFn                  func(licenseId int) ([]DeviceGroup, error)
+	findGroupByIDFn               func(id string) (*DeviceGroup, error)
 	createGroupFn                 func(g *DeviceGroup) error
 	updateGroupFn                 func(g *DeviceGroup) error
 	deleteGroupFn                 func(id string) error
@@ -81,6 +83,13 @@ func (m *mockRepository) SoftDelete(id int64) error {
 func (m *mockRepository) FindGroups(licenseId int) ([]DeviceGroup, error) {
 	if m.findGroupsFn != nil {
 		return m.findGroupsFn(licenseId)
+	}
+	return nil, nil
+}
+
+func (m *mockRepository) FindGroupByID(id string) (*DeviceGroup, error) {
+	if m.findGroupByIDFn != nil {
+		return m.findGroupByIDFn(id)
 	}
 	return nil, nil
 }
@@ -354,3 +363,52 @@ func TestService_DeleteDevice_Error(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "update failed")
 }
+
+// ---------------------------------------------------------------------------
+// DeleteGroup
+// ---------------------------------------------------------------------------
+
+func TestService_DeleteGroup_DefaultProtected(t *testing.T) {
+	repo := &mockRepository{
+		findGroupByIDFn: func(id string) (*DeviceGroup, error) {
+			assert.Equal(t, "g1", id)
+			return &DeviceGroup{Id: "g1", DefaultGroup: true}, nil
+		},
+	}
+	svc := newTestService(repo)
+
+	err := svc.DeleteGroup("g1")
+	assert.Error(t, err)
+}
+
+func TestService_DeleteGroup_NotFoundNoOp(t *testing.T) {
+	repo := &mockRepository{
+		findGroupByIDFn: func(id string) (*DeviceGroup, error) {
+			return nil, gorm.ErrRecordNotFound
+		},
+	}
+	svc := newTestService(repo)
+
+	// A missing group should be treated as a no-op (no error).
+	err := svc.DeleteGroup("missing")
+	assert.NoError(t, err)
+}
+
+func TestService_DeleteGroup_Ok(t *testing.T) {
+	var capturedID string
+	repo := &mockRepository{
+		findGroupByIDFn: func(id string) (*DeviceGroup, error) {
+			return &DeviceGroup{Id: "g2", DefaultGroup: false}, nil
+		},
+		deleteGroupFn: func(id string) error {
+			capturedID = id
+			return nil
+		},
+	}
+	svc := newTestService(repo)
+
+	err := svc.DeleteGroup("g2")
+	assert.NoError(t, err)
+	assert.Equal(t, "g2", capturedID)
+}
+
