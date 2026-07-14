@@ -36,6 +36,9 @@ type Repository interface {
 	FindSasConfigs(licenseId int) ([]SasConfig, error)
 	FindSasConfigByID(id int64) (*SasConfig, error)
 	UpdateSasConfig(cfg *SasConfig) error
+
+	// SAS operation-state maintenance
+	FindCbsdInfosByStates(states []string) ([]CbsdInfo, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -215,4 +218,15 @@ func (r *repository) FindSasConfigByID(id int64) (*SasConfig, error) {
 // UpdateSasConfig saves changes to an existing SAS config.
 func (r *repository) UpdateSasConfig(cfg *SasConfig) error {
 	return r.db.Save(cfg).Error
+}
+
+// FindCbsdInfosByStates returns all CBSD info rows whose operation_state is in
+// the given set. Used by the operation-state maintainer to find devices with
+// active grants that may need a timeout-driven transition.
+func (r *repository) FindCbsdInfosByStates(states []string) ([]CbsdInfo, error) {
+	var infos []CbsdInfo
+	if err := r.db.Where("operation_state IN ?", states).Find(&infos).Error; err != nil {
+		return nil, err
+	}
+	return infos, nil
 }

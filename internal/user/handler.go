@@ -7,7 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nmsappsrv/internal/authz"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
 
 	"gorm.io/gorm"
@@ -16,11 +18,12 @@ import (
 // Handler exposes HTTP handlers for user-related endpoints.
 type Handler struct {
 	svc Service
+	db  *gorm.DB
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(db)}
+	return &Handler{svc: NewService(db), db: db}
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +449,10 @@ func (h *Handler) UpdateRolePermissions(c *gin.Context) {
 	if err := h.svc.UpdateRolePermissions(id, req.PermissionIds); err != nil {
 		utils.HandleError(c, err)
 		return
+	}
+	// Keep the in-memory casbin policy in sync with role_has_permission.
+	if err := authz.Reload(h.db); err != nil {
+		logger.Errorf("failed to reload RBAC policy after role permission update: %v", err)
 	}
 	utils.Success(c, nil)
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -75,6 +76,47 @@ func GenerateToken(userId int, username string, licenseId int, roleNames []strin
 	return tokenString, nil
 }
 
+// ValidateToken parses and fully validates a raw JWT string (signature,
+// expiry, blacklist, and the single-session login key) and returns the decoded
+// Claims. It is shared by AuthMiddleware (HTTP) and the WebSocket handler,
+// which receives the token via a query parameter because browsers cannot set
+// custom headers on the WebSocket handshake.
+func ValidateToken(tokenString string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+		// Guard against algorithm confusion attacks.
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return JWTSecret, nil
+	})
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	ctx := context.Background()
+
+	// Check JWT blacklist
+	blackKey := constants.RedisKeyJWTBlack + tokenString
+	if redis.Exists(ctx, blackKey) {
+		return nil, fmt.Errorf("token has been invalidated")
+	}
+
+	// Check login key: only the most recently issued JWT is valid
+	loginKey := constants.RedisKeyJWTLogin + claims.Username
+	storedToken, err := redis.Get(ctx, loginKey)
+	if err != nil || storedToken == "" {
+		// No login key means user has been logged out
+		return nil, fmt.Errorf("session expired")
+	}
+	if storedToken != tokenString {
+		// This is not the most recent token — user has re-logged in
+		return nil, fmt.Errorf("session superseded by new login")
+	}
+
+	return claims, nil
+}
+
 // AuthMiddleware returns a gin.HandlerFunc that validates the JWT found in
 // the "Authorization: Bearer <token>" header and injects user info into the
 // gin.Context so downstream handlers can retrieve it via the Get* helpers.
@@ -97,46 +139,10 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		tokenString := strings.TrimSpace(parts[1])
 
-		claims := &Claims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
-			// Guard against algorithm confusion attacks.
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return JWTSecret, nil
-		})
-
-		if err != nil || !token.Valid {
+		claims, err := ValidateToken(tokenString)
+		if err != nil {
 			logger.Warnf("JWT validation failed: %v", err)
 			utils.Error(c, http.StatusUnauthorized, "unauthorized")
-			c.Abort()
-			return
-		}
-
-		// Check JWT blacklist
-		ctx := context.Background()
-		blackKey := constants.RedisKeyJWTBlack + tokenString
-		if redis.Exists(ctx, blackKey) {
-			logger.Warnf("JWT blacklisted for user %s", claims.Username)
-			utils.Error(c, http.StatusUnauthorized, "token has been invalidated")
-			c.Abort()
-			return
-		}
-
-		// Check login key: only the most recently issued JWT is valid
-		loginKey := constants.RedisKeyJWTLogin + claims.Username
-		storedToken, err := redis.Get(ctx, loginKey)
-		if err != nil || storedToken == "" {
-			// No login key means user has been logged out
-			logger.Warnf("No login key for user %s", claims.Username)
-			utils.Error(c, http.StatusUnauthorized, "session expired")
-			c.Abort()
-			return
-		}
-		if storedToken != tokenString {
-			// This is not the most recent token — user has re-logged in
-			logger.Warnf("JWT mismatch for user %s (re-login detected)", claims.Username)
-			utils.Error(c, http.StatusUnauthorized, "session superseded by new login")
 			c.Abort()
 			return
 		}

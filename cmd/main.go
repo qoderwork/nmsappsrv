@@ -53,6 +53,7 @@ import (
 	"nmsappsrv/internal/topology"
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/upgrade"
+	"nmsappsrv/internal/authz"
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
 	"nmsappsrv/internal/webssh"
@@ -340,6 +341,14 @@ func main() {
 	tr069EventProc := tr069.NewEventProcessor(db)
 	tr069ACS := tr069.NewACSHandler(db, tr069MsgMgr, tr069EventProc, cfg.TR069)
 
+	// ========== RBAC 授权层 (casbin) ==========
+	if err := authz.InitEnforcer(db); err != nil {
+		logger.Fatalf("failed to init RBAC enforcer: %v", err)
+	}
+	if err := authz.SeedBuiltinRoles(db); err != nil {
+		logger.Errorf("failed to seed built-in roles: %v", err)
+	}
+
 	// ========== API路由组 ==========
 	api := router.Group("/api/v1")
 	{
@@ -401,6 +410,17 @@ func main() {
 	health.RegisterPublicRoutes(router, healthH)
 	cacert.RegisterPublicRoutes(router, cacertH)
 	upgrade.RegisterPublicRoutes(router, upgradeH)
+
+	// ========== Java-compatible permission endpoints (v2 prefix) ==========
+	// Mirrors nms-serv RoleManagementServiceImpl.getPermissionIdsForUser /
+	// getPermission so the frontend permission tree keeps working.
+	v2 := router.Group("/api/v2")
+	v2.Use(middleware.AuthMiddleware())
+	v2.Use(middleware.LicenseMiddleware(licenseEnf))
+	{
+		v2.GET("/getPermissionIdsForUser", authz.GetPermissionIdsForUser)
+		v2.GET("/getPermission", authz.GetPermission)
+	}
 
 	// ========== REST API (Northbound) — offset-based pagination ==========
 	rest := router.Group("/api/rest/v1")
@@ -534,6 +554,19 @@ func main() {
 		}
 	}); err != nil {
 		logger.Errorf("failed to register login-log retention cron job: %v", err)
+	}
+
+	// CBSD SAS operation-state maintainer (every 60s; Java runs every 90s).
+	// Drives GRANTED/AUTHORIZED -> REGISTERED/GRANTED on grant/transmit expiry,
+	// re-issuing grant/heartbeat. Closes P1 cluster 6 (heartbeat-driven SAS state machine).
+	if err := mainScheduler.AddJob("cbsd-opstate-maintain", "0 * * * * *", func() {
+		if n, err := cbsdH.MaintainOperationStates(context.Background()); err != nil {
+			logger.Errorf("cbsd-opstate-maintain failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("cbsd-opstate-maintain: transitioned %d CBSD(s)", n)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register cbsd-opstate-maintain cron job: %v", err)
 	}
 
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)

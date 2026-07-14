@@ -1,30 +1,34 @@
 package user
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"nmsappsrv/internal/authz"
+)
 
 // RegisterRoutes registers all user management routes on the given router group.
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	// 用户管理
-	rg.GET("/users", h.ListUsers)
-	rg.POST("/users", h.CreateUser)
-	rg.PUT("/users/:id", h.UpdateUser)
-	rg.DELETE("/users/:id", h.DeleteUser)
-	rg.POST("/users/kick-out", h.KickOutUser)
-	rg.POST("/users/unlock", h.UnlockUser)
+	rg.GET("/users", authz.RequirePermission("System.Authority.User.ListUser"), h.ListUsers)
+	rg.POST("/users", authz.RequirePermission("System.Authority.User.AddUser"), h.CreateUser)
+	rg.PUT("/users/:id", authz.RequirePermission("System.Authority.User.ModifyUser"), h.UpdateUser)
+	rg.DELETE("/users/:id", authz.RequirePermission("System.Authority.User.DeleteUser"), h.DeleteUser)
+	rg.POST("/users/kick-out", authz.RequirePermission("System.Authority.User.KickOutUser"), h.KickOutUser)
+	rg.POST("/users/unlock", authz.RequirePermission("System.Authority.User.EnableUser"), h.UnlockUser)
 	rg.POST("/users/modify-password", h.ModifyPassword)
-	rg.POST("/users/enable", h.EnableUser)
-	rg.POST("/users/disable", h.DisableUser)
-	rg.POST("/users/reset-password", h.ResetPassword)
+	rg.POST("/users/enable", authz.RequirePermission("System.Authority.User.EnableUser"), h.EnableUser)
+	rg.POST("/users/disable", authz.RequirePermission("System.Authority.User.DisableUser"), h.DisableUser)
+	rg.POST("/users/reset-password", authz.RequirePermission("System.Authority.User.ResetPassword"), h.ResetPassword)
 	rg.POST("/users/reset-password-by-link", h.ResetPasswordByLink)
 	rg.POST("/users/set-tenancy", h.SetTenancyForUser)
 	rg.POST("/users/login-failed-times", h.GetLoginFailedTimes)
 	rg.GET("/users/need-change-password", h.NeedChangePassword)
-	rg.GET("/roles", h.ListRoles)
-	rg.POST("/roles", h.CreateRole)
-	rg.PUT("/roles/:id", h.UpdateRole)
-	rg.DELETE("/roles/:id", h.DeleteRole)
-	rg.GET("/roles/:id/permissions", h.GetRolePermissions)
-	rg.PUT("/roles/:id/permissions", h.UpdateRolePermissions)
+	rg.GET("/roles", authz.RequirePermission("System.Authority.Role.ListRole"), h.ListRoles)
+	rg.POST("/roles", authz.RequirePermission("System.Authority.Role.AddRole"), h.CreateRole)
+	rg.PUT("/roles/:id", authz.RequirePermission("System.Authority.Role.UpdateRole"), h.UpdateRole)
+	rg.DELETE("/roles/:id", authz.RequirePermission("System.Authority.Role.DeleteRole"), h.DeleteRole)
+	rg.GET("/roles/:id/permissions", authz.RequirePermission("System.Authority.Role.GetRolePermissions"), h.GetRolePermissions)
+	rg.PUT("/roles/:id/permissions", authz.RequirePermission("System.Authority.Role.UpdateRolePermissions"), h.UpdateRolePermissions)
 }
 
 // RegisterPublicRoutes registers public routes (no auth required) on the given router group.

@@ -20,6 +20,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/cbsd/spectrum-inquiry", h.SpectrumInquiry)
 	rg.POST("/cbsd/:id/grant", h.Grant)
 	rg.POST("/cbsd/:id/relinquishment", h.Relinquishment)
+	rg.POST("/cbsd/:id/sas-heartbeat", h.SasHeartbeat)
 
 	// Import / Template
 	rg.POST("/cbsd/import", h.ImportCBSDs)

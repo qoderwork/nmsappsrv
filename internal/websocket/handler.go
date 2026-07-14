@@ -3,8 +3,10 @@ package websocket
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
+	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
 
@@ -52,6 +54,14 @@ func NewWSHandler(hub *Hub) *WSHandler {
 
 // ServeWS upgrades the HTTP connection to WebSocket and registers the client.
 func (h *WSHandler) ServeWS(c *gin.Context) {
+	// Bind the connection to the authenticated user when a valid JWT is
+	// supplied. Browsers cannot set custom headers on the WebSocket handshake,
+	// so the token is passed as a query parameter (?token=...); the
+	// Authorization header is also accepted. Anonymous connections (no valid
+	// token) are still allowed and receive broadcast topics only — they simply
+	// cannot be targeted by SendToUser.
+	username := extractWSUsername(c)
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logger.Errorf("websocket: upgrade failed: %v", err)
@@ -60,11 +70,12 @@ func (h *WSHandler) ServeWS(c *gin.Context) {
 
 	clientID := uuid.New().String()
 	client := &Client{
-		hub:    h.hub,
-		conn:   conn,
-		send:   make(chan []byte, sendBufferSize),
-		id:     clientID,
-		topics: make(map[string]bool),
+		hub:      h.hub,
+		conn:     conn,
+		send:     make(chan []byte, sendBufferSize),
+		id:       clientID,
+		username: username,
+		topics:   make(map[string]bool),
 	}
 
 	// Register client with hub
@@ -77,6 +88,29 @@ func (h *WSHandler) ServeWS(c *gin.Context) {
 	utils.SafeGo("ws-write-pump-"+clientID, func() {
 		h.writePump(client)
 	})
+}
+
+// extractWSUsername extracts and validates the JWT from the WebSocket upgrade
+// request and returns the authenticated username, or "" if no valid token is
+// present (the connection then only receives broadcast topics).
+func extractWSUsername(c *gin.Context) string {
+	token := c.Query("token")
+	if token == "" {
+		if ah := c.GetHeader("Authorization"); ah != "" {
+			if parts := strings.SplitN(ah, " ", 2); len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				token = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	if token == "" {
+		return ""
+	}
+	claims, err := middleware.ValidateToken(token)
+	if err != nil {
+		logger.Warnf("websocket: invalid token, connecting anonymously: %v", err)
+		return ""
+	}
+	return claims.Username
 }
 
 // readPump reads messages from the WebSocket connection.
@@ -111,11 +145,13 @@ func (h *WSHandler) readPump(client *Client) {
 
 		switch cmd.Action {
 		case "subscribe":
-			if cmd.Topic != "" {
+			// The "user:" prefix is reserved for server-side per-user delivery
+			// (SendToUser); clients must not subscribe to another user's stream.
+			if cmd.Topic != "" && !strings.HasPrefix(cmd.Topic, "user:") {
 				client.SubscribeTopic(cmd.Topic)
 			}
 		case "unsubscribe":
-			if cmd.Topic != "" {
+			if cmd.Topic != "" && !strings.HasPrefix(cmd.Topic, "user:") {
 				client.UnsubscribeTopic(cmd.Topic)
 			}
 		default:

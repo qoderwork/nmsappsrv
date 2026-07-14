@@ -28,6 +28,11 @@ type Client struct {
 	conn *websocket.Conn
 	send chan []byte
 	id   string
+	// username is the authenticated user this connection belongs to, bound from
+	// the JWT supplied on the WebSocket handshake. Empty for anonymous
+	// connections, which only receive broadcast topics. Used by SendToUser to
+	// mirror Java's per-user directed delivery (/websocket/{username}).
+	username string
 	// Topics this client is subscribed to
 	topics map[string]bool
 	// Mutex for thread-safe access to topics
@@ -110,6 +115,30 @@ func (h *Hub) BroadcastToTopic(topic string, message []byte) {
 			default:
 				logger.Errorf("websocket: client %s send buffer full, skipping", client.id)
 			}
+		}
+	}
+}
+
+// SendToUser delivers a message only to WebSocket clients authenticated as the
+// given username. This mirrors Java's per-user directed delivery
+// (/websocket/{username}) — as opposed to BroadcastToTopic's fan-out to every
+// subscriber. If no client for that user is connected, the message is dropped.
+// An empty username is a no-op (anonymous connections cannot be targeted).
+func (h *Hub) SendToUser(username string, message []byte) {
+	if username == "" {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		if client.username != username {
+			continue
+		}
+		select {
+		case client.send <- message:
+		default:
+			logger.Errorf("websocket: client %s (user %s) send buffer full, dropping per-user message", client.id, username)
 		}
 	}
 }

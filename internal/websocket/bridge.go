@@ -152,6 +152,27 @@ func (b *Bridge) consumeWebCallbackQueue(ctx context.Context) {
 			continue
 		}
 
-		b.hub.BroadcastMessage(data)
+		// Per-user precise delivery: if the producer embedded a target username
+		// (e.g. the operator who initiated the action), deliver only to that
+		// user's connections — mirroring Java's /websocket/{username} directed
+		// delivery. Otherwise broadcast to all (operator-wide device events).
+		if target := webCallbackTargetUser(payload); target != "" {
+			b.hub.SendToUser(target, data)
+		} else {
+			b.hub.BroadcastMessage(data)
+		}
 	}
+}
+
+// webCallbackTargetUser inspects a raw web_callback payload and returns the
+// target username when the producer embedded one (top-level "username" field),
+// otherwise "".
+func webCallbackTargetUser(payload string) string {
+	var envelope struct {
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+		return ""
+	}
+	return envelope.Username
 }

@@ -1,0 +1,13 @@
+ZTP.ListZTPResults
+ZTP.GetZTPSetting
+ZTP.ListSpatialFileMarkets
+Alarm.ListAlarm
+Alarm.AlarmStatistic
+Alarm.AlarmStatisticTop10
+Alarm.ListAlarmLibraries
+Alarm.ListAlarmTemplate
+DeviceBlackList.ListDeviceBlackList
+DeviceBlackList.ListBlackListOperationLog
+GNB.Monitor.ListGNB
+Map.ListDeviceWithLocationInfoInDeviceGroup
+ZTP.ListTBG

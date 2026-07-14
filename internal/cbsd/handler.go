@@ -1,6 +1,7 @@
 package cbsd
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"net/http"
@@ -251,6 +252,25 @@ func (h *Handler) Relinquishment(c *gin.Context) {
 		return
 	}
 	utils.Success(c, result)
+}
+
+// SasHeartbeat handles POST /cbsd/:id/sas-heartbeat — a DP->SAS heartbeat that
+// advances the CBSD's operation-state (AUTHORIZED / SUSPENDED / REGISTERED).
+func (h *Handler) SasHeartbeat(c *gin.Context) {
+	id := c.Param("id")
+	result, err := h.svc.SasHeartbeat(id)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("sas heartbeat failed: %v", err))
+		return
+	}
+	utils.Success(c, result)
+}
+
+// MaintainOperationStates runs the SAS operation-state maintainer. Exposed on
+// the Handler so the cron scheduler (in cmd/main.go) can drive it without
+// leaking the service type.
+func (h *Handler) MaintainOperationStates(ctx context.Context) (int, error) {
+	return h.svc.MaintainOperationStates(ctx)
 }
 
 // ---------------------------------------------------------------------------

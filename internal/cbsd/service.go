@@ -2,6 +2,7 @@ package cbsd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,10 @@ type Service interface {
 	SpectrumInquiry(licenseId int, req *SpectrumInquiryRequest) (map[string]interface{}, error)
 	Grant(cbsdId string, req *GrantRequest) (map[string]interface{}, error)
 	Relinquishment(cbsdId string, req *RelinquishmentRequest) (map[string]interface{}, error)
+	SasHeartbeat(cbsdId string) (map[string]interface{}, error)
+
+	// SAS operation-state state machine (mirrors Java OperationStateMaintainThread)
+	MaintainOperationStates(ctx context.Context) (int, error)
 
 	// Import
 	ImportCBSDs(licenseId int, records [][]string) (int, error)
@@ -244,12 +249,23 @@ func (s *service) Grant(cbsdId string, req *GrantRequest) (map[string]interface{
 		return nil, err
 	}
 
-	// Update grant ID in CBSD record if returned
+	// Update grant ID and advance operation-state to GRANTED on success,
+	// persisting the SAS-returned expire times so the maintainer thread can
+	// drive future transitions (mirrors Java grant flow).
 	if grantId, ok := result["grantId"].(string); ok && grantId != "" {
 		now := time.Now()
 		info.GrantID = &grantId
 		info.LastGrantTime = &now
-		s.repo.Save(info)
+		info.OperationState = strPtr(OpStateGranted)
+		if gexp := sasTimeString(result["grantExpireTime"]); gexp != "" {
+			info.GrantExpireTime = &gexp
+		}
+		if texp := sasTimeString(result["transmitExpireTime"]); texp != "" {
+			info.TransmitExpireTime = &texp
+		}
+		if err := s.repo.Save(info); err != nil {
+			return nil, fmt.Errorf("failed to persist grant state: %w", err)
+		}
 	}
 
 	return result, nil
@@ -279,12 +295,150 @@ func (s *service) Relinquishment(cbsdId string, req *RelinquishmentRequest) (map
 		return nil, err
 	}
 
-	// Clear grant ID after successful relinquishment
+	// Clear grant and revert operation-state to REGISTERED after relinquishment.
 	emptyGrant := ""
 	info.GrantID = &emptyGrant
+	info.OperationState = strPtr(OpStateRegistered)
+	info.GrantExpireTime = nil
+	info.TransmitExpireTime = nil
 	s.repo.Save(info)
 
 	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// SAS heartbeat (DP -> SAS) and operation-state state machine
+// ---------------------------------------------------------------------------
+
+// SasHeartbeat sends a DP->SAS heartbeat for a specific CBSD and advances its
+// operation-state based on the SAS response code (mirrors Java
+// HeartbeatRequestService): respCode 0 => AUTHORIZED, 501 => SUSPENDED,
+// 500 => REGISTERED (and an inquiry/registration is implied).
+func (s *service) SasHeartbeat(cbsdId string) (map[string]interface{}, error) {
+	info, err := s.repo.FindCbsdInfoByID(cbsdId)
+	if err != nil {
+		return nil, fmt.Errorf("CBSD not found: %w", err)
+	}
+	licenseId := 0
+	if info.LicenseId != nil {
+		licenseId = *info.LicenseId
+	}
+	sasUrl, err := s.getSasUrl(licenseId)
+	if err != nil {
+		return nil, err
+	}
+
+	hbReq := map[string]interface{}{
+		"cbsdId":  derefString(info.CbsdID),
+		"grantId": derefString(info.GrantID),
+	}
+	result, err := s.callSasApi(sasUrl, "/v1.2/heartbeat", hbReq)
+	if err != nil {
+		return nil, err
+	}
+
+	code := sasResponseCode(result)
+	switch code {
+	case 0:
+		info.OperationState = strPtr(OpStateAuthorized)
+	case 501:
+		info.OperationState = strPtr(OpStateSuspended)
+	case 500:
+		info.OperationState = strPtr(OpStateRegistered)
+	default:
+		// Unknown code: leave state unchanged but still persist.
+		logger.Warnf("SasHeartbeat: unexpected response code %d for %s", code, cbsdId)
+	}
+	if err := s.repo.Save(info); err != nil {
+		return nil, fmt.Errorf("failed to persist heartbeat state: %w", err)
+	}
+
+	return result, nil
+}
+
+// MaintainOperationStates scans CBSDs with active grants (GRANTED/AUTHORIZED)
+// and advances their operation-state when grant/transmit expire times have
+// elapsed. Expired grants revert to REGISTERED and trigger a re-grant; expired
+// transmits (while AUTHORIZED) revert to GRANTED and trigger a re-heartbeat.
+// Mirrors Java OperationStateMaintainThread. Returns the number of transitions
+// applied. It is safe to call on a schedule (idempotent).
+func (s *service) MaintainOperationStates(ctx context.Context) (int, error) {
+	cbsds, err := s.repo.FindCbsdInfosByStates([]string{OpStateGranted, OpStateAuthorized})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list CBSDs for state maintenance: %w", err)
+	}
+
+	now := time.Now()
+	transitioned := 0
+	for i := range cbsds {
+		if ctx.Err() != nil {
+			return transitioned, ctx.Err()
+		}
+		c := cbsds[i]
+		plan := decideTransition(&c, now)
+		if plan.newState == "" {
+			continue
+		}
+
+		fields := map[string]interface{}{"operation_state": plan.newState}
+		if plan.clearGrant {
+			fields["grant_id"] = ""
+			fields["grant_expire_time"] = nil
+		}
+		if plan.clearTransmit {
+			fields["transmit_expire_time"] = nil
+		}
+		if err := s.repo.UpdateFields(c.Id, fields); err != nil {
+			logger.Errorf("maintain: failed to update state for %s: %v", c.Id, err)
+			continue
+		}
+
+		s.writeCbrsLog(c.CbsdID, plan.logType, plan.logStatus)
+
+		if plan.reGrant {
+			s.retryGrant(&c)
+		}
+		if plan.reHeartbeat {
+			if _, err := s.SasHeartbeat(c.Id); err != nil {
+				logger.Errorf("maintain: re-heartbeat failed for %s: %v", c.Id, err)
+			}
+		}
+		transitioned++
+	}
+	return transitioned, nil
+}
+
+// retryGrant re-issues a grant using the CBSD's stored frequency/EIRP params.
+func (s *service) retryGrant(c *CbsdInfo) {
+	if c.LowFrequency == nil {
+		logger.Warnf("maintain: skip re-grant for %s (no low frequency)", c.Id)
+		return
+	}
+	req := &GrantRequest{
+		LowFrequency:  derefInt64(c.LowFrequency),
+		HighFrequency: derefInt64(c.HighFrequency),
+		MaxEirp:       derefFloat64(c.MaxEirp),
+	}
+	if _, err := s.Grant(c.Id, req); err != nil {
+		logger.Errorf("maintain: re-grant failed for %s: %v", c.Id, err)
+	}
+}
+
+// writeCbrsLog appends a cbrs_log row (heartbeat/grant lifecycle events).
+func (s *service) writeCbrsLog(cbsdID *string, logType, status string) {
+	id := ""
+	if cbsdID != nil {
+		id = *cbsdID
+	}
+	log := &CbrsLog{
+		LogType:  &logType,
+		Status:   &status,
+		CbsdId:   &id,
+		LogTime:  timePtr(time.Now()),
+	}
+	if err := s.repo.CreateCbrsLog(log); err != nil {
+		logger.Errorf("maintain: failed to write cbrs log: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -383,4 +537,22 @@ func derefString(s *string) string {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func derefFloat64(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
 }
