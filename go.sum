@@ -146,6 +146,8 @@ github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzM
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
 github.com/qoderwork/go-infra v0.0.0-20260701012134-4ec0b23e8f5c h1:jcEIoQU5KCmYNM4SlacPEKWbe8ipJg65vo3bIEbFgMQ=
 github.com/qoderwork/go-infra v0.0.0-20260701012134-4ec0b23e8f5c/go.mod h1:vSZN83sIxcoOKn94zwFoXZiNNejlzEGex/xC2d2dEdU=
+github.com/qoderwork/go-infra v0.0.1 h1:EwUhljvhiq6mmyIPyocswtmZH0DQj1wZrZhAGA+Qg4Y=
+github.com/qoderwork/go-infra v0.0.1/go.mod h1:vSZN83sIxcoOKn94zwFoXZiNNejlzEGex/xC2d2dEdU=
 github.com/richardlehane/mscfb v1.0.6 h1:eN3bvvZCp00bs7Zf52bxNwAx5lJDBK1tCuH19qq5aC8=
 github.com/richardlehane/mscfb v1.0.6/go.mod h1:pe0+IUIc0AHh0+teNzBlJCtSyZdFOGgV4ZK9bsoV+Jo=
 github.com/richardlehane/msoleps v1.0.6 h1:9BvkpjvD+iUBalUY4esMwv6uBkfOip/Lzvd93jvR9gg=
