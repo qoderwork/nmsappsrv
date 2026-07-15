@@ -62,6 +62,8 @@ import (
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
 	"nmsappsrv/internal/webssh"
+	"nmsappsrv/internal/ztp/sftp"
+	"path/filepath"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/metrics"
@@ -524,6 +526,32 @@ func main() {
 	// provisioning also produces the pull-path AOS artifact (served by
 	// /acs-file-server/ztpFile). Kept as a func var to avoid an import cycle.
 	tr069.GenerateAOSFunc = miscH.GenerateAOSFile
+
+	// ZTP embedded SFTP server (Java ZTPSftpServer, port 10022). Opt-in via
+	// ztp.sftp_enabled. Serves the AOS XML root (file_server.ztp_dir) to
+	// ZTP-capable devices; auth is delegated to miscH.CheckSFTPCredentials
+	// which validates against the persisted ZTPSetting. Mirrors Java's
+	// behaviour: SSH transport + password auth (creds read from
+	// system_config.ztp_config at each login).
+	if cfg.ZTP.SFTPEnabled {
+		ztpDir := cfg.FileServer.ZtpDir
+		if ztpDir == "" {
+			ztpDir = filepath.Join(cfg.FileServer.Root, "ztp")
+		}
+		if ztpDir == "" {
+			ztpDir = "./data/acs-file-server/ztp"
+		}
+		host := cfg.ZTP.SFTPHost
+		if host == "" {
+			host = ":10022"
+		}
+		sftpSrv := sftp.NewServer(host, cfg.ZTP.SFTPHostKey, ztpDir, miscH.CheckSFTPCredentials)
+		mgr.Add(workerTask("ztp-sftp",
+			func() { _ = sftpSrv.Start() },
+			func() { _ = sftpSrv.Stop() },
+		))
+		logger.Infof("ztp sftp: scheduled (opt-in: %v, host: %s, dir: %s)", cfg.ZTP.SFTPEnabled, host, ztpDir)
+	}
 
 	// Upgrade worker (consumes queue:upgrade and dispatches TR-069 Download/Reboot)
 	tr069OpSender := tr069.NewOperationSender(db, tr069MsgMgr)

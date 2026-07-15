@@ -27,6 +27,7 @@ type Config struct {
 	License       LicenseConfig       `mapstructure:"license"`
 	Captcha       CaptchaConfig       `mapstructure:"captcha"`
 	FileServer    FileServerConfig    `mapstructure:"file_server"`
+	ZTP           ZTPConfig           `mapstructure:"ztp"`
 }
 
 // LicenseConfig controls L-2 license enforcement (go-infra/licensing).
@@ -194,6 +195,23 @@ type PlatformFilesConfig struct {
 	RSAPublicKeyPath string `mapstructure:"rsa_public_key_path" yaml:"rsa_public_key_path"`
 	NMSManualDocPath string `mapstructure:"nms_manual_doc_path" yaml:"nms_manual_doc_path"`
 	PlatformLogDir   string `mapstructure:"platform_log_dir" yaml:"platform_log_dir"`
+}
+
+// ZTPConfig controls the ZTP provisioning subsystem, including the embedded
+// SFTP server (Java ZTPSftpServer on port 10022).
+//
+//	SFTPEnabled    start the embedded SFTP server that serves the AOS XML
+//	               root (cfg.FileServer.ZtpDir) to ZTP-capable devices.
+//	               Default false (opt-in; the HTTP /acs-file-server/ztpFile
+//	               provider in internal/filebase remains the default path).
+//	SFTPHost       listen address. Default ":10022" (matches Java).
+//	SFTPHostKey    path to the persistent SSH host key (PEM). If empty, an
+//	               Ed25519 key is auto-generated and persisted here on first
+//	               start, so devices see a stable host key across restarts.
+type ZTPConfig struct {
+	SFTPEnabled bool   `mapstructure:"sftp_enabled" yaml:"sftp_enabled"`
+	SFTPHost    string `mapstructure:"sftp_host"     yaml:"sftp_host"`
+	SFTPHostKey string `mapstructure:"sftp_host_key" yaml:"sftp_host_key"`
 }
 
 var Cfg *Config

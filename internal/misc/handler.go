@@ -517,3 +517,22 @@ func (h *Handler) ListBatchAddObjectTaskDetail(c *gin.Context) {
 	}
 	utils.Success(c, data)
 }
+
+// CheckSFTPCredentials verifies the SFTP username/password against the
+// persisted ZTPSetting (plaintext, per the "Go 自管密钥" decision — see
+// 2026-07-15 daily memory). Returns true only when both fields are set
+// and match exactly. The ZTPSetting is re-read on every call so config
+// changes take effect without a server restart.
+func (h *Handler) CheckSFTPCredentials(username, password string) bool {
+	if username == "" || password == "" {
+		return false
+	}
+	setting, err := h.svc.GetZTPSetting()
+	if err != nil || setting == nil {
+		return false
+	}
+	if setting.SFTPUsername == nil || setting.SFTPPassword == nil {
+		return false
+	}
+	return *setting.SFTPUsername == username && *setting.SFTPPassword == password
+}

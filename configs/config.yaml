@@ -114,3 +114,19 @@ license:
   # `license-tool fingerprint` on the target host). Leave empty in production so
   # the real host system-uuid (dmidecode -s system-uuid) is used.
   # machine_fingerprint_override: ""
+
+# ZTP provisioning subsystem (Java AOSManagementServiceImpl + ZTPSftpServer).
+# Phase 1: embedded SFTP server on port 10022 serves the AOS XML root
+# (file_server.ztp_dir) to ZTP-capable devices. Phase 2 will add the
+# PSAP/MSAG/BMC/LMF/GMLC external-system clients behind config-gated flags.
+ztp:
+  # Opt-in: the HTTP /acs-file-server/ztpFile provider in internal/filebase
+  # remains the default. Set true to also start the embedded SFTP server
+  # (mirrors Java ZTPSftpServer on port 10022).
+  sftp_enabled: false
+  # Listen address. Default ":10022" matches Java's ZTPSftpServer port.
+  sftp_host: ":10022"
+  # Path to the persistent SSH host key (PEM). If empty, an Ed25519 key is
+  # auto-generated and persisted to ./data/ztp/hostkey.pem on first start,
+  # so devices see a stable host key across restarts.
+  sftp_host_key: ./data/ztp/hostkey.pem
