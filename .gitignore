@@ -40,3 +40,11 @@ internal/license/keys/private.pem
 
 # Persisted license envelope + anti-rollback clock (runtime data)
 data/license/
+
+# Dev-only docker compose (host introspection, never commit)
+java-compose.yml
+
+# Runtime logs
+internal/filepiecemeal/logs/
+internal/ztp/sftp/logs/
+internal/ztp/external/logs/

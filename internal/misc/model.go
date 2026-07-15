@@ -373,10 +373,55 @@ func (ZTPTACUsed) TableName() string { return "ztp_tac_used" }
 
 // ---------- ZTP Setting (stored in system_config as JSON) ----------
 
+// PTPSetting mirrors Java ZTPSettingDTO.ptpSetting (PTP clock config applied
+// to the device when mode ∈ {MANUAL, WIFI}).
+type PTPSetting struct {
+	ClockInterfaceName *string `json:"clockInterfaceName"`
+	ClockDomainNumber  *int    `json:"clockDomainNumber"`
+	ClockSyncMode      *string `json:"clockSyncMode"`
+}
+
+// SpectrumSpatialSetting mirrors Java ZTPSettingDTO.spectrumSpatialSetting.
+// Drives the reverse-geocode (PSAP + expected location) and geocode calls.
+type SpectrumSpatialSetting struct {
+	URL              *string `json:"url"`
+	PsapURL          *string `json:"psapUrl"`          // present in DTO; not used by the thread
+	GeoCodeURL       *string `json:"geoCodeUrl"`
+	ReverseGeoCodeURL *string `json:"reverseGeoCodeUrl"`
+	DeleteRetryTimes *int    `json:"deleteRetryTimes"`
+}
+
+// ExternalEndpointSetting is the shared shape for MSAG / BMC (old) / GMLC /
+// LMF instances: a URL plus Basic-auth credentials and a retry counter.
+type ExternalEndpointSetting struct {
+	URL              *string `json:"url"`
+	Username         *string `json:"username"`
+	Password         *string `json:"password"`
+	DeleteRetryTimes *int    `json:"deleteRetryTimes"`
+}
+
+// TPlatformSetting mirrors Java ZTPSettingDTO.tPlatformSetting (OAuth2
+// client_credentials + PoP token, alert notifications only).
+type TPlatformSetting struct {
+	URL        *string `json:"url"`
+	ClientID   *string `json:"clientId"`
+	Secret     *string `json:"secret"`
+	RetryTimes *int    `json:"retryTimes"`
+}
+
 // ZTPSetting represents the ZTP configuration stored in system_config table.
+//
+// It carries both the original flat top-level fields (consumed by the SPV
+// worker in internal/tr069) and the nested per-system settings mirrored from
+// Java's ZTPSettingDTO. The external-registration orchestrator
+// (internal/ztp) reads the nested settings; FromZTPSetting in the external
+// package prefers a nested value and falls back to its flat equivalent so
+// legacy configs that only populate the flat URLs keep working.
 type ZTPSetting struct {
 	GnbIdStart          *int     `json:"gnbIdStart"`
 	GnbIdEnd            *int     `json:"gnbIdEnd"`
+	TacStart            *int     `json:"tacStart"` // TAC range; Java reads it from CORE_NR_FEMTO.csv. Exposed here until core-file parsing lands.
+	TacEnd              *int     `json:"tacEnd"`
 	GoogleAPIKey        *string  `json:"googleAPIKey"`
 	RadiusThreshold     *float64 `json:"radiusThreshold"`
 	ZTPTimeoutTime      *int     `json:"ztpTimeoutTime"` // minutes
@@ -391,6 +436,20 @@ type ZTPSetting struct {
 	WifiPositioning     *bool    `json:"wifiPositioning"`
 	SFTPUsername        *string  `json:"sftpUsername"`
 	SFTPPassword        *string  `json:"sftpPassword"`
+
+	// Nested per-system settings (mirror Java ZTPSettingDTO). Preferred by
+	// the external orchestrator; fall back to flat URLs when nil.
+	PTP              *PTPSetting              `json:"ptp"`
+	SpectrumSpatial  *SpectrumSpatialSetting  `json:"spectrumSpatial"`
+	MSAG             *ExternalEndpointSetting `json:"msag"`
+	BMC              *ExternalEndpointSetting `json:"bmc"`
+	NewBMC           *ExternalEndpointSetting `json:"newBmc"`
+	LMF              *ExternalEndpointSetting `json:"lmf"`
+	LMF2             *ExternalEndpointSetting `json:"lmf2"`
+	LMF3             *ExternalEndpointSetting `json:"lmf3"`
+	LMF4             *ExternalEndpointSetting `json:"lmf4"`
+	GMLC             *ExternalEndpointSetting `json:"gmlc"`
+	TPlatform        *TPlatformSetting        `json:"tPlatform"`
 }
 
 // SystemConfig 对应 system_config 表 (generic key-value config store)

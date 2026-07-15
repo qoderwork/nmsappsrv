@@ -62,6 +62,7 @@ import (
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
 	"nmsappsrv/internal/webssh"
+	"nmsappsrv/internal/ztp"
 	"nmsappsrv/internal/ztp/sftp"
 	"path/filepath"
 	"nmsappsrv/pkg/database"
@@ -659,6 +660,24 @@ func main() {
 		}
 	}); err != nil {
 		logger.Errorf("failed to register ztp-aos-gen cron job: %v", err)
+	}
+
+	// ZTP external-system registration orchestrator (Java GenerateZTPFileThread).
+	// Picks up devices that have an AOS file but have not yet been registered
+	// against the E911 systems (MSAG / BMC old+new / LMF 1–4 / GMLC) and runs
+	// the full allocation + geofence + registration + rollback flow. The wire
+	// transport is Phase 2a NotImplementedTransport; a nil transport is
+	// replaced inside NewThread. Runs every 30s.
+	ztpSvc := misc.NewService(db, cfg)
+	ztpThread := ztp.NewThread(db, ztpSvc, nil)
+	if err := mainScheduler.AddJob("ztp-external-gen", "*/30 * * * * *", func() {
+		if n, err := ztpThread.ScanAndProcess(context.Background()); err != nil {
+			logger.Errorf("ztp-external-gen failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("ztp-external-gen: processed %d device(s)", n)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register ztp-external-gen cron job: %v", err)
 	}
 
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)
