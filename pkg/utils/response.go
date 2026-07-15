@@ -45,6 +45,20 @@ func Error(c *gin.Context, code int, message string) {
 	})
 }
 
+// ErrorWithExtra returns an error envelope (same shape as Error) merged with
+// extra fields. Used when the response must carry additional signals, e.g.
+// {"required": true} on a captcha challenge.
+func ErrorWithExtra(c *gin.Context, code int, message string, extra map[string]interface{}) {
+	body := map[string]interface{}{
+		"code":    code,
+		"message": message,
+	}
+	for k, v := range extra {
+		body[k] = v
+	}
+	c.JSON(code, body)
+}
+
 func Paginated(c *gin.Context, data interface{}, total int64, page, pageSize int) {
 	c.JSON(http.StatusOK, PaginatedResponse{
 		Code:     200,

@@ -25,6 +25,7 @@ type Config struct {
 	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat"`
 	Upgrade       UpgradeConfig       `mapstructure:"upgrade"`
 	License       LicenseConfig       `mapstructure:"license"`
+	Captcha       CaptchaConfig         `mapstructure:"captcha"`
 }
 
 // LicenseConfig controls L-2 license enforcement (go-infra/licensing).
@@ -46,6 +47,12 @@ type LicenseConfig struct {
 	InstallDir                 string `mapstructure:"install_dir"`
 	MaxClockFile               string `mapstructure:"max_clock_file"`
 	MachineFingerprintOverride string `mapstructure:"machine_fingerprint_override"`
+}
+// CaptchaConfig controls the login captcha (adaptive risk-control).
+//   length  number of digits shown in the captcha image (Java\'s kaptchaLength).
+//           Defaults to 4 when unset.
+type CaptchaConfig struct {
+	Length int `mapstructure:"length"`
 }
 
 // HAConfig holds High Availability configuration for VIP monitoring.
@@ -178,6 +185,7 @@ func Load(configPath ...string) (*Config, error) {
 
 	// Defaults (overridable via config file or NMS_* env vars).
 	v.SetDefault("license.required", true)
+	v.SetDefault("captcha.length", 4)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)

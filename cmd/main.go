@@ -57,6 +57,7 @@ import (
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
 	"nmsappsrv/internal/webssh"
+	"nmsappsrv/internal/captcha"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/metrics"
@@ -228,7 +229,9 @@ func main() {
 	// ========== 初始化所有模块Handler ==========
 	deviceH := device.NewHandler(db)
 	alarmH := alarm.NewHandler(db)
-	userH := user.NewHandler(db)
+	// Captcha + adaptive login risk-control (Redis is initialized above).
+	captchaMgr := captcha.NewManager(redis.RDB, cfg.Captcha.Length)
+	userH := user.NewHandler(db, captchaMgr)
 	licenseH := license.NewHandler(db, licenseEnf)
 	parameterH := parameter.NewHandler(db)
 	upgradeH := upgrade.NewHandler(db)

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"nmsappsrv/internal/authz"
+	"nmsappsrv/internal/captcha"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
@@ -17,13 +18,16 @@ import (
 
 // Handler exposes HTTP handlers for user-related endpoints.
 type Handler struct {
-	svc Service
-	db  *gorm.DB
+	svc        Service
+	db         *gorm.DB
+	captchaMgr *captcha.Manager
 }
 
-// NewHandler creates a Handler backed by a fresh Service.
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(db), db: db}
+// NewHandler creates a Handler backed by a fresh Service. captchaMgr may be nil
+// (e.g. when captcha is not configured); in that case the login captcha gate is
+// skipped entirely.
+func NewHandler(db *gorm.DB, captchaMgr *captcha.Manager) *Handler {
+	return &Handler{svc: NewService(db), db: db, captchaMgr: captchaMgr}
 }
 
 // ---------------------------------------------------------------------------
@@ -34,6 +38,10 @@ func NewHandler(db *gorm.DB) *Handler {
 type loginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	// VerificationKey/VerificationCode are only required when the adaptive
+	// captcha gate has been triggered for this username+IP (see captcha.Manager).
+	VerificationKey  string `json:"verificationKey"`
+	VerificationCode string `json:"verificationCode"`
 }
 
 // Login handles POST /login
@@ -44,12 +52,35 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
+	ip := c.ClientIP()
+
+	// Adaptive captcha gate: only enforced once failures have triggered it.
+	if h.captchaMgr != nil && h.captchaMgr.IsRequired(req.Username, ip) {
+		if req.VerificationKey == "" || req.VerificationCode == "" {
+			utils.ErrorWithExtra(c, http.StatusBadRequest, "captcha required", map[string]interface{}{"required": true})
+			return
+		}
+		if !h.captchaMgr.Verify(c.Request.Context(), req.VerificationKey, req.VerificationCode) {
+			h.captchaMgr.OnFailure(req.Username, ip)
+			utils.ErrorWithExtra(c, http.StatusBadRequest, "invalid captcha", map[string]interface{}{"required": true})
+			return
+		}
+	}
+
 	u, err := h.svc.Login(req.Username, req.Password)
 	if err != nil {
-		// Record failed login attempt.
+		// Record failed login attempt + bump the captcha risk counters.
+		if h.captchaMgr != nil {
+			h.captchaMgr.OnFailure(req.Username, ip)
+		}
 		_ = h.svc.RecordLogin(req.Username, c.ClientIP(), 0, 0)
 		utils.HandleError(c, err)
 		return
+	}
+
+	// Successful login resets the captcha risk state.
+	if h.captchaMgr != nil {
+		h.captchaMgr.OnSuccess(req.Username, ip)
 	}
 
 	licenseId := 0
@@ -70,6 +101,22 @@ func (h *Handler) Login(c *gin.Context) {
 	_ = h.svc.RecordLogin(req.Username, c.ClientIP(), licenseId, 1)
 
 	utils.Success(c, gin.H{"token": token})
+}
+
+// CaptchaImage handles GET /captchaImage: issues a new digit captcha and
+// returns its key + base64 image so the frontend can render and submit it.
+func (h *Handler) CaptchaImage(c *gin.Context) {
+	if h.captchaMgr == nil {
+		utils.Error(c, http.StatusServiceUnavailable, "captcha not configured")
+		return
+	}
+	key, b64, err := h.captchaMgr.Generate(c.Request.Context())
+	if err != nil {
+		logger.Errorf("captcha generate failed: %v", err)
+		utils.Error(c, http.StatusInternalServerError, "failed to generate captcha")
+		return
+	}
+	utils.Success(c, gin.H{"key": key, "imageBase64": b64})
 }
 
 // Logout handles POST /logout
