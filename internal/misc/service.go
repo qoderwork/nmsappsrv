@@ -3,6 +3,8 @@ package misc
 import (
 	"time"
 
+	"nmsappsrv/internal/config"
+
 	"gorm.io/gorm"
 )
 
@@ -31,6 +33,8 @@ type Service interface {
 	SetZTPStatus(req *SetZTPStatusRequest) error
 	BatchReZTP(req *BatchReZTPRequest) error
 	DeleteZTPFiles(req *DeleteZTPFileRequest) error
+	GenerateAOSFile(elementId int64) (string, error)
+	ScanAndGenerateAOSFiles() (int, error)
 
 	ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error)
 	CreateBackupRestoreTask(t *BackupOrRestoreTask) error
@@ -61,16 +65,17 @@ type Service interface {
 // service is the concrete implementation of Service.
 type service struct {
 	repo Repository
+	cfg  *config.Config
 }
 
 // NewService creates a Service backed by a fresh Repository.
-func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db)}
+func NewService(db *gorm.DB, cfg *config.Config) Service {
+	return &service{repo: NewRepository(db), cfg: cfg}
 }
 
 // newService builds a Service from an injected Repository (test helper).
-func newService(repo Repository) Service {
-	return &service{repo: repo}
+func newService(repo Repository, cfg *config.Config) Service {
+	return &service{repo: repo, cfg: cfg}
 }
 
 // ---------- helpers ----------

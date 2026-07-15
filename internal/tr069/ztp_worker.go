@@ -36,6 +36,11 @@ type ZTPWorker struct {
 	opSender  *OperationSender
 }
 
+// GenerateAOSFunc is injected from main to avoid an import cycle with misc.
+// When set, it generates the pull-path AOS file for a device during
+// provisioning. Failures are non-fatal (logged, provisioning continues).
+var GenerateAOSFunc func(elementId int64) (string, error)
+
 // NewZTPWorker creates a new ZTPWorker.
 func NewZTPWorker(db *gorm.DB, msgManager *MessageManager) *ZTPWorker {
 	return &ZTPWorker{
@@ -159,6 +164,17 @@ func (w *ZTPWorker) handleProvision(msg *ZTPMessage) {
 		logger.Warnf("ZTP worker: device %d has no ztp_parameters", msg.ElementId)
 		w.createRetryLog(msg.ElementId, &now, "device has no ztp_parameters configured")
 		return
+	}
+
+	// 3.5 Generate the pull-path AOS file so the device can fetch it via
+	// /acs-file-server/ztpFile. Non-fatal: a missing/invalid ztp_parameters
+	// only skips the file, the SPV push below still proceeds.
+	if GenerateAOSFunc != nil {
+		if fn, gerr := GenerateAOSFunc(msg.ElementId); gerr != nil {
+			logger.Warnf("ZTP worker: AOS file generation skipped for device %d: %v", msg.ElementId, gerr)
+		} else {
+			logger.Infof("ZTP worker: generated AOS file %s for device %d", fn, msg.ElementId)
+		}
 	}
 
 	// 4-6. Create ZTP log + event_log + link them (atomic transaction)

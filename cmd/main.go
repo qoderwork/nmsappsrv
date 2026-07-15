@@ -246,7 +246,7 @@ func main() {
 	mmlH := mml.NewHandler(db)
 	cbsdH := cbsd.NewHandler(db)
 	corenetH := corenet.NewHandler(db)
-	miscH := misc.NewHandler(db)
+	miscH := misc.NewHandler(db, cfg)
 	miscH.EnqueueZTPFunc = tr069.EnqueueZTPProvision
 	diagnosticsH := diagnostics.NewHandler(db)
 	rebootH := reboot.NewHandler(db)
@@ -520,6 +520,11 @@ func main() {
 	ztpWorker := tr069.NewZTPWorker(db, tr069MsgMgr)
 	mgr.Add(workerTask("ztp-worker", ztpWorker.Start, ztpWorker.Stop))
 
+	// Bridge the misc AOS-file generator into the tr069 worker so explicit
+	// provisioning also produces the pull-path AOS artifact (served by
+	// /acs-file-server/ztpFile). Kept as a func var to avoid an import cycle.
+	tr069.GenerateAOSFunc = miscH.GenerateAOSFile
+
 	// Upgrade worker (consumes queue:upgrade and dispatches TR-069 Download/Reboot)
 	tr069OpSender := tr069.NewOperationSender(db, tr069MsgMgr)
 	upgradeWorker := upgrade.NewUpgradeWorker(db, tr069OpSender)
@@ -613,6 +618,19 @@ func main() {
 		}
 	}); err != nil {
 		logger.Errorf("failed to register cbsd-opstate-maintain cron job: %v", err)
+	}
+
+	// ZTP AOS-file generation scan (Java ZTPTask, every 10s). Picks up devices
+	// flagged read_to_ztp=true with no AOS file yet and generates the pull-path
+	// AOS XML (served by /acs-file-server/ztpFile). Runs every 30s.
+	if err := mainScheduler.AddJob("ztp-aos-gen", "*/30 * * * * *", func() {
+		if n, err := miscH.ScanAndGenerateAOSFiles(); err != nil {
+			logger.Errorf("ztp-aos-gen failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("ztp-aos-gen: generated %d AOS file(s)", n)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register ztp-aos-gen cron job: %v", err)
 	}
 
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)

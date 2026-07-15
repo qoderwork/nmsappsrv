@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
@@ -22,8 +23,8 @@ type Handler struct {
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(db)}
+func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
+	return &Handler{svc: NewService(db, cfg)}
 }
 
 // getTenancyId extracts tenancy_id from gin context as int.
@@ -324,6 +325,18 @@ func (h *Handler) ProvisionZTP(c *gin.Context) {
 		"enqueued": enqueued,
 		"total":    len(req.ElementIds),
 	})
+}
+
+// GenerateAOSFile generates the AOS auto-config XML for a single device and
+// records cpe_element.aos_file_name. Exposed on the Handler so the tr069 ZTP
+// worker can invoke it without importing config (avoids a cycle).
+func (h *Handler) GenerateAOSFile(elementId int64) (string, error) {
+	return h.svc.GenerateAOSFile(elementId)
+}
+
+// ScanAndGenerateAOSFiles runs the ZTPTask-style scan for ready devices.
+func (h *Handler) ScanAndGenerateAOSFiles() (int, error) {
+	return h.svc.ScanAndGenerateAOSFiles()
 }
 
 func (h *Handler) ListNorthReports(c *gin.Context) {

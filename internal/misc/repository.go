@@ -70,6 +70,7 @@ type Repository interface {
 	ClearDeviceAOSFile(elementIds []int64) error
 	DeleteGnbIdUsedByElementId(elementId int64) error
 	GetDeviceSerialNumber(elementId int64) (string, error)
+	FindReadyForZTPAOS() ([]int64, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -664,4 +665,15 @@ func (r *repository) GetDeviceSerialNumber(elementId int64) (string, error) {
 		return "", nil
 	}
 	return *dev.SerialNumber, nil
+}
+
+// FindReadyForZTPAOS returns the IDs of devices that are ready for ZTP
+// (read_to_ztp = true) but have no AOS file generated yet
+// (aos_file_name IS NULL). This is the ZTPTask selection criterion.
+func (r *repository) FindReadyForZTPAOS() ([]int64, error) {
+	var ids []int64
+	err := r.db.Model(&device.CpeElement{}).
+		Where("aos_file_name IS NULL AND read_to_ztp = ? AND deleted = ?", true, false).
+		Pluck("ne_neid", &ids).Error
+	return ids, err
 }
