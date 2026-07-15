@@ -380,6 +380,132 @@ func (s *SystemSettingsService) GetACSConfigRaw() (*ACSConfig, error) {
 	return s.loadACSConfig()
 }
 
+// ---------- NorthBoundConfig (ABSENT backfill #3) ----------
+
+// GetNorthBoundConfig reads the northbound integration configuration for a tenancy.
+// Mirrors Java NorthBoundManagementServiceImpl.getNorthBoundConfig: missing row
+// yields a config with only useDefaultOid=false; the stored password (AES-GCM
+// encrypted) is decrypted then masked on read, exactly like Java's
+// AESGCMUtil.decrypt + LogUtil.maskName.
+func (s *SystemSettingsService) GetNorthBoundConfig(tenancyId int) (*NorthBoundConfig, error) {
+	value, err := s.repo.GetSystemConfig(NorthBoundConfigKey(tenancyId))
+	if err != nil {
+		return nil, err
+	}
+
+	if value == "" {
+		return &NorthBoundConfig{UseDefaultOid: boolPtr(false)}, nil
+	}
+
+	cfg := &NorthBoundConfig{}
+	if err := json.Unmarshal([]byte(value), cfg); err != nil {
+		return nil, apperror.Wrap(err, "UNMARSHAL_NORTH_BOUND_CONFIG_FAILED", 500, "failed to unmarshal northbound config")
+	}
+
+	if cfg.Password != nil && *cfg.Password != "" {
+		if plain, e := s.decrypt(*cfg.Password); e == nil {
+			cfg.Password = strPtr(passwordMask)
+			_ = plain
+		} else {
+			cfg.Password = strPtr("Failed to decrypt")
+		}
+	}
+
+	return cfg, nil
+}
+
+// UpdateNorthBoundConfig upserts the northbound integration configuration for a
+// tenancy. Mirrors Java NorthBoundManagementServiceImpl.updateNorthBoundConfig:
+//   - tenancyId==0 (Java's null tenancy) clears the connection fields,
+//   - useDefaultOid is required (invalid-argument otherwise),
+//   - supplied (non-nil) fields are overlaid (null-safe; Java's quirk of
+//     null-overwriting the whole block when type is present is intentionally not
+//     reproduced — it is a lossy footgun and the rest of this package uses
+//     null-safe overlay),
+//   - when type==2 the privateKey/fileName fields are accepted,
+//   - the password is only re-encrypted when passwordChange is true,
+//   - the cached redis key is invalidated.
+func (s *SystemSettingsService) UpdateNorthBoundConfig(req *NorthBoundConfig, tenancyId int) error {
+	if req == nil || req.UseDefaultOid == nil {
+		return apperror.New("INVALID_ARGUMENT", 400, "useDefaultOid is required")
+	}
+
+	key := NorthBoundConfigKey(tenancyId)
+
+	// Java: when tenancyId is null, null out the connection fields.
+	if tenancyId == 0 {
+		req.Ip = nil
+		req.Port = nil
+		req.Username = nil
+		req.Password = nil
+		req.PasswordChange = nil
+		req.PrivateKey = nil
+		req.Type = nil
+		req.Enable = nil
+		req.FileName = nil
+	}
+
+	// Load existing to preserve the encrypted password when not being changed.
+	existing := &NorthBoundConfig{}
+	if val, err := s.repo.GetSystemConfig(key); err == nil && val != "" {
+		_ = json.Unmarshal([]byte(val), existing)
+	}
+
+	if req.Type != nil {
+		if req.Path != nil {
+			existing.Path = req.Path
+		}
+		if req.Ip != nil {
+			existing.Ip = req.Ip
+		}
+		if req.Port != nil {
+			existing.Port = req.Port
+		}
+		if req.Username != nil {
+			existing.Username = req.Username
+		}
+		existing.Type = req.Type
+		if req.Enable != nil {
+			existing.Enable = req.Enable
+		}
+		if *req.Type == 2 {
+			if req.PrivateKey != nil {
+				existing.PrivateKey = req.PrivateKey
+			}
+			if req.FileName != nil {
+				existing.FileName = req.FileName
+			}
+		}
+		if req.PasswordChange != nil && *req.PasswordChange && req.Password != nil && *req.Password != "" && *req.Password != passwordMask {
+			if enc, e := s.encrypt(*req.Password); e == nil {
+				existing.Password = &enc
+			}
+		}
+	}
+
+	if req.EnterpriseOid != nil {
+		existing.EnterpriseOid = req.EnterpriseOid
+	}
+	if req.UseDefaultOid != nil {
+		existing.UseDefaultOid = req.UseDefaultOid
+	}
+
+	data, err := json.Marshal(existing)
+	if err != nil {
+		return apperror.Wrap(err, "MARSHAL_NORTH_BOUND_CONFIG_FAILED", 500, "failed to marshal northbound config")
+	}
+
+	if err := s.repo.SaveSystemConfig(key, string(data)); err != nil {
+		return err
+	}
+
+	if err := redis.Del(context.Background(), key); err != nil {
+		logger.Errorf("Failed to invalidate northbound config cache for %s: %v", key, err)
+	}
+
+	return nil
+}
+
 // ---------- defaults ----------
 
 func defaultDeviceConfig() *DeviceConfig {

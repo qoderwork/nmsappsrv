@@ -36,6 +36,7 @@ import (
 	"nmsappsrv/internal/monitor"
 	"nmsappsrv/internal/mr"
 	"nmsappsrv/internal/nmsbackup"
+	"nmsappsrv/internal/northinterfacelog"
 	"nmsappsrv/internal/ntp"
 	"nmsappsrv/internal/paramcompare"
 	"nmsappsrv/internal/parameter"
@@ -283,6 +284,12 @@ func main() {
 	restapiSvc := restapi.NewService(restapiRepo)
 	restapiH := restapi.NewHandler(restapiSvc)
 
+	// Northbound interface audit log (ABSENT backfill #4). The capture middleware
+	// is installed on the northbound group below; this handler serves the query.
+	northLogRepo := northinterfacelog.NewRepository(db)
+	northLogSvc := northinterfacelog.NewService(northLogRepo)
+	northLogH := northinterfacelog.NewHandler(northLogSvc)
+
 	// Second batch modules
 	healthH := health.NewHandler(db)
 	heartbeatH := heartbeat.NewHandler(db, cfg)
@@ -436,14 +443,37 @@ func main() {
 	{
 		v2.GET("/getPermissionIdsForUser", authz.GetPermissionIdsForUser)
 		v2.GET("/getPermission", authz.GetPermission)
+		// NorthBoundConfig (ABSENT backfill #3) — exact Java URLs for drop-in compat.
+		v2.GET("/getNorthBoundConfig", systemsettingsH.GetNorthBoundConfig)
+		v2.POST("/updateNorthBoundConfig", systemsettingsH.UpdateNorthBoundConfig)
+		// NorthInterfaceLog query (ABSENT backfill #4) — exact Java URL.
+		v2.POST("/listNorthInterfaceLog", northLogH.ListLogs)
 	}
 
 	// ========== REST API (Northbound) — offset-based pagination ==========
 	rest := router.Group("/api/rest/v1")
 	rest.Use(middleware.AuthMiddleware())
 	rest.Use(middleware.LicenseMiddleware(licenseEnf))
+	rest.Use(northinterfacelog.AuditMiddleware(northLogSvc))
 	{
 		restapi.RegisterRoutes(rest, restapiH)
+	}
+
+	// ========== REST API (Northbound) — /v1 alias ==========
+	// Java's northbound base path is "/v1/...". When clients connect
+	// directly to the NMS (no gateway doing URL rewrite), they expect the
+	// Java-equivalent base. This alias group serves the SAME handlers under
+	// "/v1" without touching the existing "/api/rest/v1" mount, so either
+	// path works during the coding phase (no live devices/clients yet).
+	// NOTE: only the base prefix is aliased; sub-path names remain the Go
+	// naming (e.g. /v1/tbg, not Java's /v1/femtos). A full sub-path
+	// rename to match Java exactly is a separate, larger task if ever needed.
+	v1 := router.Group("/v1")
+	v1.Use(middleware.AuthMiddleware())
+	v1.Use(middleware.LicenseMiddleware(licenseEnf))
+	v1.Use(northinterfacelog.AuditMiddleware(northLogSvc))
+	{
+		restapi.RegisterRoutes(v1, restapiH)
 	}
 
 	// TR069 ACS endpoints (CWMP) — optional HTTP Basic auth via middleware

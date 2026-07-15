@@ -22,7 +22,7 @@ func (systemConfigModel) TableName() string { return "system_config" }
 // SystemSettingsRepository provides database operations for system settings.
 type SystemSettingsRepository struct {
 	*baserepo.BaseRepository[SysParameter, int] // embedded generic CRUD for SysParameter
-	db *gorm.DB
+	db                                          *gorm.DB
 }
 
 // NewSystemSettingsRepository creates a new SystemSettingsRepository.

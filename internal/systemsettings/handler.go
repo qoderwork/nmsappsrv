@@ -107,3 +107,38 @@ func (h *SystemSettingsHandler) UpdateLogSettings(c *gin.Context) {
 
 	utils.OK(c, nil)
 }
+
+// GetNorthBoundConfig returns the northbound integration configuration for the
+// current tenancy (Java NorthBoundManagementController.getNorthBoundConfig).
+func (h *SystemSettingsHandler) GetNorthBoundConfig(c *gin.Context) {
+	tenancyId := middleware.GetLicenseId(c)
+
+	cfg, err := h.svc.GetNorthBoundConfig(tenancyId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	utils.Success(c, cfg)
+}
+
+// UpdateNorthBoundConfig upserts the northbound integration configuration for the
+// current tenancy (Java NorthBoundManagementController.updateNorthBoundConfig).
+// The request body is a flat NorthBoundConfig (not wrapped in a RequestDataDTO),
+// consistent with the rest of this package's update handlers.
+func (h *SystemSettingsHandler) UpdateNorthBoundConfig(c *gin.Context) {
+	var req NorthBoundConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "Invalid request: "+err.Error())
+		return
+	}
+
+	tenancyId := middleware.GetLicenseId(c)
+
+	if err := h.svc.UpdateNorthBoundConfig(&req, tenancyId); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	utils.OK(c, nil)
+}
