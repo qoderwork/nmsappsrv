@@ -76,6 +76,29 @@ platform_files:
 upgrade:
   upload_dir: ./data/upgrade-files
 
+# Device-facing file server (/acs-file-server/**). Mirrors Java's @Value roots.
+# nmsappsrv self-serves these files (ABSENT backfill, Option 1).
+file_server:
+  root: ./data/acs-file-server
+  upgrade_dir: ./data/acs-file-server/upgrade
+  config_dir: ./data/acs-file-server/config
+  batch_process_dir: ./data/acs-file-server/batch-process
+  log_dir: ./data/acs-file-server/log
+  mr_dir: ./data/acs-file-server/mr
+  capture_dir: ./data/acs-file-server/capture
+  mml_result_dir: ./data/acs-file-server/mml-result
+  pm_dir: ./data/acs-file-server/pm
+  nrm_dir: ./data/acs-file-server/nrm
+  device_mnormal_dir: ./data/acs-file-server/mnormal
+  cm_file_path: ./data/acs-file-server/north-file
+  piecemeal_temp_dir: ./data/acs-file-server/piecemeal-temp
+  mr_ccs_export_dir: ./data/acs-file-server/mr-report
+  # Device-download roots (FileDownload phase). Mirrors Java's caFilePath /
+  # licenseFilePath / AOS ztp path. Defaults live under root when unset.
+  ca_dir: ./data/acs-file-server/ca
+  license_dir: ./data/acs-file-server/license
+  ztp_dir: ./data/acs-file-server/ztp
+
 license:
   # Gate all authenticated endpoints unless a valid license is active.
   # Override at runtime with NMS_LICENSE_REQUIRED=false for a dev/test instance.

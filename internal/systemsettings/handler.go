@@ -19,6 +19,10 @@ func NewSystemSettingsHandler(db *gorm.DB, aesKey string) *SystemSettingsHandler
 	}
 }
 
+// Service returns the underlying service so other modules (e.g. the device
+// file server's Basic-auth) can share the same instance.
+func (h *SystemSettingsHandler) Service() *SystemSettingsService { return h.svc }
+
 // ListDeviceSettings returns the device configuration for the current tenancy.
 func (h *SystemSettingsHandler) ListDeviceSettings(c *gin.Context) {
 	tenancyId := middleware.GetLicenseId(c)

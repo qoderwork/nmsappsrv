@@ -108,12 +108,12 @@ func (s *service) CreateCaFileRecord(ctx context.Context, fileName, url, descrip
 	return s.repo.Create(file)
 }
 
-// GetCaFilePath returns the configured CA file storage path
+// GetCaFilePath returns the configured CA file storage path. It honours
+// file_server.ca_dir (so the device-facing download endpoint serves the same
+// files the upload writes) and falls back to a temp dir when unconfigured.
 func (s *service) GetCaFilePath() string {
-	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
-		// In production, this would be from a dedicated caFilePath config
-		// For now return a default path
-		return filepath.Join(os.TempDir(), "ca_files")
+	if config.Cfg != nil && config.Cfg.FileServer.CaDir != "" {
+		return config.Cfg.FileServer.CaDir
 	}
 	return filepath.Join(os.TempDir(), "ca_files")
 }

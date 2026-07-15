@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"nmsappsrv/internal/alarm"
+	"nmsappsrv/internal/authz"
 	"nmsappsrv/internal/blacklist"
 	"nmsappsrv/internal/cacert"
+	"nmsappsrv/internal/captcha"
 	"nmsappsrv/internal/cbsd"
 	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/corenet"
@@ -20,6 +22,8 @@ import (
 	"nmsappsrv/internal/devicelog"
 	"nmsappsrv/internal/diagnostics"
 	"nmsappsrv/internal/eventlog"
+	"nmsappsrv/internal/filebase"
+	"nmsappsrv/internal/filepiecemeal"
 	"nmsappsrv/internal/ha"
 	"nmsappsrv/internal/health"
 	"nmsappsrv/internal/heartbeat"
@@ -30,6 +34,7 @@ import (
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/mml"
 	"nmsappsrv/internal/monitor"
+	"nmsappsrv/internal/mr"
 	"nmsappsrv/internal/nmsbackup"
 	"nmsappsrv/internal/ntp"
 	"nmsappsrv/internal/paramcompare"
@@ -53,11 +58,9 @@ import (
 	"nmsappsrv/internal/topology"
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/upgrade"
-	"nmsappsrv/internal/authz"
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
 	"nmsappsrv/internal/webssh"
-	"nmsappsrv/internal/captcha"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/metrics"
@@ -258,6 +261,10 @@ func main() {
 	securityH := security.NewHandler(db)
 	shutdownH := upgrade.NewShutdownHandler(db)
 	systemsettingsH := systemsettings.NewSystemSettingsHandler(db, cfg.Mail.AESKey)
+	// Device-facing file server + chunked upload + MR pipeline (ABSENT backfill).
+	filebaseSvc := filebase.NewService(cfg.FileServer, db)
+	filepiecemealSvc := filepiecemeal.NewService(cfg.FileServer.PiecemealTempDir)
+	mrSvc := mr.NewService(db, cfg.FileServer)
 	parammonitorH := parammonitor.NewHandler(db)
 	parammonitorH.StartThresholdChecker()
 	paramcompareH := paramcompare.NewHandler(db)
@@ -393,6 +400,8 @@ func main() {
 			security.RegisterRoutes(auth, securityH)
 			systemsettings.RegisterRoutes(auth, systemsettingsH)
 			parammonitor.RegisterRoutes(auth, parammonitorH)
+			filepiecemeal.RegisterRoutes(auth, filepiecemeal.NewHandler(filepiecemealSvc))
+			mr.RegisterRoutes(auth, mr.NewHandler(mrSvc))
 			paramcompare.RegisterRoutes(auth, paramcompareH)
 			devicelog.RegisterRoutes(auth, devicelogH)
 			nmsbackup.RegisterRoutes(auth, nmsbackupH)
@@ -413,6 +422,10 @@ func main() {
 	health.RegisterPublicRoutes(router, healthH)
 	cacert.RegisterPublicRoutes(router, cacertH)
 	upgrade.RegisterPublicRoutes(router, upgradeH)
+
+	// ========== Device-facing file server (/acs-file-server/**, Basic auth) ==========
+	// Registered at the root (no /api/v1) to mirror Java's gateway-stripped path.
+	filebase.RegisterRoutes(router, systemsettingsH.Service(), filebaseSvc, mrSvc)
 
 	// ========== Java-compatible permission endpoints (v2 prefix) ==========
 	// Mirrors nms-serv RoleManagementServiceImpl.getPermissionIdsForUser /

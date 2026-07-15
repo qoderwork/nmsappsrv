@@ -316,6 +316,70 @@ func (s *SystemSettingsService) encrypt(plaintext string) (string, error) {
 	return hex.EncodeToString(ciphertext), nil
 }
 
+// decrypt reverses encrypt (AES-GCM). Used to recover the plaintext
+// FileServer password for device-facing Basic auth on /acs-file-server/**.
+func (s *SystemSettingsService) decrypt(ciphertext string) (string, error) {
+	if ciphertext == "" {
+		return "", nil
+	}
+	if len(s.aesKey) == 0 {
+		return ciphertext, nil // No encryption if key not configured
+	}
+
+	data, err := hex.DecodeString(ciphertext)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(s.aesKey)
+	if err != nil {
+		return "", err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	if len(data) < aesGCM.NonceSize() {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, sealed := data[:aesGCM.NonceSize()], data[aesGCM.NonceSize():]
+	plaintext, err := aesGCM.Open(nil, nonce, sealed, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
+// GetFileServerCredentials returns the device-facing Basic-auth username and
+// (decrypted) password configured via UpdateACSConfig (FileServerUsername/
+// FileServerPassword). Mirrors Java's FileServerUsernameAndPasswordHolder,
+// which the device uses when pulling files from /acs-file-server/**.
+func (s *SystemSettingsService) GetFileServerCredentials() (username, password string, err error) {
+	cfg, err := s.GetACSConfig()
+	if err != nil {
+		return "", "", err
+	}
+	if cfg.FileServerUsername != nil {
+		username = *cfg.FileServerUsername
+	}
+	if cfg.FileServerPassword != nil && *cfg.FileServerPassword != "" && *cfg.FileServerPassword != passwordMask {
+		password, err = s.decrypt(*cfg.FileServerPassword)
+		if err != nil {
+			return "", "", apperror.Wrap(err, "DECRYPT_FILESERVER_PASSWORD_FAILED", 500, "failed to decrypt file server password")
+		}
+	}
+	return username, password, nil
+}
+
+// GetACSConfigRaw returns the ASCConfig without masking secrets. Intended for
+// internal consumers (e.g. device-facing Basic auth) that need the real values.
+func (s *SystemSettingsService) GetACSConfigRaw() (*ACSConfig, error) {
+	return s.loadACSConfig()
+}
+
 // ---------- defaults ----------
 
 func defaultDeviceConfig() *DeviceConfig {

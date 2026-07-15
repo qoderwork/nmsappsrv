@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"nmsappsrv/pkg/logger"
 	"github.com/spf13/viper"
+	"nmsappsrv/pkg/logger"
 )
 
 type Config struct {
@@ -25,7 +25,8 @@ type Config struct {
 	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat"`
 	Upgrade       UpgradeConfig       `mapstructure:"upgrade"`
 	License       LicenseConfig       `mapstructure:"license"`
-	Captcha       CaptchaConfig         `mapstructure:"captcha"`
+	Captcha       CaptchaConfig       `mapstructure:"captcha"`
+	FileServer    FileServerConfig    `mapstructure:"file_server"`
 }
 
 // LicenseConfig controls L-2 license enforcement (go-infra/licensing).
@@ -48,11 +49,41 @@ type LicenseConfig struct {
 	MaxClockFile               string `mapstructure:"max_clock_file"`
 	MachineFingerprintOverride string `mapstructure:"machine_fingerprint_override"`
 }
+
 // CaptchaConfig controls the login captcha (adaptive risk-control).
-//   length  number of digits shown in the captcha image (Java\'s kaptchaLength).
-//           Defaults to 4 when unset.
+//
+//	length  number of digits shown in the captcha image (Java\'s kaptchaLength).
+//	        Defaults to 4 when unset.
 type CaptchaConfig struct {
 	Length int `mapstructure:"length"`
+}
+
+// FileServerConfig holds the on-disk layout for the device-facing
+// /acs-file-server/** endpoints (Java's @Value paths: filePath/configFilePath/
+// batchProcessFilePath/logFilePath/mrFilePath/captureFilePath/mmlExecuteResultFilePath/
+// pmFilePath/nrmFilePath/deviceMNormalFilePath/cmFilePath/piecemealFileTempPath/
+// MRCCSExportFile). nmsappsrv self-serves these files (Option 1 in the ABSENT
+// backfill plan), so the same roots live here instead of Spring properties.
+type FileServerConfig struct {
+	Root             string `mapstructure:"root"`               // base dir for all acs-file-server files
+	UpgradeDir       string `mapstructure:"upgrade_dir"`        // filePath (upgrade packages)
+	ConfigDir        string `mapstructure:"config_dir"`         // configFilePath (per tenancyId/elementId)
+	BatchProcessDir  string `mapstructure:"batch_process_dir"`  // batchProcessFilePath (bpf + ztp templates)
+	LogDir           string `mapstructure:"log_dir"`            // logFilePath (device logs)
+	MrDir            string `mapstructure:"mr_dir"`             // mrFilePath
+	CaptureDir       string `mapstructure:"capture_dir"`        // captureFilePath
+	MmlResultDir     string `mapstructure:"mml_result_dir"`     // mmlExecuteResultFilePath
+	PmDir            string `mapstructure:"pm_dir"`             // pmFilePath
+	NrmDir           string `mapstructure:"nrm_dir"`            // nrmFilePath
+	DeviceMNormalDir string `mapstructure:"device_mnormal_dir"` // deviceMNormalFilePath (by DB fileId)
+	CmFilePath       string `mapstructure:"cm_file_path"`       // cmFilePath (north-file / ztp)
+	PiecemealTempDir string `mapstructure:"piecemeal_temp_dir"` // piecemealFileTempPath
+	MrCCSExportDir   string `mapstructure:"mr_ccs_export_dir"`  // MRCCSExportFile (MR CSV reports)
+	// Download roots for the device-facing /acs-file-server/** download
+	// providers wired in the FileDownload backfill phase.
+	CaDir      string `mapstructure:"ca_dir"`      // caFilePath (Java ca file root)
+	LicenseDir string `mapstructure:"license_dir"` // licenseFilePath (base_station_license root)
+	ZtpDir     string `mapstructure:"ztp_dir"`     // aos/ztp file root (AOSManagementServiceImpl.path)
 }
 
 // HAConfig holds High Availability configuration for VIP monitoring.
