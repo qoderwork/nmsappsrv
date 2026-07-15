@@ -32,6 +32,7 @@ type Service interface {
 	TriggerBackup(elementId int64, username string) error
 	ListBackupLogs(elementId int64) ([]ParameterBackupLog, error)
 	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error
+	BatchParameterConfiguration(excelBytes []byte, username string, tenancyId int) error
 	ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error)
 	ListBatchConfigurationDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
 
@@ -49,6 +50,7 @@ type Service interface {
 	AddObject(elementId int64, objectName string, username string) error
 	DeleteObject(elementId int64, objectName string, username string) error
 	BatchDeleteObject(elementId int64, objectNames []string, username string) error
+	DeleteObjectAfterNeedReboot(elementId int64, objectNames []string, username string) error
 
 	// Export Parameter Template.
 	ExportParameterTemplate(templateId int64) ([]byte, string, error)

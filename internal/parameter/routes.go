@@ -20,6 +20,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.GET("/parameter-backup-logs", h.ListBackupLogs)
 	rg.POST("/parameter-backup/:elementId", h.TriggerBackup)
 	rg.POST("/parameter-tasks", h.BatchParameterConfigurationDirect)
+	rg.POST("/batch-configuration", h.BatchParameterConfiguration)
 	rg.GET("/batch-configurations", h.ListBatchConfigurations)
 	rg.GET("/batch-configurations/:taskId/detail", h.ListBatchConfigurationDetail)
 
@@ -37,6 +38,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/model-tree/:elementId/add-object", h.AddObject)
 	rg.POST("/model-tree/:elementId/delete-object", h.DeleteObject)
 	rg.POST("/model-tree/:elementId/batch-delete-object", h.BatchDeleteObject)
+	rg.POST("/model-tree/:elementId/delete-object-after-need-reboot", h.DeleteObjectAfterNeedReboot)
 
 	// Export 参数模板导出
 	rg.GET("/parameter-templates/:id/export", h.ExportParameterTemplate)

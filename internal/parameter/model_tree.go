@@ -275,6 +275,28 @@ func (s *service) BatchDeleteObject(elementId int64, objectNames []string, usern
 	return nil
 }
 
+// DeleteObjectAfterNeedReboot calls BatchDeleteObject then dispatches a
+// SoftReboot command to the device. Mirrors Java
+// ModelTreeManagementController.deleteObjectAfterNeedReboot.
+func (s *service) DeleteObjectAfterNeedReboot(elementId int64, objectNames []string, username string) error {
+	if err := s.BatchDeleteObject(elementId, objectNames, username); err != nil {
+		return fmt.Errorf("delete objects: %w", err)
+	}
+
+	sn, err := s.resolveDeviceSN(elementId)
+	if err != nil {
+		return fmt.Errorf("resolve SN for reboot: %w", err)
+	}
+
+	// Dispatch a SoftReboot after deletion.
+	headerId := soap.GenerateHeaderID()
+	soapXml := soap.BuildSoftReboot(headerId, "delete+reboot")
+
+	logger.Infof("DeleteObjectAfterNeedReboot: dispatching reboot to device %s (elementId=%d) after deleting %d objects",
+		sn, elementId, len(objectNames))
+	return s.dispatchSoapCommand(elementId, sn, "Reboot", soapXml, headerId, username)
+}
+
 // ---------------------------------------------------------------------------
 // Export Parameter Template - Service implementation
 // ---------------------------------------------------------------------------
@@ -480,6 +502,28 @@ func (h *Handler) BatchDeleteObject(c *gin.Context) {
 
 	username := middleware.GetUsername(c)
 	if err := h.svc.BatchDeleteObject(elementId, req.ObjectNames, username); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// DeleteObjectAfterNeedReboot handles POST /model-tree/:elementId/delete-object-after-need-reboot
+func (h *Handler) DeleteObjectAfterNeedReboot(c *gin.Context) {
+	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid element id")
+		return
+	}
+
+	var req BatchDeleteObjectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	username := middleware.GetUsername(c)
+	if err := h.svc.DeleteObjectAfterNeedReboot(elementId, req.ObjectNames, username); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
