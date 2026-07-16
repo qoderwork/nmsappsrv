@@ -1,6 +1,7 @@
 package parameter
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -218,6 +219,44 @@ func (h *Handler) UpdateParameterTemplate(c *gin.Context) {
 
 	if err := h.svc.UpdateParameterTemplate(&req); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to update parameter template")
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// GetParameterTemplate handles GET /parameter/templates/:id
+// Returns a single parameter template's metadata plus its full parameter list
+// (with paths from the `parameter` table). Mirrors Java
+// `getParameterDeployTemplateInfo`.
+func (h *Handler) GetParameterTemplate(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid template id")
+		return
+	}
+	vo, err := h.svc.GetParameterTemplate(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.Error(c, http.StatusNotFound, "parameter template not found")
+			return
+		}
+		utils.Error(c, http.StatusInternalServerError, "failed to get parameter template")
+		return
+	}
+	utils.Success(c, vo)
+}
+
+// DeleteParameterTemplate handles DELETE /parameter/templates/:id
+// Cascades to parameter_template_has_parameter. Mirrors Java
+// `deleteParameterDeployTemplate`.
+func (h *Handler) DeleteParameterTemplate(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid template id")
+		return
+	}
+	if err := h.svc.DeleteParameterTemplate(id); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to delete parameter template")
 		return
 	}
 	utils.Success(c, nil)

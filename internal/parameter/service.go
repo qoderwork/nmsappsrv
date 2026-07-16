@@ -27,6 +27,8 @@ type Service interface {
 	ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
 	CreateParameterTemplate(req *ParameterTemplateRequest) error
 	UpdateParameterTemplate(req *ParameterTemplateRequest) error
+	GetParameterTemplate(id int64) (*ParameterTemplateDetailVo, error)
+	DeleteParameterTemplate(id int64) error
 	DeployTemplate(templateId int64, elementIds []int64, username string) ([]DeployTemplateStatus, error)
 	ListDeployTemplateLogs(templateId int64, page, pageSize int) ([]DeployTemplateLogVo, int64, error)
 	TriggerBackup(elementId int64, username string) error

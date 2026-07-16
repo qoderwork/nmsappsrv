@@ -156,6 +156,10 @@ func (ParameterTemplateHasParameter) TableName() string { return "parameter_temp
 type TemplateParameter struct {
 	ParameterId string `json:"parameterId" binding:"required"`
 	Value       string `json:"value"`
+	// Path is populated by repo queries that join `parameter` (e.g.
+	// FindParameterTemplate); it is not part of the create/update request
+	// payload and is left empty on writes.
+	Path string `json:"path,omitempty" gorm:"column:path"`
 }
 
 // ParameterTemplateRequest 是创建/更新参数模板的 JSON 请求体: 模板头 + 参数列表(含定义值).
@@ -169,6 +173,28 @@ type ParameterTemplateRequest struct {
 }
 
 // ParameterDeploymentLog 对应 parameter_deployment_log 表 (对齐Java ParameterDeploymentLog entity)
+// TemplateParameterVo is the API response item for a parameter template's
+// parameter list, returned by `GetParameterTemplate` (mirrors Java
+// `getParameterDeployTemplateInfo`).
+type TemplateParameterVo struct {
+	ParameterId string `json:"parameterId"`
+	Path        string `json:"path"`
+	Value       string `json:"value"`
+}
+
+// ParameterTemplateDetailVo is the API response for the single-template
+// detail endpoint (`GET /parameter-templates/:id`). Includes the template
+// metadata plus its full parameter list (with paths from the `parameter` table
+// via the `parameter_template_has_parameter` join).
+type ParameterTemplateDetailVo struct {
+	Id          int64                `json:"id"`
+	Name        string               `json:"name"`
+	Description string               `json:"description"`
+	TenancyId   int                  `json:"tenancyId"`
+	IsDefault   bool                 `json:"isDefault"`
+	Parameters  []TemplateParameterVo `json:"parameters"`
+}
+
 type ParameterDeploymentLog struct {
 	Id            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	TemplateId    *int64     `gorm:"column:template_id" json:"template_id"`

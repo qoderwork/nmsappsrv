@@ -35,8 +35,10 @@ type Repository interface {
 	FindParameterLogs(elementId int64, offset, limit int) ([]ParameterLog, int64, error)
 	FindParameterSets(licenseId int) ([]ParameterSet, error)
 	FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
+	FindParameterTemplate(id int64) (*ParameterTemplate, []TemplateParameter, error)
 	CreateParameterTemplate(t *ParameterTemplate) error
 	UpdateParameterTemplate(t *ParameterTemplate) error
+	DeleteParameterTemplate(id int64) error
 	SaveTemplateParameters(templateId int64, params []TemplateParameter) error
 	CreateParameterBackupLog(log *ParameterBackupLog) error
 	FindParameterBackupLogs(elementId int64) ([]ParameterBackupLog, error)
@@ -213,6 +215,45 @@ func (r *repository) CreateParameterTemplate(t *ParameterTemplate) error {
 // UpdateParameterTemplate saves changes to an existing parameter template.
 func (r *repository) UpdateParameterTemplate(t *ParameterTemplate) error {
 	return r.db.Save(t).Error
+}
+
+// FindParameterTemplate returns a single template plus its parameter
+// association rows (parameter_id + value, in association order). The
+// `path` is resolved via a separate `parameter` table join inside the SQL
+// (the VO layer may look it up separately if needed; for now we return
+// ParameterId + Value, matching how the create/update request payloads
+// look). Mirrors Java `getParameterDeployTemplateInfo`.
+func (r *repository) FindParameterTemplate(id int64) (*ParameterTemplate, []TemplateParameter, error) {
+	var tpl ParameterTemplate
+	if err := r.db.Where("id = ?", id).First(&tpl).Error; err != nil {
+		return nil, nil, err
+	}
+	var params []TemplateParameter
+	err := r.db.Raw(`
+		SELECT pth.parameter_id AS parameter_id,
+		       COALESCE(pth.parameter_value, '') AS value,
+		       COALESCE(p.path, '') AS path
+		FROM parameter_template_has_parameter pth
+		LEFT JOIN parameter p ON p.id = pth.parameter_id
+		WHERE pth.template_id = ?
+		ORDER BY pth.id
+	`, id).Scan(&params).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	return &tpl, params, nil
+}
+
+// DeleteParameterTemplate removes a template and its `parameter_template_has_parameter`
+// rows in a single transaction. Mirrors Java `deleteParameterDeployTemplate`.
+func (r *repository) DeleteParameterTemplate(id int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("template_id = ?", id).
+			Delete(&ParameterTemplateHasParameter{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&ParameterTemplate{}).Error
+	})
 }
 
 // SaveTemplateParameters replaces ALL parameter associations (with their DEFINED

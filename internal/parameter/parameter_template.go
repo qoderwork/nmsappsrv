@@ -307,3 +307,42 @@ func (s *service) ListDeployTemplateLogs(templateId int64, page, pageSize int) (
 
 	return vos, total, nil
 }
+
+// GetParameterTemplate returns a single template's metadata plus its full
+// parameter list (with paths). Mirrors Java `getParameterDeployTemplateInfo`.
+func (s *service) GetParameterTemplate(id int64) (*ParameterTemplateDetailVo, error) {
+	tpl, params, err := s.repo.FindParameterTemplate(id)
+	if err != nil {
+		return nil, err
+	}
+	vo := &ParameterTemplateDetailVo{
+		Id:         tpl.Id,
+		Parameters: make([]TemplateParameterVo, 0, len(params)),
+	}
+	if tpl.Name != nil {
+		vo.Name = *tpl.Name
+	}
+	if tpl.Description != nil {
+		vo.Description = *tpl.Description
+	}
+	if tpl.TenancyId != nil {
+		vo.TenancyId = *tpl.TenancyId
+	}
+	if tpl.IsDefault != nil {
+		vo.IsDefault = *tpl.IsDefault
+	}
+	for _, p := range params {
+		vo.Parameters = append(vo.Parameters, TemplateParameterVo{
+			ParameterId: p.ParameterId,
+			Path:        p.Path,
+			Value:       p.Value,
+		})
+	}
+	return vo, nil
+}
+
+// DeleteParameterTemplate removes a template and its parameter associations
+// (cascade) in a single transaction. Mirrors Java `deleteParameterDeployTemplate`.
+func (s *service) DeleteParameterTemplate(id int64) error {
+	return s.repo.DeleteParameterTemplate(id)
+}
