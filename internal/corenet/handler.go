@@ -488,3 +488,29 @@ func (h *Handler) AddCoreNetworkParameter(c *gin.Context) {
 	}
 	utils.Success(c, map[string]int64{"id": id})
 }
+
+// GetCoreNetworkElementSystemState handles POST /core-networks/element-system-state
+// Body: {coreNetworkId} (or Java-style {id}). Returns the per-element system
+// state parsed from core_network_data. Mirrors Java
+// getCoreNetworkElementSystemState.
+func (h *Handler) GetCoreNetworkElementSystemState(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+		Id            int `json:"id"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	id := body.CoreNetworkId
+	if id == 0 {
+		id = body.Id
+	}
+	if id <= 0 {
+		utils.Error(c, http.StatusBadRequest, "coreNetworkId is required")
+		return
+	}
+	data, err := h.svc.GetCoreNetworkElementSystemState(id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}

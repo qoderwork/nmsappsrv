@@ -69,6 +69,11 @@ type Service interface {
 	QueryCoreNetworkParameters(dto QueryCoreNetworkParametersDTO, user string) (int64, error)
 	DeleteCoreNetworkParameter(dto DeleteCoreNetworkParameterDTO, user string) (int64, error)
 	AddCoreNetworkParameter(dto SetCoreNetworkParametersDTO, user string) (int64, error)
+
+	// GetCoreNetworkElementSystemState returns the per-element system state
+	// parsed from core_network_data *Info columns. Mirrors Java
+	// getCoreNetworkElementSystemState (pure DB read, no device call).
+	GetCoreNetworkElementSystemState(coreNetworkId int) (*GetCoreNetworkElementSystemStateVO, error)
 	// GetBuiltInCoreNetworkUpfTraffic returns the built-in UPF traffic
 	// view (excludes user-supplied KPI rows). Mirrors Java
 	// getBuiltInCoreNetworkUpfTraffic.
@@ -541,6 +546,42 @@ func (s *service) AddCoreNetworkParameter(dto SetCoreNetworkParametersDTO, user 
 	}
 	info := dto.Name + ":" + string(body)
 	return s.logCoreNetOp(dto.CoreNetworkId, "Add Parameter", user, info, requestID), nil
+}
+
+// GetCoreNetworkElementSystemState reads core_network_data and parses each
+// non-empty per-element *Info column into a CoreNetworkSystemState. Mirrors
+// Java getCoreNetworkElementSystemState (no device call).
+func (s *service) GetCoreNetworkElementSystemState(coreNetworkId int) (*GetCoreNetworkElementSystemStateVO, error) {
+	if coreNetworkId <= 0 {
+		return nil, fmt.Errorf("coreNetworkId is required")
+	}
+	data, err := s.repo.FindCoreNetworkData(coreNetworkId)
+	if err != nil || data == nil {
+		return nil, fmt.Errorf("core network data not found")
+	}
+	vo := &GetCoreNetworkElementSystemStateVO{}
+	if str := data.ImsInfo; str != nil && *str != "" {
+		vo.Ims = parseSystemState(*str)
+	}
+	if str := data.AmfInfo; str != nil && *str != "" {
+		vo.Amf = parseSystemState(*str)
+	}
+	if str := data.AusfInfo; str != nil && *str != "" {
+		vo.Ausf = parseSystemState(*str)
+	}
+	if str := data.UdmInfo; str != nil && *str != "" {
+		vo.Udm = parseSystemState(*str)
+	}
+	if str := data.SmfInfo; str != nil && *str != "" {
+		vo.Smf = parseSystemState(*str)
+	}
+	if str := data.PcfInfo; str != nil && *str != "" {
+		vo.Pcf = parseSystemState(*str)
+	}
+	if str := data.UpfInfo; str != nil && *str != "" {
+		vo.Upf = parseSystemState(*str)
+	}
+	return vo, nil
 }
 
 // resolveRmUid returns the device serial number linked to a core network via

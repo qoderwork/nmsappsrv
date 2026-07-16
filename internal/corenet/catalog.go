@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"nmsappsrv/pkg/logger"
 	"gopkg.in/yaml.v3"
 )
 
@@ -193,4 +194,67 @@ func parseConfigJSON(s string) []map[string]interface{} {
 		return out
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Core network element system state (mirrors Java CoreNetworkSystemState and
+// GetCoreNetworkElementSystemStateVO). getCoreNetworkElementSystemState reads
+// the per-element *Info columns of core_network_data and parses each into a
+// CoreNetworkSystemState.
+// ---------------------------------------------------------------------------
+
+// CPUUsage mirrors Java CoreNetworkSystemState.CPUUsage.
+type CPUUsage struct {
+	NfCpuUsage  *int `json:"nfCpuUsage"`
+	SysCpuUsage *int `json:"sysCpuUsage"`
+}
+
+// MemUsage mirrors Java CoreNetworkSystemState.MemUsage.
+type MemUsage struct {
+	TotalMem    *int `json:"totalMem"`
+	NfUsedMem   *int `json:"nfUsedMem"`
+	SysMemUsage *int `json:"sysMemUsage"`
+}
+
+// CoreNetworkSystemState mirrors Java CoreNetworkSystemState.
+type CoreNetworkSystemState struct {
+	HostName    string    `json:"hostName"`
+	OsInfo      string    `json:"osInfo"`
+	DbInfo      string    `json:"dbInfo"`
+	Version     string    `json:"version"`
+	IpAddr      []string  `json:"ipAddr"`
+	Port        *int      `json:"port"`
+	Capability  *int      `json:"capability"`
+	SerialNum   string    `json:"serialNum"`
+	ExpiryDate  string    `json:"expiryDate"`
+	CpuUsage    *CPUUsage  `json:"cpuUsage"`
+	MemUsage    *MemUsage  `json:"memUsage"`
+	NeId        string    `json:"neId"`
+	NeName      string    `json:"neName"`
+}
+
+// GetCoreNetworkElementSystemStateVO mirrors Java
+// GetCoreNetworkElementSystemStateVO (one state per element type).
+type GetCoreNetworkElementSystemStateVO struct {
+	Ims  *CoreNetworkSystemState `json:"ims"`
+	Amf  *CoreNetworkSystemState `json:"amf"`
+	Ausf *CoreNetworkSystemState `json:"ausf"`
+	Udm  *CoreNetworkSystemState `json:"udm"`
+	Smf  *CoreNetworkSystemState `json:"smf"`
+	Pcf  *CoreNetworkSystemState `json:"pcf"`
+	Upf  *CoreNetworkSystemState `json:"upf"`
+}
+
+// parseSystemState parses a stored *Info JSON column into a
+// CoreNetworkSystemState (mirrors Java JacksonUtil.parseObject).
+func parseSystemState(s string) *CoreNetworkSystemState {
+	if s == "" {
+		return nil
+	}
+	var st CoreNetworkSystemState
+	if err := json.Unmarshal([]byte(s), &st); err != nil {
+		logger.Warnf("parseSystemState failed: %v", err)
+		return nil
+	}
+	return &st
 }

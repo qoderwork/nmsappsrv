@@ -30,6 +30,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/core-networks/parameters/query", h.QueryCoreNetworkParameters)
 	rg.POST("/core-networks/parameters/delete", h.DeleteCoreNetworkParameter)
 	rg.POST("/core-networks/parameters/add", h.AddCoreNetworkParameter)
+	rg.POST("/core-networks/element-system-state", h.GetCoreNetworkElementSystemState)
 	rg.POST("/core-networks/kpi/user-info", h.GetCoreNetworkUserInfo)
 	rg.POST("/core-networks/kpi/upf-traffic", h.GetCoreNetworkUpfTraffic)
 	rg.POST("/core-networks/kpi/upf-traffic/built-in", h.GetBuiltInCoreNetworkUpfTraffic)
