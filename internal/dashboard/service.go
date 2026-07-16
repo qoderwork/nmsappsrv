@@ -3,6 +3,8 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -188,9 +190,28 @@ func (s *service) ListProductTypeAndDeviceCount(ctx context.Context, mode string
 	return &ListProductTypeAndDeviceCountVO{Data: data}, nil
 }
 
-// ListBaseStationStatistics returns base station statistics from dashboard_pm_statistic_data
+// ListBaseStationStatistics returns per-base-station PM KPI series (cell availability + PDCP UL/DL)
+// keyed by "serialNumber(measObjLdn)", mirroring Java DashboardManagementServiceImpl.listBaseStationStatistics.
+// The faithful source is pm_kpi_measurement (parsed PM-file KPIs), not the pre-aggregated dashboard_pm_statistic_data.
 func (s *service) ListBaseStationStatistics(ctx context.Context, tenancyId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error) {
-	rows, err := s.repo.QueryDashboardPmData(ctx, tenancyId, startTime, endTime)
+	if len(elementIds) == 0 {
+		return &ListBaseStationStatisticsVO{}, nil
+	}
+
+	// serialNumber lookup per element (Java keys series by serialNumber(ldn)).
+	devices, err := s.repo.GetDeviceByIds(ctx, elementIds)
+	if err != nil {
+		return nil, err
+	}
+	serialByElement := make(map[int64]string, len(devices))
+	for _, d := range devices {
+		id := toInt64(d["ne_neid"])
+		sn, _ := d["serial_number"].(string)
+		serialByElement[id] = sn
+	}
+
+	kpiNames := []string{"CELL.AvailRatio", "PDCP.RxBytesUl", "PDCP.TxBytesDl"}
+	rows, err := s.repo.QueryKpiMeasurements(ctx, elementIds, startTime, endTime, kpiNames)
 	if err != nil {
 		return nil, err
 	}
@@ -198,46 +219,31 @@ func (s *service) ListBaseStationStatistics(ctx context.Context, tenancyId *int,
 	cellAvailableRate := make(map[string][]TimeAndDataVO)
 	pdcp := make(map[string][]TimeAndDataVO)
 
-	// Use "all" as the default PLMN key since dashboard_pm_statistic_data has no PLMN column
-	const plmnKey = "all"
-
-	var cellSeries []TimeAndDataVO
-	var pdcpSeries []TimeAndDataVO
-
 	for _, row := range rows {
-		rowTime, _ := row["time"].(time.Time)
-		t := rowTime
-
-		// CellAvailableRate
-		if car, ok := row["cell_available_rate"]; ok && car != nil {
-			carVal, _ := car.(float64)
-			cellSeries = append(cellSeries, TimeAndDataVO{
-				Time: &t,
-				Data: carVal,
-			})
+		elementId := toInt64(row["element_id"])
+		kpiName, _ := row["kpi_name"].(string)
+		ldn, _ := row["meas_obj_ldn"].(string)
+		val := toFloat64(row["measured_value"])
+		mt, _ := row["measure_time"].(time.Time)
+		if mt.IsZero() {
+			continue
 		}
-
-		// Pdcp (UL + DL)
-		ulVal := 0.0
-		dlVal := 0.0
-		if ul, ok := row["pdcp_ul_rate"]; ok && ul != nil {
-			ulVal, _ = ul.(float64)
+		sn := serialByElement[elementId]
+		key := sn + "(" + ldn + ")"
+		t := mt
+		switch kpiName {
+		case "CELL.AvailRatio":
+			cellAvailableRate[key] = append(cellAvailableRate[key], TimeAndDataVO{Time: &t, Data: val * 100})
+		case "PDCP.RxBytesUl":
+			pdcp[key+" UL"] = append(pdcp[key+" UL"], TimeAndDataVO{Time: &t, Data: val})
+		case "PDCP.TxBytesDl":
+			pdcp[key+" DL"] = append(pdcp[key+" DL"], TimeAndDataVO{Time: &t, Data: val})
 		}
-		if dl, ok := row["pdcp_dl_rate"]; ok && dl != nil {
-			dlVal, _ = dl.(float64)
-		}
-		pdcpSeries = append(pdcpSeries, TimeAndDataVO{
-			Time: &t,
-			Data: PdcpData{UlRate: ulVal, DlRate: dlVal},
-		})
 	}
 
-	if len(cellSeries) > 0 {
-		cellAvailableRate[plmnKey] = cellSeries
-	}
-	if len(pdcpSeries) > 0 {
-		pdcp[plmnKey] = pdcpSeries
-	}
+	// Sort each per-ldn series by time ascending for a stable time-series.
+	sortSeriesMap(cellAvailableRate)
+	sortSeriesMap(pdcp)
 
 	return &ListBaseStationStatisticsVO{
 		CellAvailableRate: cellAvailableRate,
@@ -343,39 +349,46 @@ func (s *service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*Li
 	return vo, nil
 }
 
-// StatisticKPIForDevicelop returns KPI statistics for device groups
+// StatisticKPIForDevicelop returns per-bucket CELL availability + MAC UL/DL KPIs for device groups,
+// mirroring Java DashboardManagementServiceImpl.statisticKPIForDevicelop and
+// PerformanceUtil.dashboardAggregateKpiData. Source is pm_kpi_measurement.
 func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error) {
 	if len(deviceGroupIds) == 0 {
 		return nil, apperror.ErrInvalidInput.WithMessage("deviceGroupId is required")
 	}
 
-	// Default granularity
 	if granularity != "day" && granularity != "hour" {
 		granularity = "day"
 	}
-
-	// Default timezone
 	if gmt == "" {
 		gmt = "Asia/Shanghai"
 	}
+	loc, err := time.LoadLocation(gmt)
+	if err != nil {
+		loc = time.FixedZone("Asia/Shanghai", 8*3600)
+	}
 
-	// Calculate time range
-	var startTime time.Time
 	endTime := time.Now()
-
+	var startTime time.Time
 	if timestamp != nil {
 		startTime = time.UnixMilli(*timestamp)
 	} else {
-		// Last 7 days
-		startTime = endTime.AddDate(0, 0, -6)
-		startTime = time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, startTime.Location())
+		start := endTime.AddDate(0, 0, -6)
+		startTime = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
 	}
 
-	// Query device groups
 	groups, err := s.repo.QueryDeviceGroupsByIds(ctx, deviceGroupIds)
 	if err != nil {
 		return nil, err
 	}
+
+	tenancyNames, err := s.repo.GetTenancyNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	kpiNames := []string{"CELL.AvailRatio", "MAC.RxBytesUl", "MAC.TxBytesDl"}
+	axis := generateTimeAxis(startTime, endTime, granularity, loc)
 
 	var deviceGroupVOs []DashboardKPIDeviceGroupVO
 
@@ -383,94 +396,80 @@ func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, 
 		groupId, _ := g["id"].(string)
 		groupName, _ := g["group_name"].(string)
 
-		// Get element IDs for this group
-		elementIds, err := s.repo.QueryGroupElementIds(ctx, groupId)
+		var licensePtr *int
+		if lid := toInt64(g["license_id"]); lid > 0 {
+			li := int(lid)
+			licensePtr = &li
+		}
+		tn := tenancyNameFor(tenancyNames, licensePtr)
+
+		elementIds, err := s.repo.QueryGroupElementIdsFiltered(ctx, groupId, licensePtr)
 		if err != nil {
+			deviceGroupVOs = append(deviceGroupVOs, buildEmptyGroupVO(groupId, groupName, tn, axis, granularity, loc))
 			continue
 		}
 
-		totalDevices := len(elementIds)
-
-		// Query device_statistic for these elements in the time range
-		statRows, err := s.repo.QueryDeviceStatisticForGroup(ctx, elementIds, startTime, endTime)
+		rows, err := s.repo.QueryKpiMeasurements(ctx, elementIds, startTime, endTime, kpiNames)
 		if err != nil {
-			// If query fails, still include the group with zero-valued items
-			deviceGroupVOs = append(deviceGroupVOs, buildEmptyGroupVO(groupId, groupName, totalDevices, &startTime, &endTime, granularity))
+			deviceGroupVOs = append(deviceGroupVOs, buildEmptyGroupVO(groupId, groupName, tn, axis, granularity, loc))
 			continue
 		}
 
-		// Aggregate online/offline counts by time bucket
-		type bucketCounts struct {
-			online  int
-			offline int
-		}
-		buckets := make(map[time.Time]*bucketCounts)
-
-		for _, row := range statRows {
-			statTime, _ := row["statistic_time"].(time.Time)
-			var bucket time.Time
-			if granularity == "hour" {
-				bucket = time.Date(statTime.Year(), statTime.Month(), statTime.Day(), statTime.Hour(), 0, 0, 0, statTime.Location())
-			} else {
-				bucket = time.Date(statTime.Year(), statTime.Month(), statTime.Day(), 0, 0, 0, 0, statTime.Location())
+		// Bucket measurements by GMT bucket key; drop WPS ldns (mirrors Java filter).
+		buckets := make(map[time.Time][]kpiPoint)
+		for _, row := range rows {
+			ldn, _ := row["meas_obj_ldn"].(string)
+			if strings.Contains(strings.ToUpper(ldn), "WPS") {
+				continue
 			}
-
-			if _, exists := buckets[bucket]; !exists {
-				buckets[bucket] = &bucketCounts{}
+			kpiName, _ := row["kpi_name"].(string)
+			val := toFloat64(row["measured_value"])
+			mt, _ := row["measure_time"].(time.Time)
+			if mt.IsZero() {
+				continue
 			}
-
-			online, _ := row["online"].(bool)
-			if online {
-				buckets[bucket].online++
-			} else {
-				buckets[bucket].offline++
-			}
+			bucket := gmtBucketKey(mt, granularity, loc)
+			buckets[bucket] = append(buckets[bucket], kpiPoint{KpiName: kpiName, Value: val})
 		}
 
-		// Build sorted time series for DeviceOnline and DeviceOffline
-		var onlineSeries []TimeAndDataVO
-		var offlineSeries []TimeAndDataVO
-		var times []time.Time
-		for t := range buckets {
-			times = append(times, t)
-		}
-		// Sort times ascending
-		for i := 0; i < len(times); i++ {
-			for j := i + 1; j < len(times); j++ {
-				if times[i].After(times[j]) {
-					times[i], times[j] = times[j], times[i]
+		var items []DashboardKPIStatisticItemVO
+		for _, bucket := range axis {
+			st := gmtStatisticTime(bucket, granularity, loc)
+			bt := st
+			var availSum float64
+			var availCount int
+			var rxSum, txSum float64
+			for _, p := range buckets[bucket] {
+				switch p.KpiName {
+				case "CELL.AvailRatio":
+					availSum += p.Value
+					availCount++
+				case "MAC.RxBytesUl":
+					rxSum += p.Value
+				case "MAC.TxBytesDl":
+					txSum += p.Value
 				}
 			}
+			var availRatio float64
+			if availCount > 0 {
+				availRatio = availSum / float64(availCount) * 100
+			}
+			items = append(items, DashboardKPIStatisticItemVO{
+				StatisticTime:  &bt,
+				CellAvailRatio: round6(availRatio),
+				MacRxBytesUl:   round6(rxSum),
+				MacTxBytesDl:   round6(txSum),
+			})
 		}
 
-		for _, t := range times {
-			bc := buckets[t]
-			bt := t
-			onlineSeries = append(onlineSeries, TimeAndDataVO{Time: &bt, Data: bc.online})
-			offlineSeries = append(offlineSeries, TimeAndDataVO{Time: &bt, Data: bc.offline})
-		}
-
-		// Build DeviceTotal series (constant = totalDevices for each time point)
-		var totalSeries []TimeAndDataVO
-		for _, t := range times {
-			bt := t
-			totalSeries = append(totalSeries, TimeAndDataVO{Time: &bt, Data: totalDevices})
-		}
-
-		groupVO := DashboardKPIDeviceGroupVO{
-			GroupId:   groupId,
-			GroupName: groupName,
-			StatisticsItem: []DashboardKPIStatisticItemVO{
-				{KpiName: "DeviceOnline", Data: onlineSeries},
-				{KpiName: "DeviceOffline", Data: offlineSeries},
-				{KpiName: "DeviceTotal", Data: totalSeries},
-			},
-		}
-
-		deviceGroupVOs = append(deviceGroupVOs, groupVO)
+		deviceGroupVOs = append(deviceGroupVOs, DashboardKPIDeviceGroupVO{
+			GroupId:        groupId,
+			GroupName:      groupName,
+			TenancyName:    tn,
+			StatisticsItem: items,
+		})
 	}
 
-	// If no groups found, return empty slice (groups requested but not found in DB)
 	if deviceGroupVOs == nil {
 		deviceGroupVOs = []DashboardKPIDeviceGroupVO{}
 	}
@@ -483,15 +482,124 @@ func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, 
 	}, nil
 }
 
-// buildEmptyGroupVO creates a group VO with zero-valued KPI items
-func buildEmptyGroupVO(groupId, groupName string, totalDevices int, startTime, endTime *time.Time, granularity string) DashboardKPIDeviceGroupVO {
+// ---------- KPI aggregation helpers (mirror Java PerformanceUtil.dashboardAggregateKpiData) ----------
+
+type kpiPoint struct {
+	KpiName string
+	Value   float64
+}
+
+// toInt64 / toFloat64 coerce gorm map-scan values (numeric columns often arrive as float64) to Go scalars.
+func toInt64(v interface{}) int64 {
+	switch x := v.(type) {
+	case int64:
+		return x
+	case int:
+		return int64(x)
+	case int32:
+		return int64(x)
+	case float64:
+		return int64(x)
+	case float32:
+		return int64(x)
+	default:
+		return 0
+	}
+}
+
+func toFloat64(v interface{}) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int64:
+		return float64(x)
+	case int:
+		return float64(x)
+	default:
+		return 0
+	}
+}
+
+func round6(v float64) float64 {
+	return math.Round(v*1e6) / 1e6
+}
+
+// gmtBucketKey snaps t to the bucket key Java uses: 23:59:59 for day, :59:59 for hour (in loc).
+func gmtBucketKey(t time.Time, granularity string, loc *time.Location) time.Time {
+	tl := t.In(loc)
+	if granularity == "hour" {
+		return time.Date(tl.Year(), tl.Month(), tl.Day(), tl.Hour(), 59, 59, 0, loc)
+	}
+	return time.Date(tl.Year(), tl.Month(), tl.Day(), 23, 59, 59, 0, loc)
+}
+
+// gmtStatisticTime normalizes a bucket key to the output statisticTime: midnight for day, top-of-hour for hour.
+func gmtStatisticTime(bucket time.Time, granularity string, loc *time.Location) time.Time {
+	bl := bucket.In(loc)
+	if granularity == "hour" {
+		return time.Date(bl.Year(), bl.Month(), bl.Day(), bl.Hour(), 0, 0, 0, loc)
+	}
+	return time.Date(bl.Year(), bl.Month(), bl.Day(), 0, 0, 0, 0, loc)
+}
+
+// nextBucket advances a bucket key by one step (day/hour) keeping the snapped wall-clock in loc.
+func nextBucket(b time.Time, granularity string, loc *time.Location) time.Time {
+	bl := b.In(loc)
+	if granularity == "hour" {
+		return time.Date(bl.Year(), bl.Month(), bl.Day(), bl.Hour()+1, 59, 59, 0, loc)
+	}
+	return time.Date(bl.Year(), bl.Month(), bl.Day()+1, 23, 59, 59, 0, loc)
+}
+
+// generateTimeAxis builds the continuous list of bucket keys spanning [startTime, endTime] (inclusive).
+func generateTimeAxis(startTime, endTime time.Time, granularity string, loc *time.Location) []time.Time {
+	startBucket := gmtBucketKey(startTime, granularity, loc)
+	endBucket := gmtBucketKey(endTime, granularity, loc)
+	if startBucket.After(endBucket) {
+		return nil
+	}
+	var axis []time.Time
+	for b := startBucket; !b.After(endBucket); b = nextBucket(b, granularity, loc) {
+		axis = append(axis, b)
+	}
+	return axis
+}
+
+func tenancyNameFor(m map[int]string, licenseId *int) *string {
+	if licenseId == nil {
+		return nil
+	}
+	if name, ok := m[*licenseId]; ok {
+		return &name
+	}
+	return nil
+}
+
+func sortSeriesMap(m map[string][]TimeAndDataVO) {
+	for _, series := range m {
+		sort.SliceStable(series, func(i, j int) bool {
+			if series[i].Time == nil || series[j].Time == nil {
+				return false
+			}
+			return series[i].Time.Before(*series[j].Time)
+		})
+	}
+}
+
+// buildEmptyGroupVO creates a group VO with zero-valued per-bucket KPI items (used when a group errors or has no data).
+func buildEmptyGroupVO(groupId, groupName string, tenancyName *string, axis []time.Time, granularity string, loc *time.Location) DashboardKPIDeviceGroupVO {
+	var items []DashboardKPIStatisticItemVO
+	for _, bucket := range axis {
+		st := gmtStatisticTime(bucket, granularity, loc)
+		bt := st
+		items = append(items, DashboardKPIStatisticItemVO{StatisticTime: &bt})
+	}
 	return DashboardKPIDeviceGroupVO{
-		GroupId:   groupId,
-		GroupName: groupName,
-		StatisticsItem: []DashboardKPIStatisticItemVO{
-			{KpiName: "DeviceOnline", Data: []TimeAndDataVO{}},
-			{KpiName: "DeviceOffline", Data: []TimeAndDataVO{}},
-			{KpiName: "DeviceTotal", Data: []TimeAndDataVO{}},
-		},
+		GroupId:        groupId,
+		GroupName:      groupName,
+		TenancyName:    tenancyName,
+		StatisticsItem: items,
 	}
 }

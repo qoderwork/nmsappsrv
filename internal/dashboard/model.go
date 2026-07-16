@@ -27,12 +27,6 @@ type ListBaseStationStatisticsVO struct {
 	Pdcp              map[string][]TimeAndDataVO `json:"pdcp"`
 }
 
-// PdcpData holds PDCP UL/DL rate values for a single time point
-type PdcpData struct {
-	UlRate float64 `json:"ulRate"`
-	DlRate float64 `json:"dlRate"`
-}
-
 // ListPDCPTrafficStatisticVO response for PDCP traffic statistics
 type ListPDCPTrafficStatisticVO struct {
 	Plmn string  `json:"plmn"`
@@ -66,11 +60,13 @@ type DashboardKPIDeviceGroupVO struct {
 	StatisticsItem []DashboardKPIStatisticItemVO `json:"statisticsItem"`
 }
 
-// DashboardKPIStatisticItemVO represents a single KPI statistic item
+// DashboardKPIStatisticItemVO represents a single per-bucket KPI statistic item,
+// mirroring Java's DashboardKPIStatisticItemVO (scalar KPIs per time bucket).
 type DashboardKPIStatisticItemVO struct {
-	KpiName  string          `json:"kpiName"`
-	MeasObjLdn string        `json:"measObjLdn"`
-	Data     []TimeAndDataVO `json:"data"`
+	StatisticTime  *time.Time `json:"statisticTime"`
+	CellAvailRatio float64    `json:"cellAvailRatio"`
+	MacRxBytesUl   float64    `json:"macRxBytesUl"`
+	MacTxBytesDl   float64    `json:"macTxBytesDl"`
 }
 
 // ---------- DTOs ----------

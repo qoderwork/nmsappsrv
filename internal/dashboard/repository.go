@@ -17,10 +17,12 @@ type Repository interface {
 	ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]map[string]interface{}, error)
 	GetDeviceByIds(ctx context.Context, ids []int64) ([]map[string]interface{}, error)
 	QueryOnlineStatistics(ctx context.Context, elementIds []int64, startTime, endTime time.Time, deviceType string) ([]map[string]interface{}, error)
-	QueryDashboardPmData(ctx context.Context, tenancyId *int, startTime, endTime time.Time) ([]map[string]interface{}, error)
 	QueryDeviceGroupsByIds(ctx context.Context, groupIds []string) ([]map[string]interface{}, error)
 	QueryGroupElementIds(ctx context.Context, groupId string) ([]int64, error)
+	QueryGroupElementIdsFiltered(ctx context.Context, groupId string, licenseId *int) ([]int64, error)
 	QueryDeviceStatisticForGroup(ctx context.Context, elementIds []int64, startTime, endTime time.Time) ([]map[string]interface{}, error)
+	QueryKpiMeasurements(ctx context.Context, elementIds []int64, startTime, endTime time.Time, kpiNames []string) ([]map[string]interface{}, error)
+	GetTenancyNames(ctx context.Context) (map[int]string, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -161,22 +163,51 @@ func (r *repository) QueryOnlineStatistics(ctx context.Context, elementIds []int
 	return results, err
 }
 
-// QueryDashboardPmData queries dashboard_pm_statistic_data for a time range and optional tenancyId
-func (r *repository) QueryDashboardPmData(ctx context.Context, tenancyId *int, startTime, endTime time.Time) ([]map[string]interface{}, error) {
-	var results []map[string]interface{}
-
-	q := r.db.WithContext(ctx).Table("dashboard_pm_statistic_data").
-		Select("`time`, cell_available_rate, pdcp_ul_rate, pdcp_dl_rate").
-		Where("`time` >= ? AND `time` <= ?", startTime, endTime)
-
-	if tenancyId != nil {
-		q = q.Where("tenancy_id = ?", *tenancyId)
+// QueryGroupElementIdsFiltered returns element IDs of a device group, filtered by deleted=false and
+// (when licenseId != nil) license_id match — mirrors Java processDeviceGroupAsync element filtering.
+func (r *repository) QueryGroupElementIdsFiltered(ctx context.Context, groupId string, licenseId *int) ([]int64, error) {
+	var elementIds []int64
+	q := r.db.WithContext(ctx).Table("group_has_element ghe").
+		Joins("INNER JOIN cpe_element ce ON ce.ne_neid = ghe.element_id").
+		Where("ghe.group_id = ?", groupId).
+		Where("ce.deleted = ?", false)
+	if licenseId != nil {
+		q = q.Where("ce.license_id = ?", *licenseId)
 	}
+	err := q.Pluck("ghe.element_id", &elementIds).Error
+	return elementIds, err
+}
 
-	q = q.Order("`time` ASC")
-
-	err := q.Scan(&results).Error
+// QueryKpiMeasurements reads pm_kpi_measurement for the given elements, KPI names, and time window.
+// This is the faithful Go equivalent of Java's pmExporter getPMOriginalDataFromPmFile / extraDataFromPMFile.
+func (r *repository) QueryKpiMeasurements(ctx context.Context, elementIds []int64, startTime, endTime time.Time, kpiNames []string) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+	if len(elementIds) == 0 || len(kpiNames) == 0 {
+		return results, nil
+	}
+	err := r.db.WithContext(ctx).Table("pm_kpi_measurement").
+		Select("element_id, kpi_name, measured_value, meas_obj_ldn, measure_time").
+		Where("element_id IN ?", elementIds).
+		Where("kpi_name IN ?", kpiNames).
+		Where("measure_time >= ? AND measure_time <= ?", startTime, endTime).
+		Order("measure_time ASC").
+		Scan(&results).Error
 	return results, err
+}
+
+// GetTenancyNames returns a map of tenancy id -> name (mirrors reboot/reset/blacklist helper).
+func (r *repository) GetTenancyNames(ctx context.Context) (map[int]string, error) {
+	type row struct {
+		Id   int    `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	var rows []row
+	err := r.db.WithContext(ctx).Table("tenancy").Select("id, name").Scan(&rows).Error
+	m := make(map[int]string, len(rows))
+	for _, row := range rows {
+		m[row.Id] = row.Name
+	}
+	return m, err
 }
 
 // QueryDeviceGroupsByIds queries device_group by group IDs
