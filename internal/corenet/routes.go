@@ -31,6 +31,12 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/core-networks/parameters/delete", h.DeleteCoreNetworkParameter)
 	rg.POST("/core-networks/parameters/add", h.AddCoreNetworkParameter)
 	rg.POST("/core-networks/element-system-state", h.GetCoreNetworkElementSystemState)
+
+	// Tier 1.5 PCF UE management
+	rg.POST("/core-networks/pcf-ue/template", h.DownloadPCFUETemplate)
+	rg.POST("/core-networks/pcf-ue/import", h.ImportPCFUE)
+	rg.POST("/core-networks/pcf-ue/update", h.UpdatePCFUE)
+	rg.POST("/core-networks/pcf-ue/delete", h.DeletePCFUE)
 	rg.POST("/core-networks/kpi/user-info", h.GetCoreNetworkUserInfo)
 	rg.POST("/core-networks/kpi/upf-traffic", h.GetCoreNetworkUpfTraffic)
 	rg.POST("/core-networks/kpi/upf-traffic/built-in", h.GetBuiltInCoreNetworkUpfTraffic)

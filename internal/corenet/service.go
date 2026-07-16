@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/url"
 	"time"
 
 	"nmsappsrv/internal/tr069/soap"
@@ -74,6 +76,15 @@ type Service interface {
 	// parsed from core_network_data *Info columns. Mirrors Java
 	// getCoreNetworkElementSystemState (pure DB read, no device call).
 	GetCoreNetworkElementSystemState(coreNetworkId int) (*GetCoreNetworkElementSystemStateVO, error)
+
+	// PCF UE management (mirrors Java downloadUPFUETemplate / importPCFUE /
+	// updatePCFUE / deletePCFUE). These forward to the PCF element's 33030
+	// ueManagement API plus operation logging; no Go DB table is involved
+	// (UE data lives on the device, like Java).
+	DownloadPCFUETemplate() ([]byte, error)
+	ImportPCFUE(r io.Reader, coreNetworkId int, user string) error
+	UpdatePCFUE(dto PCFUEVO, user string) error
+	DeletePCFUE(dto DeletePCFUEDTO, user string) error
 	// GetBuiltInCoreNetworkUpfTraffic returns the built-in UPF traffic
 	// view (excludes user-supplied KPI rows). Mirrors Java
 	// getBuiltInCoreNetworkUpfTraffic.
@@ -738,4 +749,100 @@ func parseKpiReportTimeRange(startTime, endTime string) (time.Time, time.Time, e
 		return time.Time{}, time.Time{}, err
 	}
 	return st, et, nil
+}
+
+// ---------------------------------------------------------------------------
+// PCF UE management (mirrors Java downloadUPFUETemplate / importPCFUE /
+// updatePCFUE / deletePCFUE). Forwards to the PCF element's 33030
+// ueManagement API (http://127.0.0.160:33030/api/rest/ueManagement/v1/
+// elementType/pcf/objectType/ueInfo) plus operation logging.
+// ---------------------------------------------------------------------------
+
+const pcfUEAPI = "ueManagement"
+const pcfUEObjectType = "ueInfo"
+
+// DownloadPCFUETemplate returns the embedded PCF UE import template xlsx,
+// mirroring Java downloadUPFUETemplate (serves the classpath resource).
+func (s *service) DownloadPCFUETemplate() ([]byte, error) {
+	return pcfTemplateFS.ReadFile("templates/PCF UE Template.xlsx")
+}
+
+// ImportPCFUE parses the uploaded xlsx, validates it, forwards each UE to the
+// PCF element and logs the operation. Mirrors Java importPCFUE.
+func (s *service) ImportPCFUE(r io.Reader, coreNetworkId int, user string) error {
+	if coreNetworkId == 0 {
+		return fmt.Errorf("coreNetworkId is required")
+	}
+	rows, err := parsePCFUEExcel(r)
+	if err != nil {
+		return err
+	}
+	for _, d := range rows {
+		if d.Imsi == "" {
+			return fmt.Errorf("The 'IMSI' cannot be null")
+		}
+		if d.Msisdn == "" {
+			return fmt.Errorf("The 'MSISDN' cannot be null")
+		}
+	}
+	seen := make(map[string]int, len(rows))
+	for _, d := range rows {
+		seen[d.Imsi]++
+		if seen[d.Imsi] > 1 {
+			return fmt.Errorf("%s is duplicated", d.Imsi)
+		}
+	}
+	if len(rows) > 100 {
+		return fmt.Errorf("The maximum number of UE imported in a batch is 100")
+	}
+	for _, d := range rows {
+		if _, err := callElementAPI("pcf", pcfUEAPI, pcfUEObjectType, nil, "POST", "", d); err != nil {
+			return err
+		}
+	}
+	if _, err := callElementAPI("pcf", pcfUEAPI, pcfUEObjectType, nil, "GET", "", nil); err != nil {
+		return err
+	}
+	imsis := make([]string, 0, len(rows))
+	for _, d := range rows {
+		imsis = append(imsis, d.Imsi)
+	}
+	if b, e := json.Marshal(imsis); e == nil {
+		s.logCoreNetOp(coreNetworkId, "Add PCF UE", user, string(b), "")
+	}
+	return nil
+}
+
+// UpdatePCFUE PUTs a UE to the PCF element and logs the operation.
+// Mirrors Java updatePCFUE.
+func (s *service) UpdatePCFUE(dto PCFUEVO, user string) error {
+	if dto.Imsi == "" || dto.Msisdn == "" || dto.CoreNetworkId == 0 {
+		return fmt.Errorf("imsi, msisdn and coreNetworkId are required")
+	}
+	q := "imsi=" + url.QueryEscape(dto.Imsi) + "&msisdn=" + url.QueryEscape(dto.Msisdn)
+	if _, err := callElementAPI("pcf", pcfUEAPI, pcfUEObjectType, nil, "PUT", q, dto.ImportPCFUEDTO); err != nil {
+		return err
+	}
+	if _, err := callElementAPI("pcf", pcfUEAPI, pcfUEObjectType, nil, "GET", "", nil); err != nil {
+		return err
+	}
+	s.logCoreNetOp(dto.CoreNetworkId, "Modify PCF UE", user, dto.Imsi, "")
+	return nil
+}
+
+// DeletePCFUE DELETEs a UE from the PCF element and logs the operation.
+// Mirrors Java deletePCFUE.
+func (s *service) DeletePCFUE(dto DeletePCFUEDTO, user string) error {
+	if dto.Imsi == "" || dto.Msisdn == "" || dto.CoreNetworkId == 0 {
+		return fmt.Errorf("imsi, msisdn and coreNetworkId are required")
+	}
+	q := "imsi=" + url.QueryEscape(dto.Imsi) + "&msisdn=" + url.QueryEscape(dto.Msisdn)
+	if _, err := callElementAPI("pcf", pcfUEAPI, pcfUEObjectType, nil, "DELETE", q, nil); err != nil {
+		return err
+	}
+	if _, err := callElementAPI("pcf", pcfUEAPI, pcfUEObjectType, nil, "GET", "", nil); err != nil {
+		return err
+	}
+	s.logCoreNetOp(dto.CoreNetworkId, "Delete PCF UE", user, dto.Imsi, "")
+	return nil
 }

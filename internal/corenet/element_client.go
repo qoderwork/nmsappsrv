@@ -22,26 +22,31 @@ var elementLoopbackIP = map[string]string{
 	"upf":  "127.0.0.190",
 }
 
-// elementConfigURL builds the core-network element management URL
-// (http://<ip>:33030/api/rest/systemManagement/v1/elementType/{type}/objectType/config/{name}).
-func elementConfigURL(elementType, name string, index *int) (string, error) {
+// elementAPIURL builds the core-network element management URL for the given
+// API segment (systemManagement or ueManagement) and object type
+// (http://<ip>:33030/api/rest/{api}/v1/elementType/{type}/objectType/{objectType}).
+// index and extraQuery are mutually exclusive query-string sources.
+func elementAPIURL(elementType, api, objectType string, index *int, extraQuery string) (string, error) {
 	ip, ok := elementLoopbackIP[elementType]
 	if !ok {
 		return "", fmt.Errorf("unsupported element type %q (no management endpoint)", elementType)
 	}
-	url := fmt.Sprintf("http://%s:33030/api/rest/systemManagement/v1/elementType/%s/objectType/config/%s",
-		ip, elementType, name)
-	if index != nil {
+	url := fmt.Sprintf("http://%s:33030/api/rest/%s/v1/elementType/%s/objectType/%s",
+		ip, api, elementType, objectType)
+	switch {
+	case index != nil:
 		url += fmt.Sprintf("?loc=%d", *index)
+	case extraQuery != "":
+		url += "?" + extraQuery
 	}
 	return url, nil
 }
 
-// callElementConfig performs a REST call against the core-network element's
-// management API (mirrors Java building an HttpRequest with PUT/GET/DELETE/
-// POST to the 33030 endpoint). It returns the raw response body.
-func callElementConfig(elementType, name string, index *int, method string, body interface{}) ([]byte, error) {
-	url, err := elementConfigURL(elementType, name, index)
+// callElementAPI performs a REST call against the core-network element's
+// management API (systemManagement or ueManagement segment). It returns the
+// raw response body.
+func callElementAPI(elementType, api, objectType string, index *int, method, extraQuery string, body interface{}) ([]byte, error) {
+	url, err := elementAPIURL(elementType, api, objectType, index, extraQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +71,13 @@ func callElementConfig(elementType, name string, index *int, method string, body
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(resp.Body)
 	if resp.StatusCode >= 400 {
-		return buf.Bytes(), fmt.Errorf("element config %s %s returned %d: %s", method, url, resp.StatusCode, buf.String())
+		return buf.Bytes(), fmt.Errorf("element api %s %s returned %d: %s", method, url, resp.StatusCode, buf.String())
 	}
 	return buf.Bytes(), nil
+}
+
+// callElementConfig is a convenience wrapper for the systemManagement segment
+// (mirrors the parameter CRUD endpoints).
+func callElementConfig(elementType, name string, index *int, method string, body interface{}) ([]byte, error) {
+	return callElementAPI(elementType, "systemManagement", name, index, method, "", body)
 }
