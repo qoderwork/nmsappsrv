@@ -26,6 +26,19 @@ type Repository interface {
 	FindMmlCommandParams(commandId int) ([]MmlCommandParam, error)
 	FindMmlCommandByCommand(command string) (*MmlCommand, error)
 	FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error)
+	CreateMmlSet(set *MmlSet) error
+	CreateMmlCommand(cmd *MmlCommand) error
+	CreateMmlCommandParam(p *MmlCommandParam) error
+	FindMmlSetsByVersionAndLicense(version string, licenseId int) ([]MmlSet, error)
+	FindTopMmlSets(version string, licenseId int) ([]MmlSet, error)
+	FindChildMmlSets(parentId int) ([]MmlSet, error)
+	FindMmlSetByParentIdAndName(parentId *int, name string, licenseId int) ([]MmlSet, error)
+	FindMmlCommandsBySetIds(ids []int) ([]MmlCommand, error)
+	FindMmlCommandParamsByCommandIds(ids []int) ([]MmlCommandParam, error)
+	FindMmlVersions(licenseId int) ([]string, error)
+	DeleteMmlSetsByIds(ids []int) error
+	DeleteMmlCommandsByIds(ids []int) error
+	DeleteMmlCommandParamsByIds(ids []int) error
 	FindBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
 	FindBatchProcessFileByID(id int) (*BatchProcessFile, error)
 	CreateBatchProcessFile(file *BatchProcessFile) error

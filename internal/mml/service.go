@@ -2,6 +2,7 @@ package mml
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,11 @@ type Service interface {
 	ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error)
 	ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error)
 	GetMmlResult(id int) (*MmlExecuteResult, error)
+	ImportMMLAndParameter(reader io.Reader, version string, licenseId int) error
+	GetMmlVersions(licenseId int) ([]string, error)
+	GetMmlCommandsByVersion(version string, licenseId int) (*MmlVersionInfoVO, error)
+	GetMmlCommandTree(licenseId int) ([]MmlSetVo, error)
+	DeleteMmlByVersion(version string, licenseId int) error
 	UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, licenseId int) (*BatchProcessFile, error)
 	ListBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
 	SendBatchProcessFile(id int, licenseId int) (*BatchProcessFile, error)
