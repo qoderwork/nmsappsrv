@@ -14,9 +14,11 @@ import (
 	"nmsappsrv/pkg/redis"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -55,13 +57,22 @@ func (s *service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequ
 	ctx := context.Background()
 
 	for _, elementId := range req.ElementIds {
-		// Create NeLog record with status=1 (pending)
-		status := 1
+		// Generate a UUID (stripped of dashes) to correlate the device's file
+		// upload with this NeLog record. Mirrors Java's
+		// `UUID.randomUUID().toString().replace("-", "")` in addDeviceLogCollectionTask.
+		requestId := strings.ReplaceAll(uuid.New().String(), "-", "")
+
+		// Create NeLog record. Mirrors Java DeviceLogFileLog creation:
+		//   status=0 (pending), activeLog=false, requestId, logTime=now.
+		status := 0
+		activeLog := false
 		log := NeLog{
-			ElementId:      &elementId,
-			Status:         &status,
-			CollectionTime: &now,
-			LicenseId:      &licenseId,
+			ElementId:   &elementId,
+			Status:      &status,
+			LogTime:     &now,
+			LicenseId:   &licenseId,
+			RequestId:   &requestId,
+			IsActiveLog: &activeLog,
 		}
 
 		if err := s.repo.Create(&log); err != nil {
@@ -80,7 +91,7 @@ func (s *service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequ
 			fileServerBase = config.Cfg.TR069.FileServerIp
 		}
 		fsUser, fsPass := config.GetFileServerCredentials()
-		uploadURL := fmt.Sprintf("%s/api/acs-file-server/upload/log/%d/", fileServerBase, log.Id)
+		uploadURL := fmt.Sprintf("%s/api/acs-file-server/upload/log/%s/", fileServerBase, requestId)
 		uploadDTO := tr069UploadDTO{
 			Type:       "LOG_FILE",
 			URL:        uploadURL,

@@ -1,6 +1,7 @@
 package filebase
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,10 +9,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"nmsappsrv/internal/systemsettings"
+	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
 )
 
@@ -321,10 +324,35 @@ func (h *Handler) UploadLog(c *gin.Context) {
 	h.uploadTo(c, h.svc.cfg.LogDir, firstMultipartName(c))
 }
 func (h *Handler) UploadLogReqNamed(c *gin.Context) {
-	h.uploadTo(c, h.svc.cfg.LogDir, c.Param("fileName"))
+	h.uploadLogWithRequestId(c, c.Param("fileName"), c.Param("requestId"))
 }
 func (h *Handler) UploadLogReq(c *gin.Context) {
-	h.uploadTo(c, h.svc.cfg.LogDir, firstMultipartName(c))
+	h.uploadLogWithRequestId(c, firstMultipartName(c), c.Param("requestId"))
+}
+
+// uploadLogWithRequestId saves the uploaded log file to disk and then stores
+// the file name in Redis keyed by requestId. This mirrors Java LogController's
+// `redisService.setKeyAndValue("LogFileName_" + requestId, fileName)`, allowing
+// processTransferComplete to retrieve the file name when the device reports
+// upload completion via TransferComplete.
+func (h *Handler) uploadLogWithRequestId(c *gin.Context, fileName, requestId string) {
+	if fileName == "" || !safeFileName(fileName) {
+		utils.Error(c, http.StatusBadRequest, "invalid file name")
+		return
+	}
+	r, err := requestBodyReader(c)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "failed to read upload: "+err.Error())
+		return
+	}
+	if _, err := saveBody(r, h.svc.cfg.LogDir, fileName); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if requestId != "" {
+		redis.Set(context.Background(), "LogFileName_"+requestId, fileName, 30*time.Minute)
+	}
+	utils.Success(c, true)
 }
 
 // ---- capture upload ----

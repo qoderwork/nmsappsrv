@@ -385,6 +385,42 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 						"done_time": &now,
 						"success":   &success,
 					})
+
+				// Device log upload completion: CommandKey format is "log_{neLogId}".
+				// Mirrors Java PositiveMessageProcessor.uploadLogSuccessfully (success)
+				// and the TYPE_LOG failure branch. On success, retrieves the file name
+				// from Redis (stored by the file upload endpoint) and updates ne_log
+				// with log_name/generated_time/status=1/progress="100%". On failure,
+				// sets status=3 and failure_reason.
+				if strings.HasPrefix(tc.CommandKey, "log_") {
+					neLogId, parseErr := strconv.ParseInt(tc.CommandKey[4:], 10, 64)
+					if parseErr == nil {
+						if success {
+							var neLog struct {
+								RequestId *string `gorm:"column:request_id"`
+							}
+							if dbErr := ep.db.Table("ne_log").Where("id = ?", neLogId).First(&neLog).Error; dbErr == nil {
+								updates := map[string]interface{}{
+									"generated_time": &now,
+									"status":         1,
+									"progress":       "100%",
+								}
+								if neLog.RequestId != nil && *neLog.RequestId != "" {
+									fileName, _ := redis.Get(ctx, "LogFileName_"+*neLog.RequestId)
+									if fileName != "" {
+										updates["log_name"] = fileName
+									}
+								}
+								ep.db.Table("ne_log").Where("id = ?", neLogId).Updates(updates)
+							}
+						} else {
+							ep.db.Table("ne_log").Where("id = ?", neLogId).Updates(map[string]interface{}{
+								"status":         3,
+								"failure_reason": tc.FaultString,
+							})
+						}
+					}
+				}
 			}
 		} else {
 			logger.Debugf("TransferComplete CommandKey=%s: no matching origin event_log for SN=%s", tc.CommandKey, sn)
