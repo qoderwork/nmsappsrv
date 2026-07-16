@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"nmsappsrv/internal/device"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/redis"
 
 	"github.com/google/uuid"
@@ -573,22 +575,22 @@ func (s *service) dispatchBSOperation(taskId int, username string) error {
 			continue
 		}
 
-		msg := bsOperationMsg{
-			EventType:      "backup_restore",
+		msg := opmsg.Message{
+			EventType:      "backup_restore", // legacy label kept for downstream observability
 			NeNeid:         eid,
-			Operation:      operation,
+			Operation:      operation, // variable: "SetParameterValues" or other Java-aligned string
 			OperationUser:  username,
 			CommandTrackId: l.Id,
 			ExpiredAt:      now.Add(30 * time.Minute).UnixMilli(),
 		}
 
-		msgBytes, err := json.Marshal(msg)
+		msgBytes, err := msg.Marshal()
 		if err != nil {
 			redis.Unlock(ctx, lockKey)
 			continue
 		}
 
-		if err := redis.LPush(ctx, "operation_queue", string(msgBytes)); err != nil {
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
 			redis.Unlock(ctx, lockKey)
 			continue
 		}

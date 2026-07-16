@@ -10,6 +10,7 @@ import (
 	"nmsappsrv/internal/alarm"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/internal/mq"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/constants"
 	"nmsappsrv/pkg/logger"
@@ -81,7 +82,7 @@ func (ep *EventProcessor) handleBoot(ctx context.Context, sn string, paramMap ma
 		"timestamp":  time.Now().Unix(),
 	}
 	if notifyJson, err := json.Marshal(notification); err == nil {
-		redis.Publish(ctx, "web_callback", string(notifyJson))
+		redis.LPush(ctx, mq.WebCallbackQueue, string(notifyJson))
 	}
 
 	// Clear rebooting flag
@@ -318,7 +319,7 @@ func (ep *EventProcessor) handlePCIChange(ctx context.Context, sn string, paramM
 		"timestamp":  time.Now().Unix(),
 	}
 	if notifyJson, err := json.Marshal(notification); err == nil {
-		redis.Publish(ctx, "web_callback", string(notifyJson))
+		redis.LPush(ctx, mq.WebCallbackQueue, string(notifyJson))
 	}
 
 	logger.Infof("device %s: PCI changed to %s", sn, pci)
@@ -398,7 +399,7 @@ func (ep *EventProcessor) handleMMLReport(ctx context.Context, sn string, paramM
 		"timestamp": time.Now().Unix(),
 	}
 	if cbJson, err := json.Marshal(callback); err == nil {
-		redis.Publish(ctx, "web_callback", string(cbJson))
+		redis.LPush(ctx, mq.WebCallbackQueue, string(cbJson))
 	}
 
 	// Clean up Redis key for this UID

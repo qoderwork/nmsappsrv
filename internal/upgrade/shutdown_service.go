@@ -9,19 +9,11 @@ import (
 
 	"gorm.io/gorm"
 	"nmsappsrv/internal/device"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
-
-// shutdownOpMsg represents a shutdown operation message pushed to Redis.
-type shutdownOpMsg struct {
-	EventType      string `json:"eventType"`
-	NeNeid         int64  `json:"neNeid"`
-	Operation      string `json:"operation"`
-	OperationUser  string `json:"operationUser"`
-	CommandTrackId int64  `json:"commandTrackId"`
-	ExpiredAt      int64  `json:"expiredAt"`
-}
 
 // ShutdownService provides business logic for shutdown management.
 type ShutdownService struct {
@@ -85,16 +77,16 @@ func (s *ShutdownService) CreateShutdownTask(req *AddShutdownTaskRequest, userna
 			}
 			s.repo.db.Create(&log)
 
-			msg := shutdownOpMsg{
-				EventType:      "shutdown",
+			msg := opmsg.Message{
+				EventType:      "Shutdown", // Java EventType.SHUTDOWN
 				NeNeid:         elementId,
-				Operation:      "shutdown",
+				Operation:      "Shutdown",
 				OperationUser:  username,
 				CommandTrackId: log.Id,
 				ExpiredAt:      time.Now().Add(30 * time.Minute).UnixMilli(),
 			}
-			msgBytes, _ := json.Marshal(msg)
-			if err := redis.LPush(context.Background(), "operation_queue", string(msgBytes)); err != nil {
+			msgBytes, _ := msg.Marshal()
+			if err := redis.LPush(context.Background(), mq.OperationQueue, string(msgBytes)); err != nil {
 				logger.Errorf("Failed to push shutdown command to Redis: %v", err)
 			}
 		}

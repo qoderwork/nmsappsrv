@@ -14,6 +14,8 @@ import (
 
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -64,7 +66,6 @@ func (s *service) BatchParameterConfiguration(excelBytes []byte, username string
 
 	// 3. Per serial: find device, dispatch, create device log.
 	expiredAt := now.Add(5 * time.Minute).UnixMilli()
-	queueName := "operation_queue"
 
 	for _, dev := range devices {
 		// Resolve ne_neid from serial_number.
@@ -103,8 +104,8 @@ func (s *service) BatchParameterConfiguration(excelBytes []byte, username string
 		}
 
 		// Push to Redis operation_queue.
-		msg := operationMessage{
-			EventType:      "SetParameterValues",
+		msg := opmsg.Message{
+			EventType:      "SetParameterValues", // Java EventType.SET_PARAMETER_VALUES
 			NeNeid:         elementId,
 			Operation:      "SetParameterValues",
 			OperationParam: string(opParamJSON),
@@ -112,8 +113,8 @@ func (s *service) BatchParameterConfiguration(excelBytes []byte, username string
 			CommandTrackId: eventLogId,
 			ExpiredAt:      expiredAt,
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(context.Background(), queueName, string(msgJSON)); err != nil {
+		msgJSON, _ := msg.Marshal()
+		if err := redis.LPush(context.Background(), mq.OperationQueue, string(msgJSON)); err != nil {
 			logger.Errorf("batch param config: redis push for device %d: %v", elementId, err)
 		}
 

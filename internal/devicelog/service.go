@@ -3,11 +3,17 @@ package devicelog
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
+	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,17 +69,46 @@ func (s *service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequ
 			continue
 		}
 
-		// Dispatch TR-069 log collection command
-		cmd := map[string]interface{}{
-			"eventType": "collectLog",
-			"elementId": elementId,
-			"logType":   req.LogType,
-			"logId":     log.Id,
+		// Build TR-069 Upload DTO. Mirrors Java `OperationDTOGenerateUtil.getDeviceLog`:
+		//   TR069UploadDTO{type=LOG_FILE, url=fileServerIp+"/api/acs-file-server/upload/log/"+requestId+"/",
+		//                   username, password}
+		// The device POSTs the collected log to this URL via the Upload RPC. The
+		// unified dispatcher's Upload family (CollectLog/Upload/LOG/Backup/...) routes
+		// to tr069.OperationSender.SendUpload.
+		fileServerBase := "http://localhost"
+		if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
+			fileServerBase = config.Cfg.TR069.FileServerIp
 		}
-		cmdBytes, _ := json.Marshal(cmd)
-
-		if err := redis.LPush(ctx, "operation_queue", string(cmdBytes)); err != nil {
-			logger.Errorf("Push operation_queue error: %v", err)
+		fsUser, fsPass := config.GetFileServerCredentials()
+		uploadURL := fmt.Sprintf("%s/api/acs-file-server/upload/log/%d/", fileServerBase, log.Id)
+		uploadDTO := tr069UploadDTO{
+			Type:       "LOG_FILE",
+			URL:        uploadURL,
+			Username:   fsUser,
+			Password:   fsPass,
+			CommandKey: fmt.Sprintf("log_%d", log.Id),
+		}
+		uploadJSON, err := json.Marshal(uploadDTO)
+		if err != nil {
+			logger.Errorf("marshal upload DTO for element %d: %v", elementId, err)
+			continue
+		}
+		msg := opmsg.Message{
+			EventType:      "CollectLog",
+			NeNeid:         elementId,
+			Operation:      "CollectLog",
+			OperationParam: string(uploadJSON),
+			OperationUser:  "system",
+			ProtocolType:   opmsg.ProtocolTR069,
+			ExpiredAt:      time.Now().Add(5 * time.Minute).UnixMilli(),
+		}
+		msgBytes, err := msg.Marshal()
+		if err != nil {
+			logger.Errorf("marshal opmsg for element %d: %v", elementId, err)
+			continue
+		}
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+			logger.Errorf("Push %s error: %v", mq.OperationQueue, err)
 		}
 	}
 
@@ -208,23 +243,32 @@ func (s *service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUpload
 		paramPath = "InternetGatewayDevice.LogPeriodicUpload"
 	}
 
-	// Dispatch TR-069 SetParameterValues command
+	// Dispatch TR-069 SetParameterValues command (Java EventType.SET_PARAMETER_VALUES
+	// → unified device-operation dispatcher routes to tr069.OperationSender.SendSetParameterValues).
 	ctx := context.Background()
-	cmd := map[string]interface{}{
-		"eventType": "setParameterValues",
-		"elementId": req.ElementId,
-		"parameters": []map[string]interface{}{
-			{
-				"name":  paramPath,
-				"value": req.Interval,
-			},
-		},
+	params := []soap.ParameterValueStruct{
+		{Name: paramPath, Value: strconv.Itoa(req.Interval), Type: "int"},
 	}
-	cmdBytes, _ := json.Marshal(cmd)
-
-	if err := redis.LPush(ctx, "operation_queue", string(cmdBytes)); err != nil {
-		logger.Errorf("Push operation_queue error: %v", err)
-		return err
+	paramJSON, err := json.Marshal(params)
+	if err != nil {
+		return apperror.Wrap(err, "ENABLE_PERIODIC_UPLOAD_MARSHAL_FAILED", 500, "failed to marshal parameter payload")
+	}
+	msg := opmsg.Message{
+		EventType:      "SetParameterValues",
+		NeNeid:         req.ElementId,
+		Operation:      "SetParameterValues",
+		OperationParam: string(paramJSON),
+		OperationUser:  "system",
+		ProtocolType:   opmsg.ProtocolTR069,
+		ExpiredAt:      time.Now().Add(5 * time.Minute).UnixMilli(),
+	}
+	msgBytes, err := msg.Marshal()
+	if err != nil {
+		return apperror.Wrap(err, "ENABLE_PERIODIC_UPLOAD_MSG_MARSHAL_FAILED", 500, "failed to marshal opmsg")
+	}
+	if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+		logger.Errorf("Push %s error: %v", mq.OperationQueue, err)
+		return apperror.Wrap(err, "ENABLE_PERIODIC_UPLOAD_PUSH_FAILED", 500, "failed to enqueue operation")
 	}
 
 	return nil
@@ -245,22 +289,44 @@ func (s *service) DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUplo
 
 	// Dispatch TR-069 SetParameterValues command to disable (set to 0)
 	ctx := context.Background()
-	cmd := map[string]interface{}{
-		"eventType": "setParameterValues",
-		"elementId": req.ElementId,
-		"parameters": []map[string]interface{}{
-			{
-				"name":  paramPath,
-				"value": 0,
-			},
-		},
+	params := []soap.ParameterValueStruct{
+		{Name: paramPath, Value: "0", Type: "int"},
 	}
-	cmdBytes, _ := json.Marshal(cmd)
-
-	if err := redis.LPush(ctx, "operation_queue", string(cmdBytes)); err != nil {
-		logger.Errorf("Push operation_queue error: %v", err)
-		return err
+	paramJSON, err := json.Marshal(params)
+	if err != nil {
+		return apperror.Wrap(err, "DISABLE_PERIODIC_UPLOAD_MARSHAL_FAILED", 500, "failed to marshal parameter payload")
+	}
+	msg := opmsg.Message{
+		EventType:      "SetParameterValues",
+		NeNeid:         req.ElementId,
+		Operation:      "SetParameterValues",
+		OperationParam: string(paramJSON),
+		OperationUser:  "system",
+		ProtocolType:   opmsg.ProtocolTR069,
+		ExpiredAt:      time.Now().Add(5 * time.Minute).UnixMilli(),
+	}
+	msgBytes, err := msg.Marshal()
+	if err != nil {
+		return apperror.Wrap(err, "DISABLE_PERIODIC_UPLOAD_MSG_MARSHAL_FAILED", 500, "failed to marshal opmsg")
+	}
+	if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+		logger.Errorf("Push %s error: %v", mq.OperationQueue, err)
+		return apperror.Wrap(err, "DISABLE_PERIODIC_UPLOAD_PUSH_FAILED", 500, "failed to enqueue operation")
 	}
 
 	return nil
+}
+
+// tr069UploadDTO mirrors the schema of `internal/operation.dispatcher's
+// private tr069UploadDTO (which parses the JSON in opmsg.Message.OperationParam
+// for the Upload family). Kept here as a local type so the devicelog producer
+// can build the JSON the dispatcher expects without reaching into the
+// dispatcher's private types. JSON keys are lowercase to match the Java
+// `com.waveoss.common.dto.TR069UploadDTO` field names.
+type tr069UploadDTO struct {
+	Type       string `json:"type"`
+	URL        string `json:"url"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	CommandKey string `json:"commandKey,omitempty"`
 }

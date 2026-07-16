@@ -11,7 +11,13 @@ import (
 
 // Queue name constants (replacing RabbitMQ queues)
 const (
-	OperationQueue    = "queue:operation"     // device operation commands
+	// OperationQueue is the unified device-operation queue. Aligns with
+	// Java nms-serv's `operation_queue` RabbitMQ queue consumed by
+	// `Receiver.operationQueue` → `apiCommandProcessor.processCommand`.
+	// A single dispatcher in `internal/operation` BRPops this list, applies
+	// a 200 ops/s rate limiter, and routes by `Operation` string to the
+	// matching `tr069.OperationSender.Send*` primitive.
+	OperationQueue    = "operation_queue"
 	InformQueue       = "queue:inform"        // TR069 Inform messages
 	EventResultQueue  = "queue:event_result"  // event/command results
 	AlarmQueue        = "queue:alarm"         // alarm processing

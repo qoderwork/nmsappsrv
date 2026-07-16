@@ -8,6 +8,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -509,17 +511,16 @@ func (s *service) dispatchReset(task *ResetTask, elementIds []int64, username st
 
 		// Push to operation_queue
 		now := time.Now()
-		msg := operationMessage{
-			EventType:      "FactoryReset",
+		msg := opmsg.Message{
+			EventType:      "FactoryReset", // Java EventType.FACTORY_RESET
 			NeNeid:         eid,
 			Operation:      "FactoryReset",
-			OperationParam: "",
 			OperationUser:  username,
 			CommandTrackId: elId,
 			ExpiredAt:      now.Add(5 * time.Minute).UnixMilli(),
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, "operation_queue", string(msgJSON)); err != nil {
+		msgJSON, _ := msg.Marshal()
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgJSON)); err != nil {
 			logger.Errorf("reset: push to queue for %d: %v", eid, err)
 		}
 	}

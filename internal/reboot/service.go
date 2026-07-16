@@ -2,12 +2,13 @@ package reboot
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -190,17 +191,16 @@ func (s *service) dispatchReboot(task *RebootTask, elementIds []int64, username 
 
 		// Push to operation_queue
 		now := time.Now()
-		msg := operationMessage{
-			EventType:      eventType,
+		msg := opmsg.Message{
+			EventType:      eventType, // "Reboot" or "SoftReboot" (Java EventType.REBOOT / SOFT_REBOOT)
 			NeNeid:         eid,
 			Operation:      operation,
-			OperationParam: "",
 			OperationUser:  username,
 			CommandTrackId: elId,
 			ExpiredAt:      now.Add(5 * time.Minute).UnixMilli(),
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, "operation_queue", string(msgJSON)); err != nil {
+		msgJSON, _ := msg.Marshal()
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgJSON)); err != nil {
 			logger.Errorf("reboot: push to queue for %d: %v", eid, err)
 		}
 	}

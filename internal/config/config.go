@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -143,6 +144,15 @@ type TR069Config struct {
 	ConnectionTimeout        int    `mapstructure:"connection_timeout"`
 	UDPConnectionRequestPort int    `mapstructure:"udp_connection_request_port"`
 	FileServerIp             string `mapstructure:"file_server_ip"`
+	// FileServerUsername / FileServerPassword are the credentials the *device*
+	// uses when pulling files from `/api/acs-file-server/**` (Java's file
+	// server is the nms itself, served from `FileServer.CaDir`/`LogDir`/etc.).
+	// The TR-069 Download/Upload DTOs carry them so the device can authenticate
+	// to the file-server endpoint. Falls back to NMS_FILE_SERVER_USERNAME /
+	// NMS_FILE_SERVER_PASSWORD env vars, then to the nms-serv defaults
+	// ("admin"/"admin") via GetFileServerCredentials().
+	FileServerUsername       string `mapstructure:"file_server_username"`
+	FileServerPassword       string `mapstructure:"file_server_password"`
 	EnableAskReboot          bool   `mapstructure:"enable_ask_reboot" yaml:"enable_ask_reboot"`
 	EnableXMLSignature       bool   `mapstructure:"enable_xml_signature" yaml:"enable_xml_signature"`
 	PrivateKeyPath           string `mapstructure:"private_key_path" yaml:"private_key_path"`
@@ -320,4 +330,35 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("mail.aes_key must be 64 hex characters (32 bytes), got %d", len(c.Mail.AESKey))
 	}
 	return nil
+}
+
+// GetFileServerCredentials returns the (username, password) the device uses
+// when authenticating to `/api/acs-file-server/**` for Download/Upload RPCs
+// (Java `TR069DownloadDTO.username/password` and `TR069UploadDTO.*`).
+//
+// Resolution order:
+//  1. `cfg.tr069.file_server_username` / `file_server_password` (mapstructure).
+//  2. `NMS_FILE_SERVER_USERNAME` / `NMS_FILE_SERVER_PASSWORD` env vars.
+//  3. nms-serv defaults `"admin"` / `"admin"` (kept to match Java's
+//     `FileServer` default credentials so the device-facing auth header works
+//     out of the box; override via YAML or env in production).
+func GetFileServerCredentials() (string, string) {
+	user, pass := "", ""
+	if Cfg != nil {
+		user = Cfg.TR069.FileServerUsername
+		pass = Cfg.TR069.FileServerPassword
+	}
+	if user == "" {
+		user = os.Getenv("NMS_FILE_SERVER_USERNAME")
+	}
+	if pass == "" {
+		pass = os.Getenv("NMS_FILE_SERVER_PASSWORD")
+	}
+	if user == "" {
+		user = "admin"
+	}
+	if pass == "" {
+		pass = "admin"
+	}
+	return user, pass
 }

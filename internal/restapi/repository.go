@@ -8,6 +8,9 @@ import (
 
 	"nmsappsrv/internal/alarm"
 	"nmsappsrv/internal/device"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
+	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/baserepo"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
@@ -165,14 +168,31 @@ func (r *repository) SetDeviceParams(elementId int64, params []RestParameterVo) 
 		return fmt.Errorf("failed to cache parameters: %w", err)
 	}
 
-	// Push to operation queue for async device provisioning
-	opData, _ := json.Marshal(map[string]interface{}{
-		"type":       "set_params",
-		"elementId":  elementId,
-		"parameters": params,
-		"timestamp":  time.Now().Unix(),
-	})
-	redis.LPush(ctx, "operation_queue", string(opData))
+	// Dispatch via the unified device-operation dispatcher (mirrors Java
+	// EventType.SET_PARAMETER_VALUES → apiCommandProcessor.processCommand →
+	// tr069.OperationSender.SendSetParameterValues). RestParameterVo carries
+	// {name,value}; the SOAP RPC wants ParameterValueStruct.
+	soapParams := make([]soap.ParameterValueStruct, 0, len(params))
+	for _, p := range params {
+		soapParams = append(soapParams, soap.ParameterValueStruct{Name: p.Name, Value: p.Value})
+	}
+	paramJSON, err := json.Marshal(soapParams)
+	if err != nil {
+		return fmt.Errorf("failed to marshal parameters for dispatch: %w", err)
+	}
+	msg := opmsg.Message{
+		EventType:      "SetParameterValues",
+		NeNeid:         elementId,
+		Operation:      "SetParameterValues",
+		OperationParam: string(paramJSON),
+		OperationUser:  "system",
+		ProtocolType:   opmsg.ProtocolTR069,
+		ExpiredAt:      time.Now().Add(5 * time.Minute).UnixMilli(),
+	}
+	msgBytes, _ := msg.Marshal()
+	if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+		logger.Errorf("Push %s error: %v", mq.OperationQueue, err)
+	}
 
 	return nil
 }
@@ -182,16 +202,30 @@ func (r *repository) PresetDeviceParams(elementId int64, params []RestParameterV
 
 	requestId := fmt.Sprintf("preset_%d_%d", elementId, time.Now().UnixNano())
 
-	opData, _ := json.Marshal(map[string]interface{}{
-		"type":       "preset_params",
-		"elementId":  elementId,
-		"parameters": params,
-		"requestId":  requestId,
-		"timestamp":  time.Now().Unix(),
-	})
-	redis.LPush(ctx, "operation_queue", string(opData))
+	// Dispatch via the unified device-operation dispatcher.
+	soapParams := make([]soap.ParameterValueStruct, 0, len(params))
+	for _, p := range params {
+		soapParams = append(soapParams, soap.ParameterValueStruct{Name: p.Name, Value: p.Value})
+	}
+	paramJSON, err := json.Marshal(soapParams)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal preset parameters: %w", err)
+	}
+	msg := opmsg.Message{
+		EventType:      "SetParameterValues",
+		NeNeid:         elementId,
+		Operation:      "SetParameterValues",
+		OperationParam: string(paramJSON),
+		OperationUser:  "system",
+		ProtocolType:   opmsg.ProtocolTR069,
+		ExpiredAt:      time.Now().Add(5 * time.Minute).UnixMilli(),
+	}
+	msgBytes, _ := msg.Marshal()
+	if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+		logger.Errorf("Push %s error: %v", mq.OperationQueue, err)
+	}
 
-	// Track request status
+	// Track request status for async polling (handler/frontend polls GetRequestStatus).
 	statusData, _ := json.Marshal(map[string]string{
 		"status": "pending",
 	})

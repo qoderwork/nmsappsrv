@@ -38,6 +38,7 @@ import (
 	"nmsappsrv/internal/nmsbackup"
 	"nmsappsrv/internal/northinterfacelog"
 	"nmsappsrv/internal/ntp"
+	"nmsappsrv/internal/operation"
 	"nmsappsrv/internal/paramcompare"
 	"nmsappsrv/internal/parameter"
 	"nmsappsrv/internal/parammonitor"
@@ -562,6 +563,14 @@ func main() {
 	// MML command worker (consumes queue:mml and dispatches MML commands via TR-069)
 	mmlWorker := mml.NewMMLWorker(db, tr069MsgMgr)
 	mgr.Add(workerTask("mml-worker", mmlWorker.Start, mmlWorker.Stop))
+
+	// Unified device-operation dispatcher (consumes mq.OperationQueue and routes
+	// by Operation string to the matching tr069.OperationSender.Send* primitive).
+	// Mirrors Java Receiver.operationQueue + apiCommandProcessor.processCommand
+	// (single thread, 200 ops/s global rate limit, switch on EventType string).
+	operationDispatcher := operation.NewDispatcher(db, tr069OpSender)
+	operationWorker := operation.NewWorker(operationDispatcher)
+	mgr.Add(workerTask("operation-worker", operationWorker.Start, operationWorker.Stop))
 
 	// Parameter collection scheduler (periodically sends GPV to configured devices)
 	paramScheduler := parameter.NewScheduler(db)

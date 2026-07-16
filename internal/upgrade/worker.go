@@ -247,7 +247,7 @@ func (w *UpgradeWorker) handleRollback(ctx context.Context, msg *UpgradeMessage,
 // handleReboot sends a TR-069 Reboot request.
 func (w *UpgradeWorker) handleReboot(ctx context.Context, msg *UpgradeMessage, sn string, logEntry *UpgradeLog) {
 	operationId := fmt.Sprintf("upgrade_reboot_%d_%d", msg.TaskId, msg.ElementId)
-	if err := w.opSender.SendReboot(sn, operationId); err != nil {
+	if err := w.opSender.SendReboot(sn, operationId, "", 0); err != nil {
 		logger.Errorf("upgrade worker: SendReboot to %s failed: %v", sn, err)
 		w.updateLogFailure(msg.LogUuid, fmt.Sprintf("SendReboot failed: %v", err))
 		return

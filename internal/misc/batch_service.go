@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -71,7 +73,6 @@ func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, te
 	// 2. For each device: check blacklist → create EventLog → push to Redis → save TaskLog.
 	expiredAt := now.Add(5 * time.Minute).UnixMilli()
 	ctx := context.Background()
-	queueName := "operation_queue" // default; could be read from config
 
 	for _, elementId := range req.Ids {
 		// Blacklist check via raw table query (avoid importing device package).
@@ -93,8 +94,8 @@ func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, te
 		}
 
 		// Build and push operation message to Redis.
-		msg := operationMessage{
-			EventType:      "AddObject",
+		msg := opmsg.Message{
+			EventType:      "AddObject", // Java EventType.ADD_OBJECT
 			NeNeid:         elementId,
 			Operation:      "AddObject",
 			OperationParam: objPath,
@@ -102,8 +103,8 @@ func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, te
 			CommandTrackId: eventLogId,
 			ExpiredAt:      expiredAt,
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, queueName, string(msgJSON)); err != nil {
+		msgJSON, _ := msg.Marshal()
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgJSON)); err != nil {
 			logger.Errorf("push to redis queue for device %d: %v", elementId, err)
 		}
 
@@ -385,7 +386,6 @@ func (s *service) dispatchBackupRestore(task *BackupOrRestoreTask, username stri
 	now := time.Now()
 	expiredAt := now.Add(10 * time.Minute).UnixMilli()
 	ctx := context.Background()
-	queueName := "operation_queue"
 	taskType := ptrStr(task.TaskType)
 
 	for _, elementId := range deviceIds {
@@ -427,8 +427,8 @@ func (s *service) dispatchBackupRestore(task *BackupOrRestoreTask, username stri
 		}
 
 		// Push to Redis.
-		msg := operationMessage{
-			EventType:      operation,
+		msg := opmsg.Message{
+			EventType:      operation, // Java EventType — variable (Backup / BackupDaily / Restore / etc.)
 			NeNeid:         elementId,
 			Operation:      operation,
 			OperationParam: opParam,
@@ -436,8 +436,8 @@ func (s *service) dispatchBackupRestore(task *BackupOrRestoreTask, username stri
 			CommandTrackId: eventLogId,
 			ExpiredAt:      expiredAt,
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, queueName, string(msgJSON)); err != nil {
+		msgJSON, _ := msg.Marshal()
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgJSON)); err != nil {
 			logger.Errorf("push to redis queue for device %d: %v", elementId, err)
 		}
 

@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"nmsappsrv/internal/config"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/apperror"
+	"nmsappsrv/pkg/logger"
 	redisclient "nmsappsrv/pkg/redis"
 )
 
@@ -167,6 +170,18 @@ func (s *service) SaveCaTask(ctx context.Context, taskName string, caFileId int,
 	fileName := strOrEmpty(caFile.FileName)
 	filePath := filepath.Join(s.GetCaFilePath(), fileName)
 
+	// File metadata (same for every device in this task).
+	fileSize := int64(0)
+	if info, err := os.Stat(filePath); err == nil {
+		fileSize = info.Size()
+	}
+	fileServerBase := "http://localhost"
+	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
+		fileServerBase = config.Cfg.TR069.FileServerIp
+	}
+	fsUser, fsPass := config.GetFileServerCredentials()
+	downloadURL := fmt.Sprintf("%s/api/acs-file-server/ca/downloadFile/%d", fileServerBase, caFileId)
+
 	for _, deviceId := range targetDevices {
 		// Check if file exists before dispatching
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -180,13 +195,42 @@ func (s *service) SaveCaTask(ctx context.Context, taskName string, caFileId int,
 			continue
 		}
 
-		// Build TR-069 download operation message
-		opMsg := s.buildCaOperationMessage(deviceId, caFileId, fileName, filePath, username, eventLogId)
-
-		// Push to Redis operation_queue
-		msgJSON, _ := json.Marshal(opMsg)
-		if err := redisclient.LPush(ctx, "queue:operation", string(msgJSON)); err != nil {
-			// Log error but continue with other devices
+		// Build TR-069 Download DTO (Java downloadFile for CA_TASK / UpdateCertificate /
+		// SendCBSDCertFile: TR069DownloadDTO{type=CA_FILE, url, username, password,
+		// fileSize, targetFileName}). The device pulls the CA file from `downloadURL`
+		// using the file-server credentials; the unified dispatcher's Download family
+		// routes to tr069.OperationSender.SendDownload.
+		dlDTO := tr069DownloadDTO{
+			Type:           "CA_FILE",
+			URL:            downloadURL,
+			Username:       fsUser,
+			Password:       fsPass,
+			FileSize:       int(fileSize),
+			TargetFileName: fileName,
+			CommandKey:     fmt.Sprintf("ca_%d_%d", caFileId, deviceId),
+		}
+		dlJSON, err := json.Marshal(dlDTO)
+		if err != nil {
+			logger.Errorf("cacert: marshal CA download DTO for device %d: %v", deviceId, err)
+			continue
+		}
+		msg := opmsg.Message{
+			EventType:      "UpdateCertificate",
+			NeNeid:         deviceId,
+			Operation:      "UpdateCertificate",
+			OperationParam: string(dlJSON),
+			OperationUser:  username,
+			CommandTrackId: eventLogId,
+			ProtocolType:   opmsg.ProtocolTR069,
+			ExpiredAt:      time.Now().Add(5 * time.Minute).UnixMilli(),
+		}
+		msgBytes, err := msg.Marshal()
+		if err != nil {
+			logger.Errorf("cacert: marshal opmsg for device %d: %v", deviceId, err)
+			continue
+		}
+		if err := redisclient.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+			logger.Errorf("cacert: Push %s error: %v", mq.OperationQueue, err)
 			continue
 		}
 
@@ -328,42 +372,21 @@ func (s *service) createEventLog(ctx context.Context, eventType string, deviceId
 	return row.Id, nil
 }
 
-// buildCaOperationMessage builds the TR-069 operation message for CA file download
-func (s *service) buildCaOperationMessage(deviceId int64, fileId int, fileName, filePath, username string, eventLogId int64) map[string]interface{} {
-	// Get file server IP from config
-	fileServerIp := "http://localhost" // default; should come from config
-	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
-		fileServerIp = config.Cfg.TR069.FileServerIp
-	}
-
-	// Calculate file size
-	fileSize := int64(0)
-	if info, err := os.Stat(filePath); err == nil {
-		fileSize = info.Size()
-	}
-
-	// Build URL for file download
-	downloadURL := fmt.Sprintf("%s/api/acs-file-server/ca/downloadFile/%d", fileServerIp, fileId)
-
-	// Build operation param (TR069DownloadDTO equivalent)
-	opParam := map[string]interface{}{
-		"type":           "CA_FILE",
-		"url":            downloadURL,
-		"targetFileName": fileName,
-		"fileSize":       fileSize,
-	}
-	opParamJSON, _ := json.Marshal(opParam)
-
-	now := time.Now()
-	return map[string]interface{}{
-		"eventType":      "UpdateCertificate",
-		"neNeid":         deviceId,
-		"operation":      "UpdateCertificate",
-		"operationParam": string(opParamJSON),
-		"operationUser":  username,
-		"commandTrackId": eventLogId,
-		"expiredAt":      now.Add(5 * time.Minute).UnixMilli(),
-	}
+// tr069DownloadDTO mirrors the schema of the dispatcher's private
+// tr069DownloadDTO (which parses opmsg.Message.OperationParam JSON for the
+// Download family). Kept here as a local type so the cacert producer can
+// build the JSON the dispatcher expects without reaching into the
+// dispatcher's private types. JSON keys are lowercase to match Java's
+// `com.waveoss.common.dto.TR069DownloadDTO` field names.
+type tr069DownloadDTO struct {
+	Type           string `json:"type"`
+	URL            string `json:"url"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	FileSize       int    `json:"fileSize"`
+	TargetFileName string `json:"targetFileName"`
+	DelaySeconds   int    `json:"delaySeconds,omitempty"`
+	CommandKey     string `json:"commandKey,omitempty"`
 }
 
 // getDeviceInfo retrieves device name and serial number from cpe_element table

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -56,7 +58,6 @@ func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigReq
 	// 4. For each device: blacklist check → EventLog → Redis → DeviceLog.
 	expiredAt := now.Add(5 * time.Minute).UnixMilli()
 	ctx := context.Background()
-	queueName := "operation_queue"
 
 	for _, elementId := range deviceIds {
 		// Blacklist check via raw SQL (avoid importing device package).
@@ -78,8 +79,8 @@ func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigReq
 		}
 
 		// Push operation message to Redis.
-		msg := operationMessage{
-			EventType:      "SetParameterValues",
+		msg := opmsg.Message{
+			EventType:      "SetParameterValues", // Java EventType.SET_PARAMETER_VALUES
 			NeNeid:         elementId,
 			Operation:      "SetParameterValues",
 			OperationParam: string(opParamJSON),
@@ -87,8 +88,8 @@ func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigReq
 			CommandTrackId: eventLogId,
 			ExpiredAt:      expiredAt,
 		}
-		msgJSON, _ := json.Marshal(msg)
-		if err := redis.LPush(ctx, queueName, string(msgJSON)); err != nil {
+		msgJSON, _ := msg.Marshal()
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgJSON)); err != nil {
 			logger.Errorf("push to redis queue for device %d: %v", elementId, err)
 		}
 

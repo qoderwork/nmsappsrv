@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
@@ -399,19 +401,49 @@ func (s *service) ReloadMonitorParameters(req *ReloadMonitorRequest) error {
 		}
 	}
 
-	ctx := context.Background()
-	for _, elementId := range elementIds {
-		// Build TR-069 GetParameterValues command
-		cmd := map[string]interface{}{
-			"eventType":    "getParameterValues",
-			"elementId":    elementId,
-			"parameterIds": paramIds,
+	// Resolve parameter IDs -> full TR-069 paths (Java GPV needs names, not ids).
+	paramMap, err := s.repo.GetParameterByIds(paramIds)
+	if err != nil {
+		return apperror.Wrap(err, "RESOLVE_MONITOR_PARAMETERS_FAILED", 500, "failed to resolve parameter paths")
+	}
+	paths := make([]string, 0, len(paramMap))
+	for _, p := range paramMap {
+		if p != "" {
+			paths = append(paths, p)
 		}
-		cmdBytes, _ := json.Marshal(cmd)
+	}
+	if len(paths) == 0 {
+		return apperror.ErrInvalidInput.WithMessage("no resolved parameter paths for monitor config")
+	}
+	paramJSON, err := json.Marshal(paths)
+	if err != nil {
+		return apperror.Wrap(err, "MAR_MONITOR_PATHS_FAILED", 500, "failed to marshal parameter paths")
+	}
 
-		// Push to Redis operation queue
-		if err := redis.LPush(ctx, "operation_queue", string(cmdBytes)); err != nil {
-			logger.Errorf("Push operation_queue error: %v", err)
+	// Dispatch TR-069 GetParameterValues via the unified operation dispatcher
+	// (Java EventType.GET_PARAMETER_VALUES → apiCommandProcessor.processCommand
+	// → SendGetParameterValues). The GPV response handler persists returned
+	// values into element_basic_info_parameter, which GetRealtimeMonitorData
+	// and the threshold checker read.
+	ctx := context.Background()
+	expiredAt := time.Now().Add(5 * time.Minute).UnixMilli()
+	for _, elementId := range elementIds {
+		msg := opmsg.Message{
+			EventType:      "GetParameterValues",
+			NeNeid:         elementId,
+			Operation:      "GetParameterValues",
+			OperationParam: string(paramJSON),
+			OperationUser:  "system",
+			ProtocolType:   opmsg.ProtocolTR069,
+			ExpiredAt:      expiredAt,
+		}
+		msgBytes, err := msg.Marshal()
+		if err != nil {
+			logger.Errorf("marshal opmsg for element %d: %v", elementId, err)
+			continue
+		}
+		if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+			logger.Errorf("Push %s error: %v", mq.OperationQueue, err)
 		}
 	}
 

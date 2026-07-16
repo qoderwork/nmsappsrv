@@ -53,7 +53,7 @@ func (o *OperationSender) SendGetParameterValues(sn string, paramNames []string,
 	soapXml := soap.BuildGetParameterValues(headerId, paramNames)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_VALUES", "")
+	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_VALUES", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -126,7 +126,7 @@ func (o *OperationSender) SendSetParameterValues(sn string, params []soap.Parame
 	soapXml := soap.BuildSetParameterValues(headerId, params, paramKey)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "SET_PARAMETER_VALUES", "")
+	o.saveTrackData(operationId, headerId, sn, "SET_PARAMETER_VALUES", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -138,27 +138,47 @@ func (o *OperationSender) SendDownload(sn string, dl *soap.Download, operationId
 	soapXml := soap.BuildDownload(headerId, dl)
 
 	// Save tracking data with CommandKey for TransferComplete correlation
-	o.saveTrackData(operationId, headerId, sn, "DOWNLOAD", dl.CommandKey)
+	o.saveTrackData(operationId, headerId, sn, "DOWNLOAD", dl.CommandKey, "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
 // SendReboot sends a Reboot request to the device.
-func (o *OperationSender) SendReboot(sn string, operationId string) error {
+//
+// Mirrors Java `Tr069MessageBuilder.reboot` post-processing:
+//   - delete `online_{neId}`
+//   - set `rebootUser_{neId} = operationUser` (5 minutes, matches Java
+//     `redisService.setKeyAndValue(..., 5, TimeUnit.MINUTES)`)
+//   - set `rebooting_{neId} = "yes"` (5 minutes)
+//
+// `expiredAtMillis` is forwarded to `EventDto.expiredAt` (Java-equivalent
+// stale-timeout). Pass 0 to use the default.
+func (o *OperationSender) SendReboot(sn string, operationId string, operationUser string, expiredAtMillis int64) error {
 	headerId := soap.GenerateHeaderID()
 	commandKey := fmt.Sprintf("reboot_%d", time.Now().Unix())
 	soapXml := soap.BuildReboot(headerId, commandKey)
 
-	// Set Redis rebooting flag
 	ctx := context.Background()
-	rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
-	if err := redis.Set(ctx, rebootKey, "1", 10*time.Minute); err != nil {
-		logger.Warnf("failed to set rebooting flag for %s: %v", sn, err)
+	var elementId int64
+	type DeviceLookup struct {
+		NeNeid int64 `gorm:"column:ne_neid"`
+	}
+	var dev DeviceLookup
+	if err := o.db.Table("cpe_element").Select("ne_neid").Where("serial_number = ? AND deleted = ?", sn, false).First(&dev).Error; err == nil {
+		elementId = dev.NeNeid
+
+		// Java Tr069MessageBuilder.reboot post-processing (5 min TTL each).
+		onlineKey := fmt.Sprintf("online_%d", elementId)
+		rebootUserKey := fmt.Sprintf("rebootUser_%d", elementId)
+		rebootingKey := fmt.Sprintf("rebooting_%d", elementId)
+		redis.Del(ctx, onlineKey)
+		redis.Set(ctx, rebootUserKey, operationUser, 5*time.Minute)
+		redis.Set(ctx, rebootingKey, "yes", 5*time.Minute)
 	}
 
 	// Save tracking data with CommandKey for TransferComplete correlation
-	o.saveTrackData(operationId, headerId, sn, "REBOOT", commandKey)
+	o.saveTrackData(operationId, headerId, sn, "REBOOT", commandKey, operationUser, expiredAtMillis)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -170,7 +190,7 @@ func (o *OperationSender) SendUpload(sn string, upload *soap.Upload, operationId
 	soapXml := soap.BuildUpload(headerId, upload)
 
 	// Save tracking data with CommandKey for TransferComplete correlation
-	o.saveTrackData(operationId, headerId, sn, "UPLOAD", upload.CommandKey)
+	o.saveTrackData(operationId, headerId, sn, "UPLOAD", upload.CommandKey, "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -182,7 +202,7 @@ func (o *OperationSender) SendFactoryReset(sn string, operationId string) error 
 	soapXml := soap.BuildFactoryReset(headerId)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "FACTORY_RESET", "")
+	o.saveTrackData(operationId, headerId, sn, "FACTORY_RESET", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -194,7 +214,7 @@ func (o *OperationSender) SendGetParameterNames(sn string, paramPath string, nex
 	soapXml := soap.BuildGetParameterNames(headerId, paramPath, nextLevel)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_NAMES", "")
+	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_NAMES", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -206,7 +226,7 @@ func (o *OperationSender) SendAddObject(sn string, objectName string, operationI
 	soapXml := soap.BuildAddObject(headerId, objectName, "")
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "ADD_OBJECT", "")
+	o.saveTrackData(operationId, headerId, sn, "ADD_OBJECT", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -218,7 +238,7 @@ func (o *OperationSender) SendDeleteObject(sn string, objectName string, operati
 	soapXml := soap.BuildDeleteObject(headerId, objectName, "")
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "DELETE_OBJECT", "")
+	o.saveTrackData(operationId, headerId, sn, "DELETE_OBJECT", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -230,7 +250,7 @@ func (o *OperationSender) SendGetRPCMethods(sn string, operationId string) error
 	soapXml := soap.BuildGetRPCMethods(headerId)
 
 	// Save tracking data
-	o.saveTrackData(operationId, headerId, sn, "GET_RPC_METHODS", "")
+	o.saveTrackData(operationId, headerId, sn, "GET_RPC_METHODS", "", "", 0)
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -240,12 +260,18 @@ func (o *OperationSender) SendGetRPCMethods(sn string, operationId string) error
 func (o *OperationSender) SendCapture(sn string, cap *soap.Capture, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildCapture(headerId, cap)
-	o.saveTrackData(operationId, headerId, sn, "CAPTURE", cap.CommandKey)
+	o.saveTrackData(operationId, headerId, sn, "CAPTURE", cap.CommandKey, "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
 // SendSoftReboot sends a SoftReboot request to the device.
-func (o *OperationSender) SendSoftReboot(sn string, operationId string) error {
+//
+// Mirrors Java `Tr069MessageBuilder.softReboot` post-processing:
+//   - delete `online_{neId}`
+//   - set `rebootUser_{neId} = operationUser` (5 minutes)
+//
+// `expiredAtMillis` is forwarded to `EventDto.expiredAt`.
+func (o *OperationSender) SendSoftReboot(sn string, operationId string, operationUser string, expiredAtMillis int64) error {
 	headerId := soap.GenerateHeaderID()
 	commandKey := fmt.Sprintf("soft_reboot_%d", time.Now().Unix())
 	soapXml := soap.BuildSoftReboot(headerId, commandKey)
@@ -260,10 +286,12 @@ func (o *OperationSender) SendSoftReboot(sn string, operationId string) error {
 	if err := o.db.Table("cpe_element").Select("ne_neid").Where("serial_number = ? AND deleted = ?", sn, false).First(&dev).Error; err == nil {
 		elementId = dev.NeNeid
 		onlineKey := fmt.Sprintf("online_%d", elementId)
+		rebootUserKey := fmt.Sprintf("rebootUser_%d", elementId)
 		redis.Del(ctx, onlineKey)
+		redis.Set(ctx, rebootUserKey, operationUser, 5*time.Minute)
 	}
 
-	o.saveTrackData(operationId, headerId, sn, "SOFT_REBOOT", commandKey)
+	o.saveTrackData(operationId, headerId, sn, "SOFT_REBOOT", commandKey, operationUser, expiredAtMillis)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -271,7 +299,7 @@ func (o *OperationSender) SendSoftReboot(sn string, operationId string) error {
 func (o *OperationSender) SendBatchUpgrade(sn string, batch *soap.BatchUpgrade, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildBatchUpgrade(headerId, batch)
-	o.saveTrackData(operationId, headerId, sn, "BATCH_UPGRADE", batch.CommandKey)
+	o.saveTrackData(operationId, headerId, sn, "BATCH_UPGRADE", batch.CommandKey, "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -279,7 +307,7 @@ func (o *OperationSender) SendBatchUpgrade(sn string, batch *soap.BatchUpgrade, 
 func (o *OperationSender) SendCancelFutureUpgrade(sn string, commandKey string, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildCancelFutureUpgrade(headerId, commandKey)
-	o.saveTrackData(operationId, headerId, sn, "CANCEL_FUTURE_UPGRADE", commandKey)
+	o.saveTrackData(operationId, headerId, sn, "CANCEL_FUTURE_UPGRADE", commandKey, "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -287,7 +315,7 @@ func (o *OperationSender) SendCancelFutureUpgrade(sn string, commandKey string, 
 func (o *OperationSender) SendHttpRequestProxy(sn string, proxy *soap.HttpRequestProxy, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildHttpRequestProxy(headerId, proxy)
-	o.saveTrackData(operationId, headerId, sn, "HTTP_REQUEST_PROXY", "")
+	o.saveTrackData(operationId, headerId, sn, "HTTP_REQUEST_PROXY", "", "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -295,7 +323,7 @@ func (o *OperationSender) SendHttpRequestProxy(sn string, proxy *soap.HttpReques
 func (o *OperationSender) SendSetParameterAttributes(sn string, spa *soap.SetParameterAttributes, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildSetParameterAttributes(headerId, spa)
-	o.saveTrackData(operationId, headerId, sn, "SET_PARAMETER_ATTRIBUTES", "")
+	o.saveTrackData(operationId, headerId, sn, "SET_PARAMETER_ATTRIBUTES", "", "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -303,7 +331,7 @@ func (o *OperationSender) SendSetParameterAttributes(sn string, spa *soap.SetPar
 func (o *OperationSender) SendGetParameterAttributes(sn string, names []string, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildGetParameterAttributes(headerId, names)
-	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_ATTRIBUTES", "")
+	o.saveTrackData(operationId, headerId, sn, "GET_PARAMETER_ATTRIBUTES", "", "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -311,7 +339,7 @@ func (o *OperationSender) SendGetParameterAttributes(sn string, names []string, 
 func (o *OperationSender) SendUpdateCBSDStatus(sn string, ucs *soap.UpdateCBSDStatus, operationId string) error {
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildUpdateCBSDStatus(headerId, ucs)
-	o.saveTrackData(operationId, headerId, sn, "UPDATE_CBSD_STATUS", "")
+	o.saveTrackData(operationId, headerId, sn, "UPDATE_CBSD_STATUS", "", "", 0)
 	return o.msgManager.PutMessage(sn, soapXml)
 }
 
@@ -445,7 +473,9 @@ func hmacSHA256(data, key string) string {
 
 // saveTrackData saves command tracking data to the event_log table.
 // commandKey is the TR-069 CommandKey used to correlate TransferComplete back to the originating operation.
-func (o *OperationSender) saveTrackData(operationId string, headerId string, sn string, operationType string, commandKey string) {
+// operationUser is recorded on the event_log row; expiredAtMillis (when > 0)
+// overrides the default operationTime+5min expiration for the SOAP message.
+func (o *OperationSender) saveTrackData(operationId string, headerId string, sn string, operationType string, commandKey string, operationUser string, expiredAtMillis int64) {
 	ctx := context.Background()
 	now := time.Now()
 
@@ -470,6 +500,9 @@ func (o *OperationSender) saveTrackData(operationId string, headerId string, sn 
 		ElementId:        &elementId,
 		Status:           intPtr(1), // pending
 	}
+	if operationUser != "" {
+		eventLog.User = stringPtr(operationUser)
+	}
 
 	// Marshal tracking data to JSON (includes command_key for TransferComplete correlation)
 	trackData := map[string]interface{}{
@@ -481,6 +514,12 @@ func (o *OperationSender) saveTrackData(operationId string, headerId string, sn 
 	}
 	if commandKey != "" {
 		trackData["command_key"] = commandKey
+	}
+	if operationUser != "" {
+		trackData["operation_user"] = operationUser
+	}
+	if expiredAtMillis > 0 {
+		trackData["expired_at"] = expiredAtMillis
 	}
 
 	if jsonData, err := json.Marshal(trackData); err == nil {

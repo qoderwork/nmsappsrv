@@ -12,6 +12,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
 )
@@ -79,8 +81,8 @@ func (s *service) dispatchDiagnostics(elementId int64, rootNode string, username
 	}
 
 	now := time.Now()
-	msg := operationMessage{
-		EventType:      "SetParameterValues",
+	msg := opmsg.Message{
+		EventType:      "SetParameterValues", // Java EventType.SET_PARAMETER_VALUES
 		NeNeid:         elementId,
 		Operation:      "SetParameterValues",
 		OperationParam: string(opParamJSON),
@@ -88,10 +90,10 @@ func (s *service) dispatchDiagnostics(elementId int64, rootNode string, username
 		CommandTrackId: eventLogId,
 		ExpiredAt:      now.Add(5 * time.Minute).UnixMilli(),
 	}
-	msgJSON, _ := json.Marshal(msg)
+	msgJSON, _ := msg.Marshal()
 
 	ctx := context.Background()
-	if err := redis.LPush(ctx, "operation_queue", string(msgJSON)); err != nil {
+	if err := redis.LPush(ctx, mq.OperationQueue, string(msgJSON)); err != nil {
 		return fmt.Errorf("push to operation_queue: %w", err)
 	}
 

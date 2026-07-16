@@ -11,6 +11,7 @@ import (
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/eventlog"
 	"nmsappsrv/internal/misc"
+	"nmsappsrv/internal/mq"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
@@ -423,7 +424,7 @@ func (ep *EventProcessor) checkAndTriggerAskReboot(ctx context.Context, sn strin
 	opSender := NewOperationSender(ep.db, msgMgr)
 	operationId := fmt.Sprintf("ask_reboot_%s_%d", sn, time.Now().Unix())
 
-	if err := opSender.SendReboot(sn, operationId); err != nil {
+	if err := opSender.SendReboot(sn, operationId, "", 0); err != nil {
 		logger.Errorf("AskReboot: failed to send reboot to device %s: %v", sn, err)
 		return
 	}
@@ -468,7 +469,7 @@ func (ep *EventProcessor) sendWebCallback(ctx context.Context, callbackType soap
 		return
 	}
 
-	if err := redis.Publish(ctx, "web_callback", string(jsonData)); err != nil {
+	if err := redis.LPush(ctx, mq.WebCallbackQueue, string(jsonData)); err != nil {
 		logger.Errorf("failed to publish web callback: %v", err)
 	}
 }
