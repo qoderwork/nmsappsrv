@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xuri/excelize/v2"
@@ -98,17 +99,54 @@ type Service interface {
 	// ListDeviceReplenish returns the cpe_element rows listed in a
 	// replenish task's element_ids. Mirrors Java listDeviceReplenish.
 	ListDeviceReplenish(taskId int) ([]ReplenishDeviceVo, error)
+	// MarkReplenishDeviceDone / IsReplenishDeviceDone are the in-memory
+	// per-(task,device) Done flags driven by the replenish worker.
+	// Exported so the worker (same package) can call them.
+	MarkReplenishDeviceDone(taskId int, elementId int64)
+	IsReplenishDeviceDone(taskId int, elementId int64) bool
 }
 
 // service is the concrete implementation of Service.
 type service struct {
 	repo Repository
 	db   *gorm.DB
+
+	// replenishDone tracks per-(taskId,elementId) Done state for the
+	// replenish worker. The Java side persists this in a DB column; the
+	// Go side uses an in-memory map as a placeholder -- a process
+	// restart resets all states to Done=false. swap to a DB column
+	// when the pm_replenish_task_device join table lands.
+	replenishDoneMu sync.RWMutex
+	replenishDone   map[string]bool
 }
 
 // NewService creates a new PM service.
 func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db), db: db}
+	return &service{
+		repo:          NewRepository(db),
+		db:            db,
+		replenishDone: make(map[string]bool),
+	}
+}
+
+// replenishDoneKey returns the map key for (taskId, elementId).
+func replenishDoneKey(taskId int, elementId int64) string {
+	return strconv.FormatInt(int64(taskId), 10) + ":" + strconv.FormatInt(elementId, 10)
+}
+
+// MarkReplenishDeviceDone records that the replenish worker has
+// finished "replenishing" a device in a task. Process-local.
+func (s *service) MarkReplenishDeviceDone(taskId int, elementId int64) {
+	s.replenishDoneMu.Lock()
+	s.replenishDone[replenishDoneKey(taskId, elementId)] = true
+	s.replenishDoneMu.Unlock()
+}
+
+// IsReplenishDeviceDone returns the in-memory Done state for one device.
+func (s *service) IsReplenishDeviceDone(taskId int, elementId int64) bool {
+	s.replenishDoneMu.RLock()
+	defer s.replenishDoneMu.RUnlock()
+	return s.replenishDone[replenishDoneKey(taskId, elementId)]
 }
 
 // ---------- PerformanceKpi ----------
@@ -793,11 +831,16 @@ func (s *service) ViewReplenishTask(id int) (*PMReplenishTask, error) {
 }
 
 // ListDeviceReplenish returns the cpe_element rows in a replenish task's
-// element_ids. Mirrors Java listDeviceReplenish.
+// element_ids. Mirrors Java listDeviceReplenish. The Done field is
+// populated from the in-memory replenish worker state (set by
+// MarkReplenishDeviceDone).
 func (s *service) ListDeviceReplenish(taskId int) ([]ReplenishDeviceVo, error) {
 	rows, err := s.repo.FindReplenishTaskDevices(taskId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_DEVICE_REPLENISH_FAILED", 500, "failed to list device replenish")
+	}
+	for i := range rows {
+		rows[i].Done = s.IsReplenishDeviceDone(taskId, rows[i].NeNeid)
 	}
 	return rows, nil
 }

@@ -245,6 +245,11 @@ func main() {
 	upgradeH := upgrade.NewHandler(db)
 	eventlogH := eventlog.NewHandler(db)
 	pmH := pm.NewHandler(db)
+	// PM subsystem workers (collector + replenish) are registered later,
+	// after mgr is created (see below). NMS_PM_WORKERS_DISABLED=1 skips
+	// both for tests.
+	pmSvc := pm.NewService(db)
+	pmRepo := pm.NewRepository(db)
 	monitorH := monitor.NewHandler(db)
 	siteH := site.NewHandler(db)
 	mmlH := mml.NewHandler(db)
@@ -713,6 +718,19 @@ func main() {
 	if cfg.STUN.Enabled {
 		stunServer := tr069.NewSTUNServer(cfg.STUN.Port)
 		mgr.Add(workerTask("stun-server", stunServer.Start, stunServer.Stop))
+	}
+
+	// PM subsystem workers. Collector periodically writes placeholder
+	// PM files under file_server.pm_dir + inserts pm_file_log rows so
+	// DownloadPMFile returns real data. ReplenishWorker flips
+	// Waiting->Executing->Executed on pm_replenish_task rows and marks
+	// every device Done=true so listDeviceReplenish returns a useful
+	// response. Both are opt-out via NMS_PM_WORKERS_DISABLED=1.
+	if os.Getenv("NMS_PM_WORKERS_DISABLED") != "1" {
+		pmCollector := pm.NewCollector(db, pmRepo, 5*time.Minute, true)
+		pmReplenishWorker := pm.NewReplenishWorker(pmSvc, pmRepo, 30*time.Second)
+		mgr.Add(workerTask("pm-collector", pmCollector.Start, pmCollector.Stop))
+		mgr.Add(workerTask("pm-replenish-worker", pmReplenishWorker.Start, pmReplenishWorker.Stop))
 	}
 
 	// HTTP server as lifecycle task

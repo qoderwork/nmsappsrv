@@ -51,6 +51,9 @@ type Repository interface {
 	FindReplenishTasks(tenancyId int, name string, offset, limit int) ([]PMReplenishTask, int64, error)
 	FindReplenishTask(id int) (*PMReplenishTask, error)
 	FindReplenishTaskDevices(taskId int) ([]ReplenishDeviceVo, error)
+	CreatePMFileLog(log *PMFileLog) error
+	FindPendingReplenishTasks(limit int) ([]PMReplenishTask, error)
+	UpdateReplenishTaskStatus(id int, status int) error
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -268,6 +271,33 @@ func (r *repository) FindENBDevicesForMeas(licenseId int, searchText string, off
 	}
 	err := q.Offset(offset).Limit(limit).Order("ne_neid ASC").Scan(&items).Error
 	return items, total, err
+}
+
+// CreatePMFileLog inserts a pm_file_log row. Used by the PM collector
+// worker to register newly-collected PM files.
+func (r *repository) CreatePMFileLog(log *PMFileLog) error {
+	return r.db.Create(log).Error
+}
+
+// FindPendingReplenishTasks returns up to `limit` replenish tasks that
+// are in status=1 (Waiting) or status=2 (Executing). Used by the
+// replenish worker.
+func (r *repository) FindPendingReplenishTasks(limit int) ([]PMReplenishTask, error) {
+	var items []PMReplenishTask
+	err := r.db.Where("status IN ?", []int{1, 2}).
+		Order("id ASC").
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
+// UpdateReplenishTaskStatus flips the status field on a replenish task.
+// Used by the replenish worker to mark a task Executed (3) once all
+// its devices have been "replenished".
+func (r *repository) UpdateReplenishTaskStatus(id int, status int) error {
+	return r.db.Model(&PMReplenishTask{}).
+		Where("id = ?", id).
+		Update("status", status).Error
 }
 
 // CreateReplenishTask inserts a new pm_replenish_task row. Mirrors Java
