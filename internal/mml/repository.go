@@ -26,6 +26,8 @@ type Repository interface {
 	FindMmlCommandParams(commandId int) ([]MmlCommandParam, error)
 	FindMmlCommandByCommand(command string) (*MmlCommand, error)
 	FindMmlExecuteResults(elementId int64, offset, limit int) ([]MmlExecuteResult, int64, error)
+	FindMmlExecuteResultsByEventLogIds(eventLogIds []int64) ([]MmlExecuteResult, error)
+	FindDeviceNameSerialByElementIds(elementIds []int64) ([]DeviceNameSerial, error)
 	CreateMmlSet(set *MmlSet) error
 	CreateMmlCommand(cmd *MmlCommand) error
 	CreateMmlCommandParam(p *MmlCommandParam) error
@@ -137,4 +139,43 @@ func (r *repository) FindMmlExecuteResults(elementId int64, offset, limit int) (
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// DeviceNameSerial is a query-row type holding the device identity columns for a
+// given element id, used to enrich MML result views (对齐 Java neElementService.getById).
+type DeviceNameSerial struct {
+	NeNeid       int64  `gorm:"column:ne_neid"`
+	DeviceName   string `gorm:"column:device_name"`
+	SerialNumber string `gorm:"column:serial_number"`
+}
+
+// FindMmlExecuteResultsByEventLogIds returns all MML execution results whose
+// event_log_id is in the given list (对齐 Java MmlExecuteResultRepo.findAllByEventLogIdIn).
+func (r *repository) FindMmlExecuteResultsByEventLogIds(eventLogIds []int64) ([]MmlExecuteResult, error) {
+	if len(eventLogIds) == 0 {
+		return []MmlExecuteResult{}, nil
+	}
+	var results []MmlExecuteResult
+	if err := r.db.Where("event_log_id IN ?", eventLogIds).Find(&results).Error; err != nil {
+		logger.Errorf("FindMmlExecuteResultsByEventLogIds error: %v", err)
+		return nil, err
+	}
+	return results, nil
+}
+
+// FindDeviceNameSerialByElementIds returns device_name + serial_number for the
+// given element ids from cpe_element (ne_neid is the element id).
+func (r *repository) FindDeviceNameSerialByElementIds(elementIds []int64) ([]DeviceNameSerial, error) {
+	if len(elementIds) == 0 {
+		return []DeviceNameSerial{}, nil
+	}
+	var rows []DeviceNameSerial
+	if err := r.db.Table("cpe_element").
+		Select("ne_neid, device_name, serial_number").
+		Where("ne_neid IN ?", elementIds).
+		Find(&rows).Error; err != nil {
+		logger.Errorf("FindDeviceNameSerialByElementIds error: %v", err)
+		return nil, err
+	}
+	return rows, nil
 }

@@ -11,6 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/mml-execute", h.ExecuteMml)
 	rg.GET("/mml-results", h.ListMmlResults)
 	rg.GET("/mml-results/:id", h.GetMmlResult)
+	rg.POST("/mml-results-by-event-log-ids", h.GetMMLResultByEventLogIds)
 
 	// MML import + version lifecycle (对齐 Java importMMLAndParameter / getMmlVersions / getMmlCommandsByVersion / getMmlCommand / deleteMmlByVersion)
 	rg.POST("/mml/import", h.ImportMML)

@@ -62,3 +62,12 @@ type MmlExecuteResult struct {
 }
 
 func (MmlExecuteResult) TableName() string { return "mml_execute_result" }
+
+// GetMMLResultByEventLogIdsVO 对齐 Java GetMMLResultByEventLogIdsVO：
+// 按 eventLogId 列表轮询 MML 执行结果时返回的标量视图。
+type GetMMLResultByEventLogIdsVO struct {
+	Mml          string `json:"mml"`
+	DeviceName   string `json:"deviceName"`
+	SerialNumber string `json:"serialNumber"`
+	Result       string `json:"result"`
+}

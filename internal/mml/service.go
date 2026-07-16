@@ -21,6 +21,7 @@ type Service interface {
 	ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error)
 	ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error)
 	GetMmlResult(id int) (*MmlExecuteResult, error)
+	GetMMLResultByEventLogIds(eventLogIds []int64) ([]GetMMLResultByEventLogIdsVO, error)
 	ImportMMLAndParameter(reader io.Reader, version string, licenseId int) error
 	GetMmlVersions(licenseId int) ([]string, error)
 	GetMmlCommandsByVersion(version string, licenseId int) (*MmlVersionInfoVO, error)
@@ -130,4 +131,69 @@ func (s *service) ListMmlResults(elementId int64, page, pageSize int) ([]MmlExec
 // GetMmlResult returns a single execution result by ID.
 func (s *service) GetMmlResult(id int) (*MmlExecuteResult, error) {
 	return s.repo.FindByID(id)
+}
+
+// GetMMLResultByEventLogIds returns MML execution results for the given eventLogIds,
+// 对齐 Java MmlManagementServiceImpl.getMMLResultByEventLogIds:
+//   - 仅 status==3 (delivered) 的结果；
+//   - result 文本：hasFault→faultString，否则 result 为空时回填 "The MML is successfully executed"；
+//   - 仅当设备存在 (cpe_element 命中 ne_neid) 才纳入返回（对齐 Java byId != null）。
+func (s *service) GetMMLResultByEventLogIds(eventLogIds []int64) ([]GetMMLResultByEventLogIdsVO, error) {
+	if len(eventLogIds) == 0 {
+		return []GetMMLResultByEventLogIdsVO{}, nil
+	}
+
+	results, err := s.repo.FindMmlExecuteResultsByEventLogIds(eventLogIds)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect distinct element ids for a single device-lookup batch.
+	idSet := make(map[int64]struct{})
+	for _, r := range results {
+		if r.ElementId != nil {
+			idSet[*r.ElementId] = struct{}{}
+		}
+	}
+	elementIds := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		elementIds = append(elementIds, id)
+	}
+	deviceMap := make(map[int64]DeviceNameSerial)
+	if len(elementIds) > 0 {
+		devs, derr := s.repo.FindDeviceNameSerialByElementIds(elementIds)
+		if derr != nil {
+			logger.Errorf("GetMMLResultByEventLogIds device lookup error: %v", derr)
+		} else {
+			for _, d := range devs {
+				deviceMap[d.NeNeid] = d
+			}
+		}
+	}
+
+	ans := make([]GetMMLResultByEventLogIdsVO, 0, len(results))
+	for _, r := range results {
+		if r.Status != 3 || r.ElementId == nil {
+			continue
+		}
+		dev, ok := deviceMap[*r.ElementId]
+		if !ok {
+			// Java: only adds to answer when the device lookup succeeds.
+			continue
+		}
+		vo := GetMMLResultByEventLogIdsVO{
+			Mml:          mmlDerefStr(r.Command),
+			DeviceName:   dev.DeviceName,
+			SerialNumber: dev.SerialNumber,
+		}
+		if r.HasFault {
+			vo.Result = mmlDerefStr(r.FaultString)
+		} else if r.Result == nil || *r.Result == "" {
+			vo.Result = "The MML is successfully executed"
+		} else {
+			vo.Result = *r.Result
+		}
+		ans = append(ans, vo)
+	}
+	return ans, nil
 }

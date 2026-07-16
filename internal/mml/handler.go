@@ -124,3 +124,26 @@ func (h *Handler) GetMmlResult(c *gin.Context) {
 	}
 	utils.Success(c, result)
 }
+
+// GetMMLResultByEventLogIds handles POST /mml-results-by-event-log-ids
+// 对齐 Java getMMLResultByEventLogIds：按 eventLogId 列表轮询已送达的 MML 执行结果。
+func (h *Handler) GetMMLResultByEventLogIds(c *gin.Context) {
+	var req struct {
+		EventLogIds []int64 `json:"event_log_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.EventLogIds) == 0 {
+		utils.Error(c, http.StatusBadRequest, "event_log_ids is required")
+		return
+	}
+
+	data, err := h.svc.GetMMLResultByEventLogIds(req.EventLogIds)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to get MML results by event log ids")
+		return
+	}
+	utils.Success(c, data)
+}
