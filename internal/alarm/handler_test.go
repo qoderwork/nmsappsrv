@@ -219,6 +219,30 @@ func (m *mockService) UpdateEmailNotificationConfig(config *EmailNotificationCon
 	return nil
 }
 
+func (m *mockService) DeleteAlarm(id int64) error {
+	return nil
+}
+
+func (m *mockService) GetAlarmTemplate(id int) (*AlarmTemplate, error) {
+	return &AlarmTemplate{}, nil
+}
+
+func (m *mockService) DeleteAlarmTemplate(id int) error {
+	return nil
+}
+
+func (m *mockService) GetAlarmFilter(id int) (*AlarmFilter, error) {
+	return &AlarmFilter{}, nil
+}
+
+func (m *mockService) ToggleAlarmFilterEnable(id int, enable bool) error {
+	return nil
+}
+
+func (m *mockService) UpdateAlarmTemplateEmailNotification(id int, enable bool) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------

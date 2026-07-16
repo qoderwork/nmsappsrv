@@ -76,6 +76,22 @@ func (h *Handler) ClearAlarm(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
+// DeleteAlarm handles DELETE /alarms/:id
+// Hard-deletes a single alarm row. Mirrors Java deleteAlarm.
+func (h *Handler) DeleteAlarm(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
+		return
+	}
+
+	if err := h.svc.DeleteAlarm(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
 // BatchClearRequest is the JSON body for PUT /alarms/batch-clear.
 type BatchClearRequest struct {
 	AlarmIds  []int64 `json:"alarmIds" binding:"required"`
@@ -172,6 +188,23 @@ func (h *Handler) ListAlarmTemplates(c *gin.Context) {
 	utils.Success(c, data)
 }
 
+// GetAlarmTemplate handles GET /alarm-templates/:id
+// Mirrors Java viewAlarmTemplate.
+func (h *Handler) GetAlarmTemplate(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid template id")
+		return
+	}
+
+	data, err := h.svc.GetAlarmTemplate(id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
 // CreateAlarmTemplate handles POST /alarm-templates
 func (h *Handler) CreateAlarmTemplate(c *gin.Context) {
 	var t AlarmTemplate
@@ -209,6 +242,44 @@ func (h *Handler) UpdateAlarmTemplate(c *gin.Context) {
 	utils.Success(c, &t)
 }
 
+// DeleteAlarmTemplate handles DELETE /alarm-templates/:id
+// Mirrors Java deleteAlarmTemplate.
+func (h *Handler) DeleteAlarmTemplate(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm template id")
+		return
+	}
+
+	if err := h.svc.DeleteAlarmTemplate(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// UpdateAlarmTemplateEmailNotification handles PUT /alarm-templates/:id/email-notification
+// Body: {"enable": true|false}. Mirrors Java updateEmailNotificationEnableInTemplate.
+func (h *Handler) UpdateAlarmTemplateEmailNotification(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm template id")
+		return
+	}
+	var body struct {
+		Enable bool `json:"enable"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.UpdateAlarmTemplateEmailNotification(id, body.Enable); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
 // ---------------------------------------------------------------------------
 // AlarmFilter endpoints
 // ---------------------------------------------------------------------------
@@ -218,6 +289,23 @@ func (h *Handler) ListAlarmFilters(c *gin.Context) {
 	licenseId := middleware.GetLicenseId(c)
 
 	data, err := h.svc.ListAlarmFilters(licenseId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// GetAlarmFilter handles GET /alarm-filters/:id
+// Mirrors Java viewAlarmFilterTask.
+func (h *Handler) GetAlarmFilter(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm filter id")
+		return
+	}
+
+	data, err := h.svc.GetAlarmFilter(id)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -271,6 +359,29 @@ func (h *Handler) DeleteAlarmFilter(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteAlarmFilter(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// ToggleAlarmFilterEnable handles PUT /alarm-filters/:id/enable
+// Body: {"enable": true|false}. Mirrors Java enableAlarmFilterTask /
+// disableAlarmFilterTask (one endpoint with a body flag rather than two).
+func (h *Handler) ToggleAlarmFilterEnable(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm filter id")
+		return
+	}
+	var body struct {
+		Enable bool `json:"enable"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.ToggleAlarmFilterEnable(id, body.Enable); err != nil {
 		utils.HandleError(c, err)
 		return
 	}

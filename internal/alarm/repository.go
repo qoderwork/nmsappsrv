@@ -394,3 +394,47 @@ func (r *Repository) SaveSystemConfig(key, value string) error {
 	cfg.Config = &value
 	return r.db.Save(&cfg).Error
 }
+
+// DeleteAlarm hard-deletes a single alarm row. Mirrors Java deleteAlarm.
+func (r *Repository) DeleteAlarm(id int64) error {
+	return r.db.Where("id = ?", id).Delete(&Alarm{}).Error
+}
+
+// FindAlarmTemplate returns one alarm template by id. Mirrors Java viewAlarmTemplate.
+func (r *Repository) FindAlarmTemplate(id int) (*AlarmTemplate, error) {
+	var t AlarmTemplate
+	if err := r.db.Where("id = ?", id).First(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// DeleteAlarmTemplate hard-deletes an alarm template. Mirrors Java deleteAlarmTemplate.
+func (r *Repository) DeleteAlarmTemplate(id int) error {
+	return r.db.Where("id = ?", id).Delete(&AlarmTemplate{}).Error
+}
+
+// FindAlarmFilter returns one alarm filter by id. Mirrors Java viewAlarmFilterTask.
+func (r *Repository) FindAlarmFilter(id int) (*AlarmFilter, error) {
+	var f AlarmFilter
+	if err := r.db.Where("id = ?", id).First(&f).Error; err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// ToggleAlarmFilterEnable flips the `enable` flag on an alarm filter.
+// Mirrors Java enableAlarmFilterTask / disableAlarmFilterTask.
+func (r *Repository) ToggleAlarmFilterEnable(id int, enable bool) error {
+	return r.db.Model(&AlarmFilter{}).
+		Where("id = ?", id).
+		Update("enable", enable).Error
+}
+
+// UpdateAlarmTemplateEmailNotification flips the `enable_email_notification`
+// flag on an alarm template. Mirrors Java updateEmailNotificationEnableInTemplate.
+func (r *Repository) UpdateAlarmTemplateEmailNotification(id int, enable bool) error {
+	return r.db.Model(&AlarmTemplate{}).
+		Where("id = ?", id).
+		Update("enable_email_notification", enable).Error
+}

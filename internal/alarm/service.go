@@ -37,6 +37,22 @@ type Service interface {
 	UpdateAlarmSyncConfig(config *AlarmSyncConfig) error
 	AddCommentForAlarm(id int64, comment string) error
 	QueryAlarmStatisticTopN(topN int, startTime, endTime *time.Time) ([]AlarmStatisticTopN, error)
+	// DeleteAlarm removes a single alarm. Mirrors Java deleteAlarm.
+	DeleteAlarm(id int64) error
+	// GetAlarmTemplate returns one alarm template by id. Mirrors Java viewAlarmTemplate.
+	GetAlarmTemplate(id int) (*AlarmTemplate, error)
+	// DeleteAlarmTemplate removes an alarm template. Mirrors Java deleteAlarmTemplate.
+	DeleteAlarmTemplate(id int) error
+	// GetAlarmFilter returns one alarm filter by id. Mirrors Java viewAlarmFilterTask.
+	GetAlarmFilter(id int) (*AlarmFilter, error)
+	// ToggleAlarmFilterEnable flips the `enable` flag on an alarm filter.
+	// Mirrors Java enableAlarmFilterTask / disableAlarmFilterTask (one
+	// endpoint with a body flag rather than two routes).
+	ToggleAlarmFilterEnable(id int, enable bool) error
+	// UpdateAlarmTemplateEmailNotification flips the
+	// `enable_email_notification` flag on an alarm template. Mirrors Java
+	// updateEmailNotificationEnableInTemplate.
+	UpdateAlarmTemplateEmailNotification(id int, enable bool) error
 	GetEmailNotificationConfig() (*EmailNotificationConfig, error)
 	UpdateEmailNotificationConfig(config *EmailNotificationConfig) error
 }
@@ -88,6 +104,14 @@ func (s *service) GetAlarm(id int64) (*Alarm, error) {
 func (s *service) ClearAlarm(id int64) error {
 	if err := s.repo.ClearAlarm(id, time.Now()); err != nil {
 		return apperror.Wrap(err, "CLEAR_ALARM_FAILED", 500, "failed to clear alarm")
+	}
+	return nil
+}
+
+// DeleteAlarm hard-deletes a single alarm row. Mirrors Java deleteAlarm.
+func (s *service) DeleteAlarm(id int64) error {
+	if err := s.repo.DeleteAlarm(id); err != nil {
+		return apperror.Wrap(err, "DELETE_ALARM_FAILED", 500, "failed to delete alarm")
 	}
 	return nil
 }
@@ -315,6 +339,15 @@ func (s *service) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
 	return data, nil
 }
 
+// GetAlarmTemplate returns one alarm template by id. Mirrors Java viewAlarmTemplate.
+func (s *service) GetAlarmTemplate(id int) (*AlarmTemplate, error) {
+	data, err := s.repo.FindAlarmTemplate(id)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_ALARM_TEMPLATE_FAILED", 500, "failed to get alarm template")
+	}
+	return data, nil
+}
+
 // CreateAlarmTemplate persists a new alarm template.
 func (s *service) CreateAlarmTemplate(t *AlarmTemplate) error {
 	if err := s.repo.CreateAlarmTemplate(t); err != nil {
@@ -331,6 +364,23 @@ func (s *service) UpdateAlarmTemplate(t *AlarmTemplate) error {
 	return nil
 }
 
+// DeleteAlarmTemplate hard-deletes an alarm template. Mirrors Java deleteAlarmTemplate.
+func (s *service) DeleteAlarmTemplate(id int) error {
+	if err := s.repo.DeleteAlarmTemplate(id); err != nil {
+		return apperror.Wrap(err, "DELETE_ALARM_TEMPLATE_FAILED", 500, "failed to delete alarm template")
+	}
+	return nil
+}
+
+// UpdateAlarmTemplateEmailNotification flips the `enable_email_notification`
+// flag on an alarm template. Mirrors Java updateEmailNotificationEnableInTemplate.
+func (s *service) UpdateAlarmTemplateEmailNotification(id int, enable bool) error {
+	if err := s.repo.UpdateAlarmTemplateEmailNotification(id, enable); err != nil {
+		return apperror.Wrap(err, "UPDATE_ALARM_TEMPLATE_EMAIL_NOTIFICATION_FAILED", 500, "failed to update alarm template email notification")
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // AlarmFilter
 // ---------------------------------------------------------------------------
@@ -340,6 +390,15 @@ func (s *service) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 	data, err := s.repo.FindAlarmFilters(licenseId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_ALARM_FILTERS_FAILED", 500, "failed to list alarm filters")
+	}
+	return data, nil
+}
+
+// GetAlarmFilter returns one alarm filter by id. Mirrors Java viewAlarmFilterTask.
+func (s *service) GetAlarmFilter(id int) (*AlarmFilter, error) {
+	data, err := s.repo.FindAlarmFilter(id)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_ALARM_FILTER_FAILED", 500, "failed to get alarm filter")
 	}
 	return data, nil
 }
@@ -364,6 +423,15 @@ func (s *service) UpdateAlarmFilter(f *AlarmFilter) error {
 func (s *service) DeleteAlarmFilter(id int) error {
 	if err := s.repo.DeleteAlarmFilter(id); err != nil {
 		return apperror.Wrap(err, "DELETE_ALARM_FILTER_FAILED", 500, "failed to delete alarm filter")
+	}
+	return nil
+}
+
+// ToggleAlarmFilterEnable flips the `enable` flag on an alarm filter.
+// Mirrors Java enableAlarmFilterTask / disableAlarmFilterTask.
+func (s *service) ToggleAlarmFilterEnable(id int, enable bool) error {
+	if err := s.repo.ToggleAlarmFilterEnable(id, enable); err != nil {
+		return apperror.Wrap(err, "TOGGLE_ALARM_FILTER_ENABLE_FAILED", 500, "failed to toggle alarm filter enable")
 	}
 	return nil
 }

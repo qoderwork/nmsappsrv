@@ -27,6 +27,12 @@ type Alarm struct {
 	IsSuppressed          *bool      `gorm:"column:is_suppressed" json:"is_suppressed"`
 	SuppressionReason     *string    `gorm:"column:suppression_reason;type:varchar(255)" json:"suppression_reason"`
 	Comment               *string    `gorm:"column:comment;type:longtext" json:"comment"`
+	// Exported + HandleSuggestion are part of the Java api/core Alarm DTO
+	// (the north-bound response shape) but not the corefunction domain
+	// entity. They are response-only enrichment fields; populated by a
+	// future join once the columns land in the shared schema.
+	Exported         *bool   `gorm:"column:exported" json:"exported"`
+	HandleSuggestion *string `gorm:"column:handle_suggestion;type:varchar(1024)" json:"handleSuggestion"`
 }
 
 // Alarm status values, mirroring nms-serv's alarm_status 4-state model.
