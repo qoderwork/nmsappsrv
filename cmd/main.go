@@ -666,10 +666,11 @@ func main() {
 	// Picks up devices that have an AOS file but have not yet been registered
 	// against the E911 systems (MSAG / BMC old+new / LMF 1–4 / GMLC) and runs
 	// the full allocation + geofence + registration + rollback flow. The wire
-	// transport is Phase 2a NotImplementedTransport; a nil transport is
-	// replaced inside NewThread. Runs every 30s.
+	// transport is the real mTLS HTTPTransport; a nil TransportConfig falls
+	// back to the Java-default cert paths read from the environment. Runs
+	// every 30s.
 	ztpSvc := misc.NewService(db, cfg)
-	ztpThread := ztp.NewThread(db, ztpSvc, nil)
+	ztpThread := ztp.NewThread(db, ztpSvc, nil, alarm.NewService(db))
 	if err := mainScheduler.AddJob("ztp-external-gen", "*/30 * * * * *", func() {
 		if n, err := ztpThread.ScanAndProcess(context.Background()); err != nil {
 			logger.Errorf("ztp-external-gen failed: %v", err)

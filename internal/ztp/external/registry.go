@@ -13,11 +13,23 @@ type Registry struct {
 	GMLC     *GMLCClient
 }
 
-// NewRegistry builds all clients from an ExternalConfig. A nil transport is
-// replaced with NotImplementedTransport (Phase 2a default).
+// NewRegistry builds all clients from an ExternalConfig using a single shared
+// Transport (used by tests with a FuncTransport). Production code should use
+// NewRegistryWithTransports, which assigns per-system mTLS transports.
 func NewRegistry(cfg *ExternalConfig, t Transport) *Registry {
 	if t == nil {
 		t = NotImplementedTransport{}
+	}
+	return NewRegistryWithTransports(cfg, &Transports{Shared: t, LMF: []Transport{t, t, t, t}})
+}
+
+// NewRegistryWithTransports builds all clients, assigning the shared transport
+// to MSAG / BMC / NewBMC / Spectrum / GMLC and a per-instance transport to
+// each LMF (mirroring Java's nbiClient for the first group and lmf1Client..4
+// for the LMF instances).
+func NewRegistryWithTransports(cfg *ExternalConfig, tr *Transports) *Registry {
+	if tr == nil {
+		return NewRegistry(cfg, nil)
 	}
 	lmfs := make([]*LMFClient, 0, len(cfg.LMF))
 	for i, l := range cfg.LMF {
@@ -25,15 +37,19 @@ func NewRegistry(cfg *ExternalConfig, t Transport) *Registry {
 		if i > 0 {
 			name = fmt.Sprintf("lmf-%d", i+1)
 		}
-		lmfs = append(lmfs, NewLMFClient(name, l, t))
+		lt := tr.Shared
+		if i < len(tr.LMF) {
+			lt = tr.LMF[i]
+		}
+		lmfs = append(lmfs, NewLMFClient(name, l, lt))
 	}
 	return &Registry{
-		Spectrum: NewSpectrumClient(cfg.Spectrum, t),
-		MSAG:     NewMSAGClient(cfg.MSAG, t),
-		BMC:      NewBMCClientOld(cfg.BMC, t),
-		NewBMC:   NewBMCClientNew(cfg.NewBMC, t),
+		Spectrum: NewSpectrumClient(cfg.Spectrum, tr.Shared),
+		MSAG:     NewMSAGClient(cfg.MSAG, tr.Shared),
+		BMC:      NewBMCClientOld(cfg.BMC, tr.Shared),
+		NewBMC:   NewBMCClientNew(cfg.NewBMC, tr.Shared),
 		LMF:      lmfs,
-		GMLC:     NewGMLCClient(cfg.GMLC, t),
+		GMLC:     NewGMLCClient(cfg.GMLC, tr.Shared),
 	}
 }
 

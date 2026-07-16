@@ -30,6 +30,41 @@ func NewRepository(db *gorm.DB) *Repository {
 // Alarm – module-specific queries
 // ---------------------------------------------------------------------------
 
+// GetByElementTypeAlarmId returns the most recently updated active alarm for a
+// device matching the given alarm_type and alarm_id, or (nil, nil) when none
+// exists. Used by callers that must de-duplicate / update a single logical
+// alarm (e.g. the ZTP "ztp_failed" alarm raised per element).
+func (r *Repository) GetByElementTypeAlarmId(elementId int64, alarmType int, alarmId string) (*Alarm, error) {
+	var a Alarm
+	err := r.db.Where("element_id = ? AND alarm_type = ? AND alarm_id = ?", elementId, alarmType, alarmId).
+		Order("update_time DESC").First(&a).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+// GetByAlarmId returns the most recently updated alarm matching the given
+// alarm_type and alarm_id, ignoring element_id. Used for SYSTEM-level alarms
+// that are not tied to a single device (e.g. T-Platform's "t_platform_unavailable"
+// alarm, which mirrors Java alarmService.getByAlarmTypeAndAlarmId). Returns
+// (nil, nil) when none exists.
+func (r *Repository) GetByAlarmId(alarmType int, alarmId string) (*Alarm, error) {
+	var a Alarm
+	err := r.db.Where("alarm_type = ? AND alarm_id = ?", alarmType, alarmId).
+		Order("update_time DESC").First(&a).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
 // FindAlarms returns a paginated list of alarms with optional severity and
 // alarm_type filters. The total count is returned for pagination metadata.
 func (r *Repository) FindAlarms(licenseId int, severity string, alarmType int, offset, limit int) ([]Alarm, int64, error) {

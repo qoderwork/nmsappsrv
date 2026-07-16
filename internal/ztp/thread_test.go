@@ -1,11 +1,14 @@
 package ztp
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"nmsappsrv/internal/alarm"
+	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/ztp/external"
 )
@@ -167,3 +170,65 @@ func TestAllocateTACNilRange(t *testing.T) {
 	assert.Equal(t, 0, finalTac)
 	assert.Equal(t, 0, mid)
 }
+
+// ---------------------------------------------------------------------------
+// ZTP failure alarm (acs_url gate)
+// ---------------------------------------------------------------------------
+
+// fakeAlarmSvc is a minimal alarm.Service for unit-testing raiseZTPFailedAlarm.
+// It embeds the real interface (unimplemented methods stay nil) and overrides
+// only the two methods raiseZTPFailedAlarm calls.
+type fakeAlarmSvc struct {
+	alarm.Service
+	calls     int
+	lastAlarm *alarm.Alarm
+	existing  *alarm.Alarm // value returned by GetByElementTypeAlarmId
+}
+
+func (f *fakeAlarmSvc) GetByElementTypeAlarmId(_ int64, _ int, _ string) (*alarm.Alarm, error) {
+	return f.existing, nil
+}
+
+func (f *fakeAlarmSvc) CreateAlarm(a *alarm.Alarm) error {
+	f.calls++
+	f.lastAlarm = a
+	return nil
+}
+
+func TestRaiseZTPFailedAlarm(t *testing.T) {
+	dev := device.CpeElement{NeNeid: 42, LicenseId: intPtr(7)}
+
+	t.Run("no existing -> creates ztp_failed alarm", func(t *testing.T) {
+		fake := &fakeAlarmSvc{}
+		th := &Thread{alarmSvc: fake}
+		th.raiseZTPFailedAlarm(dev, "The ACS URL parameter is missing in Inform")
+
+		require.Equal(t, 1, fake.calls, "CreateAlarm must be called once")
+		a := fake.lastAlarm
+		require.NotNil(t, a)
+		assert.Equal(t, "ztp_failed", strOrEmpty(a.AlarmId))
+		assert.Equal(t, intPtr(alarm.AlarmTypeActive), a.AlarmType)
+		assert.Equal(t, "Critical", strOrEmpty(a.Severity))
+		assert.Equal(t, "ZTP Alarm", strOrEmpty(a.EventType))
+		assert.Equal(t, "The ACS URL parameter is missing in Inform", strOrEmpty(a.AdditionalInformation))
+		assert.Equal(t, int64(42), *a.ElementId)
+		assert.Equal(t, intPtr(7), a.LicenseId)
+	})
+
+	t.Run("existing same info -> dedup, no create", func(t *testing.T) {
+		fake := &fakeAlarmSvc{existing: &alarm.Alarm{
+			Id:                     99,
+			AdditionalInformation: strPtr("The ACS URL parameter is missing in Inform"),
+		}}
+		th := &Thread{alarmSvc: fake}
+		th.raiseZTPFailedAlarm(dev, "The ACS URL parameter is missing in Inform")
+		assert.Equal(t, 0, fake.calls, "dedup must not re-create the alarm")
+	})
+
+	t.Run("skip sentinel is distinct", func(t *testing.T) {
+		require.NotNil(t, errDeviceSkipped)
+		assert.False(t, errors.Is(errors.New("other error"), errDeviceSkipped),
+			"the skip sentinel must be distinguishable from real failures")
+	})
+}
+

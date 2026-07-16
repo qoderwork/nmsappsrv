@@ -26,6 +26,8 @@ type mockService struct {
 	clearAlarmFn            func(id int64) error
 	batchClearAlarmsFn      func(alarmIds []int64, clearUser string) (int64, []int64, error)
 	createAlarmFn           func(a *Alarm) error
+	getByElementTypeAlarmIdFn func(elementId int64, alarmType int, alarmId string) (*Alarm, error)
+	getByAlarmIdFn            func(alarmType int, alarmId string) (*Alarm, error)
 	checkAlarmSuppressionFn func(alarm *Alarm) (bool, string)
 	listAlarmLibraryFn      func(tenancyId int) ([]AlarmLibrary, error)
 	importAlarmLibraryFn    func(tenancyId int, items []AlarmLibrary) (int, error)
@@ -77,6 +79,20 @@ func (m *mockService) CreateAlarm(a *Alarm) error {
 		return m.createAlarmFn(a)
 	}
 	panic("mockService.CreateAlarm not implemented")
+}
+
+func (m *mockService) GetByElementTypeAlarmId(elementId int64, alarmType int, alarmId string) (*Alarm, error) {
+	if m.getByElementTypeAlarmIdFn != nil {
+		return m.getByElementTypeAlarmIdFn(elementId, alarmType, alarmId)
+	}
+	panic("mockService.GetByElementTypeAlarmId not implemented")
+}
+
+func (m *mockService) GetByAlarmId(alarmType int, alarmId string) (*Alarm, error) {
+	if m.getByAlarmIdFn != nil {
+		return m.getByAlarmIdFn(alarmType, alarmId)
+	}
+	panic("mockService.GetByAlarmId not implemented")
 }
 
 func (m *mockService) CheckAlarmSuppression(alarm *Alarm) (bool, string) {

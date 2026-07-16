@@ -9,11 +9,15 @@
 //
 // Phase 2a scope: the full orchestration / state machine / allocation /
 // geofence logic is implemented here. The external calls are gated by their
-// enable-state and routed through external.Transport; the real wire transport
-// (mTLS client certs, POP token, LMF session tokens, KML/CSV core-file
-// parsing) is left to Phase 2b. With an empty ZTP setting the orchestrator
-// refuses to start a device (validateZTPSettings fails) but the existing
-// AOS-generation path (ztp-aos-gen cron + tr069 worker) continues unaffected.
+// enable-state and routed through external.Transport. Phase 2b Increment ①/②
+// added the real mTLS wire transport (PKCS12 client certs, per-system
+// transports, LMF X-Auth-Token session flow); Increment ③ wired the KML/CSV
+// core-file parsing: the geofence polygon selects the market + ARFCN and the
+// matching CORE_NR_FEMTO record supplies the PLMN (MCC/MNC) + PCI, replacing
+// the Phase 2a hardcoded 310/260 default (which remains the safe fallback).
+// With an empty ZTP setting the orchestrator refuses to start a device
+// (validateZTPSettings fails) but the existing AOS-generation path
+// (ztp-aos-gen cron + tr069 worker) continues unaffected.
 package ztp
 
 import (
@@ -28,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"nmsappsrv/internal/alarm"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/ztp/external"
@@ -36,36 +41,77 @@ import (
 	"gorm.io/gorm"
 )
 
-// defaultMCC/defaultMNC are placeholders for the PLMN identity. In Java these
-// come from the CORE_NR_FEMTO.csv core file (market → plmn). Go does not yet
-// parse that CSV, so they default here; Phase 2b populates them from the core
-// file (TODO).
+// defaultMCC/defaultMNC are the fallback PLMN identity used when no core file
+// is available (the directory is absent) or no CORE_NR_FEMTO.csv record
+// matches the device's market. In Java these come from the CORE_NR_FEMTO.csv
+// core file (market → plmn); Phase 2b (Increment ③) now resolves them from
+// the parsed core data via resolveCoreValues, falling back to these defaults
+// only when the core file is missing or unmatched.
 const (
 	defaultMCC = "310"
 	defaultMNC = "260"
 )
 
+// errDeviceSkipped is returned by processElement when a device is excluded by
+// a gate (e.g. empty ACS URL) rather than failing. ScanAndProcess treats it as
+// a no-op skip: not logged as a failure and not counted as attempted.
+var errDeviceSkipped = errors.New("ztp: device skipped by gate")
+
 // Thread is the ZTP external-registration orchestrator.
 type Thread struct {
-	db        *gorm.DB
-	svc       misc.Service // GetZTPSetting + GenerateAOSFile
-	transport external.Transport
+	db         *gorm.DB
+	svc        misc.Service // GetZTPSetting + GenerateAOSFile
+	transports *external.Transports
+	alarmSvc   alarm.Service // raises ztp_failed alarms on gate/skip conditions
+	tplat      *external.TPlatformClient // T-Platform alert outcall (event-driven)
 }
 
-// NewThread builds an orchestrator. A nil transport is replaced with the Phase
-// 2a NotImplementedTransport (request built, no network call).
-func NewThread(db *gorm.DB, svc misc.Service, transport external.Transport) *Thread {
-	if transport == nil {
-		transport = external.NotImplementedTransport{}
+// NewThread builds an orchestrator. tc is the global mTLS transport config
+// (cert paths + passwords); a nil tc uses the Java-default paths read from
+// the environment. The per-system HTTP transports are built once here and
+// reused across every device in a scan, matching Java's singleton helper
+// beans (and preserving the LMF X-Auth-Token cache across devices). alarmSvc
+// raises the per-element "ztp_failed" alarm used by the Java-equivalent gates.
+func NewThread(db *gorm.DB, svc misc.Service, tc *external.TransportConfig, alarmSvc alarm.Service) *Thread {
+	if tc == nil {
+		tc = external.NewTransportConfig()
 	}
-	return &Thread{db: db, svc: svc, transport: transport}
+	tr, err := external.NewTransports(tc)
+	if err != nil {
+		logger.Errorf("ztp: failed to build mTLS transports (%v); disabled systems no-op, enabled systems will fail at the wire", err)
+		tr = &external.Transports{Shared: external.NotImplementedTransport{}, LMF: []external.Transport{external.NotImplementedTransport{}}}
+	}
+	return &Thread{db: db, svc: svc, transports: tr, alarmSvc: alarmSvc, tplat: external.NewTPlatformClient(tr, alarmSvc)}
 }
 
 // ScanAndProcess selects ready devices that have not yet been processed by
 // this orchestrator (aos_file_name IS NULL, read_to_ztp = 1, not in ztp_log)
 // and processes each. It mirrors Java's GenerateZTPFileThread.getNeedZTPElements
-// + per-element loop. Returns the number of devices attempted.
+// + per-element loop. The ZTP setting, external config, and the client
+// registry (with mTLS transports + LMF token cache) are built once here and
+// shared across all devices in the scan. Returns the number of devices
+// attempted.
 func (t *Thread) ScanAndProcess(ctx context.Context) (int, error) {
+	setting, err := t.svc.GetZTPSetting()
+	if err != nil {
+		return 0, fmt.Errorf("load ztp setting: %w", err)
+	}
+	if msg := validateZTPSettings(setting); msg != nil {
+		return 0, fmt.Errorf("ztp setting invalid: %s", *msg)
+	}
+	cfg := external.FromZTPSetting(setting)
+	reg := external.NewRegistryWithTransports(cfg, t.transports)
+	roller := external.NewRollback(reg)
+
+	// Load the core files (CORE_NR_FEMTO csv + N41_NR_SC kml) once per scan.
+	// A missing directory or parse error is non-fatal: the orchestrator keeps
+	// using the hardcoded PLMN default and skips polygon geofence selection,
+	// mirroring the Phase 2a behaviour.
+	coreRecords, spatialFiles, err := LoadCoreData(CoreFileDir)
+	if err != nil {
+		logger.Warnf("ztp: failed to load core files from %s: %v (continuing with defaults)", CoreFileDir, err)
+	}
+
 	var ids []int64
 	if err := t.db.Model(&device.CpeElement{}).
 		Where("aos_file_name IS NULL AND read_to_ztp = ? AND deleted = ? AND ne_neid NOT IN (SELECT element_id FROM ztp_log)", true, false).
@@ -74,7 +120,10 @@ func (t *Thread) ScanAndProcess(ctx context.Context) (int, error) {
 	}
 	attempted := 0
 	for _, id := range ids {
-		if err := t.ProcessElement(ctx, id); err != nil {
+		if err := t.processElement(ctx, id, setting, cfg, reg, roller, coreRecords, spatialFiles); err != nil {
+			if errors.Is(err, errDeviceSkipped) {
+				continue // gate skip: not a failure, not counted as attempted
+			}
 			logger.Warnf("ztp: device %d processing failed: %v", id, err)
 			continue
 		}
@@ -88,18 +137,10 @@ type locationMode struct {
 	Mode string `json:"mode"`
 }
 
-// ProcessElement runs the full ZTP registration flow for one device.
-func (t *Thread) ProcessElement(ctx context.Context, elementId int64) error {
-	setting, err := t.svc.GetZTPSetting()
-	if err != nil {
-		return fmt.Errorf("load ztp setting: %w", err)
-	}
-	if msg := validateZTPSettings(setting); msg != nil {
-		return fmt.Errorf("ztp setting invalid: %s", *msg)
-	}
-	cfg := external.FromZTPSetting(setting)
-	reg := external.NewRegistry(cfg, t.transport)
-	roller := external.NewRollback(reg)
+// processElement runs the full ZTP registration flow for one device. The
+// setting / external config / registry are built once by ScanAndProcess and
+// shared across devices (so the LMF token cache survives between devices).
+func (t *Thread) processElement(ctx context.Context, elementId int64, setting *misc.ZTPSetting, cfg *external.ExternalConfig, reg *external.Registry, roller *external.Rollback, coreRecords []*CoreRecord, spatialFiles []*SpatialFileDTO) error {
 
 	now := time.Now()
 	var ztpLog misc.ZTPLog
@@ -129,6 +170,16 @@ func (t *Thread) ProcessElement(ctx context.Context, elementId int64) error {
 		return errors.New("device has no serial number")
 	}
 	sn := *dev.SerialNumber
+
+	// acs_url gating (Java GenerateZTPFileThread line 459): if the device's
+	// TR-069 ACS URL (cpe_element.coon_req_url) is empty, raise the
+	// "ztp_failed" alarm and skip the device WITHOUT faulting the ztp_log
+	// (mirrors Java's triggerZTPAlarmForFemto + continue).
+	if dev.CoonReqUrl == nil || strings.TrimSpace(*dev.CoonReqUrl) == "" {
+		t.raiseZTPFailedAlarm(dev, "The ACS URL parameter is missing in Inform")
+		logger.Warnf("ztp: device %d skipped — ACS URL (coon_req_url) is empty", elementId)
+		return errDeviceSkipped
+	}
 
 	lat, lng, err := parseLatLng(dev.Latitude, dev.Longitude)
 	if err != nil {
@@ -167,6 +218,20 @@ func (t *Thread) ProcessElement(ctx context.Context, elementId int64) error {
 
 	market := strOrEmpty(dev.Market)
 
+	// Core-file-driven values (Phase 2b Increment ③). The geofence polygon
+	// (KML) selects the effective market + ARFCN; the matching CORE_NR_FEMTO
+	// record supplies the PLMN (MCC/MNC) + PCI. Falls back to the default PLMN
+	// and the device's own market when no polygon contains the point or no
+	// core record matches.
+	effMarket, dcMCC, dcMNC, dcNrPci, dcArfcnDl, dcArfcnUl, spatialHit, coreHit :=
+		resolveCoreValues(lat, lng, market, coreRecords, spatialFiles)
+	if !spatialHit && len(spatialFiles) > 0 {
+		logger.Warnf("ztp: device %d latitude/longitude did not match to the market (falling back to device market %q)", elementId, market)
+	}
+	if !coreHit {
+		logger.Warnf("ztp: device %d no CORE_NR_FEMTO record matched market %q; using default PLMN %s/%s", elementId, effMarket, dcMCC, dcMNC)
+	}
+
 	// gNB-ID allocation (reuse if still in range, else scan).
 	gnbID, _, err := allocateGnbID(t.db, setting, elementId, market)
 	if err != nil {
@@ -190,14 +255,14 @@ func (t *Thread) ProcessElement(ctx context.Context, elementId int64) error {
 		Latitude:     lat,
 		Longitude:    lng,
 		Altitude:     0,
-		MCC:          defaultMCC,
-		MNC:          defaultMNC,
+		MCC:          dcMCC,
+		MNC:          dcMNC,
 		CellID:       1,
 		TAC:          finalTac,
 		GnbID:        gnbID,
-		NrPci:        0,
-		ArfcnDl:      0,
-		ArfcnUl:      0,
+		NrPci:        dcNrPci,
+		ArfcnDl:      dcArfcnDl,
+		ArfcnUl:      dcArfcnUl,
 		PsapID:       psapID,
 		Uncertainty:  0,
 	}
@@ -374,6 +439,139 @@ func reassembleTAC(tacStart string, mid int) (int, error) {
 		return 0, fmt.Errorf("reassemble tac %q: %w", result, err)
 	}
 	return int(v), nil
+}
+
+// ---------------------------------------------------------------------------
+// Core-file value resolution (Phase 2b Increment ③)
+// ---------------------------------------------------------------------------
+
+// resolveCoreValues computes the PLMN, PCI and ARFCN values for a device from
+// the parsed ZTP core files:
+//   - The geofence polygon (N41_NR_SC KML) selects the effective market via
+//     point-in-polygon, and supplies the ARFCN DL/UL (its nRARFCN). When no
+//     polygon contains the device point, the device's own market is used and
+//     spatialHit is false.
+//   - The matching CORE_NR_FEMTO.csv record (by market) supplies the PLMN
+//     (MCC/MNC) and the PCI pool. When none matches, the default PLMN
+//     (310/260) is returned and coreHit is false.
+//
+// It is a pure function (no DB / network) so it is directly unit-testable.
+func resolveCoreValues(lat, lng float64, deviceMarket string, records []*CoreRecord, spatial []*SpatialFileDTO) (
+	effectiveMarket string, mcc, mnc string, nrPci, arfcnDl, arfcnUl int, spatialHit, coreHit bool,
+) {
+	effectiveMarket = deviceMarket
+	var sp *SpatialFileDTO
+	if len(spatial) > 0 {
+		sp = selectSpatialFile(lng, lat, spatial)
+	}
+	if sp != nil {
+		effectiveMarket = sp.Market
+		arfcnDl = sp.NRARFCN
+		arfcnUl = sp.NRARFCN
+		spatialHit = true
+	}
+	core := matchCoreRecord(records, effectiveMarket)
+	if core != nil {
+		mcc, mnc = core.MCC, core.MNC
+		nrPci = pickPCI(core.Pci)
+		coreHit = true
+	} else {
+		mcc, mnc = defaultMCC, defaultMNC
+	}
+	return
+}
+
+// matchCoreRecord finds the CORE_NR_FEMTO.csv record whose market matches m
+// (either the plain market name or the composite MarketKey). Returns the first
+// match, or nil when nothing matches (caller keeps the default PLMN).
+func matchCoreRecord(records []*CoreRecord, m string) *CoreRecord {
+	if m == "" {
+		return nil
+	}
+	for _, r := range records {
+		if r.Market == m || r.MarketKey == m {
+			return r
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// ZTP failure alarm (mirrors Java triggerZTPAlarmForFemto)
+// ---------------------------------------------------------------------------
+
+// ztpFailedAlarmID is the alarm_id Java raises for every ZTP failure. A single
+// logical alarm is kept per element and updated in place when the fault detail
+// changes, so repeated scans do not pile up duplicate alarms.
+const ztpFailedAlarmID = "ztp_failed"
+
+// raiseZTPFailedAlarm mirrors Java's triggerZTPAlarmForFemto: it raises (or
+// updates) the per-element "ztp_failed" alarm carrying faultInfo in its
+// additional_information, de-duplicating so repeated scans with the same
+// detail do not re-raise. It never writes a ztp_log fault — the caller
+// decides whether to skip (acs_url gate) or proceed (other faults use
+// setFault). Errors are logged and swallowed so an alarm outage cannot break
+// the orchestrator.
+func (t *Thread) raiseZTPFailedAlarm(dev device.CpeElement, faultInfo string) {
+	existing, err := t.alarmSvc.GetByElementTypeAlarmId(dev.NeNeid, alarm.AlarmTypeActive, ztpFailedAlarmID)
+	if err != nil {
+		logger.Warnf("ztp: lookup ztp_failed alarm for device %d failed: %v", dev.NeNeid, err)
+		existing = nil
+	}
+	// De-dup: already raised with the same detail → do nothing.
+	if existing != nil && strOrEmpty(existing.AdditionalInformation) == faultInfo {
+		return
+	}
+
+	now := time.Now()
+	if existing != nil {
+		// Detail changed → update the existing alarm in place.
+		if err := t.db.Model(&alarm.Alarm{}).Where("id = ?", existing.Id).Updates(map[string]interface{}{
+			"additional_information": faultInfo,
+			"update_time":            now,
+		}).Error; err != nil {
+			logger.Warnf("ztp: update ztp_failed alarm for device %d failed: %v", dev.NeNeid, err)
+		}
+		return
+	}
+
+	a := &alarm.Alarm{
+		AlarmId:               strPtr(ztpFailedAlarmID),
+		AlarmIdentifier:       strPtr(strconv.FormatInt(now.UnixMilli(), 10)),
+		AlarmSource:           strPtr("OMC"),
+		AlarmStatus:           intPtr(alarm.AlarmStatusActiveUnconfirmed),
+		AlarmType:             intPtr(alarm.AlarmTypeActive),
+		EventTime:             &now,
+		EventType:             strPtr("ZTP Alarm"),
+		NetworkElement:        strPtr("DN='OMC'"),
+		ProbableCause:         strPtr("ZTP failed. Please check the detailed information"),
+		Severity:              strPtr("Critical"),
+		SpecificProblem:       strPtr("ZTP Failed"),
+		ElementId:             &dev.NeNeid,
+		LicenseId:             dev.LicenseId,
+		UpdateTime:            &now,
+		AdditionalInformation: strPtr(faultInfo),
+	}
+	if err := t.alarmSvc.CreateAlarm(a); err != nil {
+		logger.Warnf("ztp: raise ztp_failed alarm for device %d failed: %v", dev.NeNeid, err)
+	}
+}
+
+// NotifyTPlatform forwards an operational alert to the T-Mobile T-Platform
+// alert-management API. It re-reads the live ZTPSetting (Java reads it from
+// system_config on every notify), refreshes the client's endpoint config, and
+// delegates to the TPlatformClient. This is an event-driven outcall — Java
+// triggers it from TplatformMessageConsumer (RabbitMQ); the ZTP registration
+// chain never calls it. Returns (accepted, err) — see
+// TPlatformClient.Notify for semantics (a non-nil err is informational, not
+// fatal; the t_platform_unavailable alarm already reflects the outage).
+func (t *Thread) NotifyTPlatform(ctx context.Context, req *external.TPlatformAlertRequest) (bool, error) {
+	setting, err := t.svc.GetZTPSetting()
+	if err != nil {
+		return false, fmt.Errorf("load ztp setting for t-platform notify: %w", err)
+	}
+	t.tplat.SetConfig(external.FromZTPSetting(setting).TPlatform)
+	return t.tplat.Notify(ctx, req)
 }
 
 // ---------------------------------------------------------------------------

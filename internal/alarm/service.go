@@ -22,6 +22,8 @@ type Service interface {
 	GetSeverityCount(licenseId int) ([]SeverityCount, error)
 	CreateAlarm(a *Alarm) error
 	CheckAlarmSuppression(alarm *Alarm) (bool, string)
+	GetByElementTypeAlarmId(elementId int64, alarmType int, alarmId string) (*Alarm, error)
+	GetByAlarmId(alarmType int, alarmId string) (*Alarm, error)
 	ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error)
 	ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error)
 	ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error)
@@ -126,6 +128,19 @@ func (s *service) CreateAlarm(a *Alarm) error {
 		return apperror.Wrap(err, "CREATE_ALARM_FAILED", 500, "failed to create alarm")
 	}
 	return nil
+}
+
+// GetByElementTypeAlarmId returns the most recent active alarm for a device
+// matching (alarm_type, alarm_id), or (nil, nil) when none exists. See the
+// repository method of the same name.
+func (s *service) GetByElementTypeAlarmId(elementId int64, alarmType int, alarmId string) (*Alarm, error) {
+	return s.repo.GetByElementTypeAlarmId(elementId, alarmType, alarmId)
+}
+
+// GetByAlarmId returns the most recently updated alarm matching (alarm_type,
+// alarm_id), ignoring element_id. See the repository method of the same name.
+func (s *service) GetByAlarmId(alarmType int, alarmId string) (*Alarm, error) {
+	return s.repo.GetByAlarmId(alarmType, alarmId)
 }
 
 // CheckAlarmSuppression checks whether the given alarm matches any active

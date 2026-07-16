@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"nmsappsrv/internal/misc"
 )
@@ -499,10 +500,11 @@ type lmfCellData struct {
 // LMFClient registers a cell with one LMF instance. Up to four are created
 // (LMF, LMF2, LMF3, LMF4), each with its own config + transport.
 type LMFClient struct {
-	name      string
-	cfg       *misc.ExternalEndpointSetting
-	transport Transport
-	token     string // cached X-Auth-Token (Phase 2b refreshes on 403)
+	name          string
+	cfg           *misc.ExternalEndpointSetting
+	transport     Transport
+	token         string // cached X-Auth-Token session token
+	lastTokenTime time.Time
 }
 
 // NewLMFClient builds an LMF client for a named instance (e.g. "lmf", "lmf-2").
@@ -523,33 +525,43 @@ func (c *LMFClient) Enabled() bool {
 }
 
 // refreshToken obtains a session X-Auth-Token from the LMF /tokens endpoint.
-// Phase 2a: documented here; the real call is performed by the Phase 2b
-// Transport (mTLS client cert + 403-triggered refresh). For 2a the transport
-// is NotImplemented, so this returns ErrNotImplemented when no token cached.
+// Mirrors Java LMFHelper.freshToken: the token is acquired with an
+// LMFLoginDTO{auth:{method:"password",password:{user_id,password}}} body and
+// read from the X-Auth-Token RESPONSE header. Java refreshes only on a 4-minute
+// TTL (not on 401/409), so we re-fetch when the cached token is empty or older
+// than 4 minutes.
 func (c *LMFClient) refreshToken(ctx context.Context) error {
-	if c.token != "" {
+	if c.token != "" && time.Since(c.lastTokenTime) < 4*time.Minute {
 		return nil
 	}
-	body, _ := json.Marshal(map[string]string{
-		"username": strOrEmpty(c.cfg.Username),
-		"password": strOrEmpty(c.cfg.Password),
+	body, _ := json.Marshal(map[string]interface{}{
+		"auth": map[string]interface{}{
+			"method": "password",
+			"password": map[string]string{
+				"user_id":  strOrEmpty(c.cfg.Username),
+				"password": strOrEmpty(c.cfg.Password),
+			},
+		},
 	})
 	resp, err := c.transport.RoundTrip(ctx, &TransportRequest{
-		Method: "POST",
-		URL:    strings.TrimRight(strOrEmpty(c.cfg.URL), "/") + "/tokens",
+		Method:  "POST",
+		URL:     strings.TrimRight(strOrEmpty(c.cfg.URL), "/") + "/tokens",
 		Headers: map[string]string{"Content-Type": "application/json"},
-		Body:   body,
+		Body:    body,
 	})
 	if err != nil {
 		return err
 	}
-	if resp.Headers != nil {
-		if h, ok := resp.Headers["X-Auth-Token"]; ok {
-			c.token = h
-			return nil
-		}
+	if resp.Headers == nil {
+		return fmt.Errorf("lmf %s: no X-Auth-Token in response", c.name)
 	}
-	return fmt.Errorf("lmf %s: no X-Auth-Token in response", c.name)
+	tok, ok := resp.Headers["X-Auth-Token"]
+	if !ok || tok == "" {
+		return fmt.Errorf("lmf %s: no X-Auth-Token in response", c.name)
+	}
+	c.token = tok
+	c.lastTokenTime = time.Now()
+	return nil
 }
 
 // Add registers the cell with the LMF instance.

@@ -4,14 +4,15 @@
 // MSAG (address normalization), BMC (old XML + new JSON), LMF (1–4 instances,
 // X-Auth-Token), GMLC (SOAP/SPML), and the E911 rollback orchestrator.
 //
-// Phase 2a scope: every client builds the correct request shape (SOAP
-// envelope / JSON body / query string), derives its enable-state from the
-// persisted ZTPSetting, and runs through a Transport abstraction. The real
-// wire transport (mTLS client certs, POP token signing, LMF session tokens,
-// KML parsing) is intentionally left as a TODO — the default Transport
-// returns ErrNotImplemented so the orchestrator's behaviour (gating, state
-// machine, allocation, rollback) is fully exercisable without dialling out.
-// Phase 2b swaps in a real Transport implementation.
+// Every client builds the correct request shape (SOAP envelope / JSON body /
+// query string) and derives its enable-state from the persisted ZTPSetting.
+// Calls flow through a Transport abstraction. Phase 2a used a
+// NotImplementedTransport (request built, no network call) so the
+// orchestrator's behaviour (gating, state machine, allocation, rollback) was
+// fully exercisable without dialling out. Phase 2b adds a real HTTPTransport
+// (mTLS PKCS12 client certs, per-system transports, 5s timeouts) and the LMF
+// X-Auth-Token session flow; remaining wire work (KML/CSV core-file parsing,
+// T-Platform PoP token) is tracked separately.
 package external
 
 import (
