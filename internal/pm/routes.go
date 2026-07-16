@@ -32,4 +32,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.GET("/pm/pdcp-traffic", h.GetPDCPTraffic)
 	rg.GET("/pm/device-online-info", h.GetDeviceOnlineInfo)
 	rg.GET("/pm/product-type-device-count", h.GetProductTypeAndDeviceCount)
+	rg.POST("/pm/export-excel", h.ExportPMExcel)
+	rg.POST("/pm/kpis/import", h.ImportKPIs)
+	rg.GET("/pm/file-logs/download", h.DownloadPMFile)
 }

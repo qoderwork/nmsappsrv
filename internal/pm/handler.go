@@ -381,3 +381,62 @@ func (h *Handler) GetProductTypeAndDeviceCount(c *gin.Context) {
 	}
 	utils.Success(c, items)
 }
+
+// ExportPMExcel handles POST /pm/export-excel
+// Body: {"startTime": RFC3339, "endTime": RFC3339, "elementId"?: int,
+//        "templateId"?: int}. Mirrors Java exportPMExcel.
+func (h *Handler) ExportPMExcel(c *gin.Context) {
+	tenancyId := middleware.GetLicenseId(c)
+	var body struct {
+		StartTime  string `json:"startTime"`
+		EndTime    string `json:"endTime"`
+		ElementId  int64  `json:"elementId"`
+		TemplateId int    `json:"templateId"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, 400, "invalid request body")
+		return
+	}
+	data, filename, err := h.svc.ExportPMExcel(tenancyId, body.StartTime, body.EndTime)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
+}
+
+// ImportKPIs handles POST /pm/kpis/import
+// Body: array of PerformanceKpi. Mirrors Java importKPI.
+func (h *Handler) ImportKPIs(c *gin.Context) {
+	var items []PerformanceKpi
+	if err := c.ShouldBindJSON(&items); err != nil {
+		utils.Error(c, 400, "invalid request body: expected array of KPIs")
+		return
+	}
+	count, err := h.svc.ImportKPIs(items)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, map[string]int{"imported": count})
+}
+
+// DownloadPMFile handles GET /pm/file-logs/download?elementId=&startTime=&endTime=
+// Mirrors Java downloadPMFile.
+func (h *Handler) DownloadPMFile(c *gin.Context) {
+	elementId, err := strconv.ParseInt(c.Query("elementId"), 10, 64)
+	if err != nil || elementId <= 0 {
+		utils.Error(c, 400, "invalid or missing elementId")
+		return
+	}
+	startTime := c.Query("startTime")
+	endTime := c.Query("endTime")
+	data, filename, err := h.svc.DownloadPMFile(elementId, startTime, endTime)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "application/octet-stream", data)
+}

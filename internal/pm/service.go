@@ -1,13 +1,19 @@
 package pm
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
 
+	"nmsappsrv/internal/config"
 	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/redis"
 )
@@ -48,6 +54,23 @@ type Service interface {
 	GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error)
 	GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error)
 	GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error)
+	// ExportPMExcel serialises the dashboard PM data for the license in the
+	// given date range as CSV. Mirrors Java exportPMExcel (Go uses CSV; the
+	// Java side builds an xlsx workbook -- the row semantics are the same).
+	// The Go side ignores elementId/templateId and exports the full tenancy
+	// dashboard; the Java 7-day cap is enforced here too.
+	ExportPMExcel(tenancyId int, startTime, endTime string) ([]byte, string, error)
+	// ImportKPIs bulk-inserts KPIs from a JSON array. Mirrors Java importKPI
+	// (Go uses JSON; the Java side parses an uploaded xlsx -- same bulk
+	// semantics on the DB side).
+	ImportKPIs(items []PerformanceKpi) (int, error)
+	// DownloadPMFile serves the newest pm_file_log file for the device in
+	// the given time range. Mirrors Java downloadPMFile. The file is read
+	// from the configured file_server.pm_dir using the row's file_name
+	// (the Go pm_file_log has no file_path column; the Java collector that
+	// writes files under the configured root is not ported yet, so this
+	// endpoint will 404 until a producer exists).
+	DownloadPMFile(elementId int64, startTime, endTime string) ([]byte, string, error)
 }
 
 // service is the concrete implementation of Service.
@@ -376,6 +399,123 @@ func strVal(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// ExportPMExcel serialises the dashboard PM data for the license in the
+// given date range as CSV. Mirrors Java exportPMExcel (Go uses CSV; the
+// Java side builds an xlsx workbook -- the row semantics are the same).
+// Enforces the Java 7-day cap.
+func (s *service) ExportPMExcel(tenancyId int, startTime, endTime string) ([]byte, string, error) {
+	st, et, err := parseTimeRange(startTime, endTime)
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "EXPORT_PM_EXCEL_BAD_RANGE", 400, "invalid time range")
+	}
+	if et.Sub(st) > 7*24*time.Hour {
+		return nil, "", apperror.New("EXPORT_PM_EXCEL_RANGE_TOO_LARGE", 400, "time range must be <= 7 days")
+	}
+	rows, err := s.repo.FindDashboardData(tenancyId, st, et)
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "EXPORT_PM_EXCEL_FAILED", 500, "failed to load dashboard data")
+	}
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write([]string{"id", "time", "pdcp_ul_rate", "pdcp_dl_rate", "cell_available_rate", "tenancy_id"})
+	for _, r := range rows {
+		var timeStr string
+		if r.Time != nil {
+			timeStr = r.Time.Format(time.RFC3339)
+		}
+		_ = w.Write([]string{
+			strconv.FormatInt(r.Id, 10),
+			timeStr,
+			optFloat(r.PdcpUlRate),
+			optFloat(r.PdcpDlRate),
+			optFloat(r.CellAvailableRate),
+			optInt(r.TenancyId),
+		})
+	}
+	w.Flush()
+	filename := fmt.Sprintf("pm-export-%s.csv", time.Now().Format("20060102-150405"))
+	return buf.Bytes(), filename, nil
+}
+
+// ImportKPIs bulk-inserts KPIs from a JSON array. Mirrors Java importKPI.
+func (s *service) ImportKPIs(items []PerformanceKpi) (int, error) {
+	if len(items) == 0 {
+		return 0, nil
+	}
+	if err := s.repo.BulkCreateKPIs(items); err != nil {
+		return 0, apperror.Wrap(err, "IMPORT_KPIS_FAILED", 500, "failed to import KPIs")
+	}
+	return len(items), nil
+}
+
+// DownloadPMFile serves the newest pm_file_log file for the device in
+// the given time range. Mirrors Java downloadPMFile. File path is
+// constructed from config.FileServer.PmDir + row.FileName (the Go
+// pm_file_log has no file_path column).
+func (s *service) DownloadPMFile(elementId int64, startTime, endTime string) ([]byte, string, error) {
+	st, et, err := parseTimeRange(startTime, endTime)
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "DOWNLOAD_PM_FILE_BAD_RANGE", 400, "invalid time range")
+	}
+	rows, err := s.repo.FindPMFileLogsInRange(elementId, st, et)
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "DOWNLOAD_PM_FILE_FAILED", 500, "failed to load PM file log")
+	}
+	if len(rows) == 0 {
+		return nil, "", apperror.New("DOWNLOAD_PM_FILE_NOT_FOUND", 404, "no PM file in range")
+	}
+	row := rows[0]
+	if row.FileName == nil || *row.FileName == "" {
+		return nil, "", apperror.New("DOWNLOAD_PM_FILE_NO_FILENAME", 500, "PM file log has no filename")
+	}
+	pmDir := ""
+	if config.Cfg != nil {
+		pmDir = config.Cfg.FileServer.PmDir
+	}
+	if pmDir == "" {
+		return nil, "", apperror.New("DOWNLOAD_PM_FILE_NO_DIR", 500, "file_server.pm_dir not configured")
+	}
+	path := filepath.Join(pmDir, *row.FileName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "DOWNLOAD_PM_FILE_READ_FAILED", 500, fmt.Sprintf("read %s: %v", path, err))
+	}
+	return data, *row.FileName, nil
+}
+
+// parseTimeRange parses two RFC3339 strings and returns them as time.Time.
+// Empty strings are rejected (the caller can default to "now" if needed).
+func parseTimeRange(startTime, endTime string) (time.Time, time.Time, error) {
+	if startTime == "" || endTime == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("startTime and endTime are required (RFC3339)")
+	}
+	st, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("startTime: %w", err)
+	}
+	et, err := time.Parse(time.RFC3339, endTime)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("endTime: %w", err)
+	}
+	return st, et, nil
+}
+
+// optFloat formats a *float64 as a string (empty if nil).
+func optFloat(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*p, 'f', -1, 64)
+}
+
+// optInt formats a *int as a string (empty if nil).
+func optInt(p *int) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.Itoa(*p)
 }
 
 // newService creates a Service backed by the given Repository (test/mock helper).

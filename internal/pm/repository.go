@@ -42,6 +42,8 @@ type Repository interface {
 	FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error)
 	FindAllActiveElements(licenseId int) ([]elementRow, error)
 	FindAllActiveElementsAllTenants() ([]elementRow, error)
+	BulkCreateKPIs(items []PerformanceKpi) error
+	FindPMFileLogsInRange(elementId int64, startTime, endTime time.Time) ([]PMFileLog, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -218,4 +220,24 @@ func (r *repository) FindAllActiveElementsAllTenants() ([]elementRow, error) {
 		Where("deleted = 0").
 		Find(&rows).Error
 	return rows, err
+}
+
+// BulkCreateKPIs inserts a batch of KPI rows in one statement. Mirrors the
+// bulk path of Java importKPI (Go uses JSON; Java uses xlsx).
+func (r *repository) BulkCreateKPIs(items []PerformanceKpi) error {
+	if len(items) == 0 {
+		return nil
+	}
+	return r.db.Create(&items).Error
+}
+
+// FindPMFileLogsInRange returns the PMFileLog rows for a device inside
+// [startTime, endTime], newest first. Used by DownloadPMFile to pick the
+// file to serve. Mirrors Java pmFileLogService.getByElementIdAndStartTimeBetween.
+func (r *repository) FindPMFileLogsInRange(elementId int64, startTime, endTime time.Time) ([]PMFileLog, error) {
+	var items []PMFileLog
+	err := r.db.Where("ne_id = ? AND start_time BETWEEN ? AND ?", elementId, startTime, endTime).
+		Order("start_time DESC").
+		Find(&items).Error
+	return items, err
 }
