@@ -1,0 +1,622 @@
+pcf:
+  system:
+    display: "System"
+    list:
+    - name: "serviceIP"
+      type: "ipv4"
+      value: "172.16.5.160"
+      access: "read-write"
+      filter: ''
+      display: "Service IP"
+      comment: ""
+    - name: "servicePort"
+      type: "int"
+      value: "8080"
+      access: "read-write"
+      filter: "0~65535"
+      display: "Service Port"
+      comment: ""
+    - name: "scheme"
+      type: "enum"
+      value: "0"
+      access: "read-write"
+      filter: "{\"0\":\"HTTP\", \"1\":\"HTTPS\"}"
+      display: "Scheme"
+      comment: ""
+    - name: "nrfUri"
+      type: "string"
+      value: "http://172.16.5.180:8080"
+      access: "read-write"
+      filter: ''
+      display: "NRF URI"
+      comment: ""
+    - name: "supportedPlmn1"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn1"
+      comment: ""
+    - name: "supportedPlmn2"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn2"
+      comment: ""
+    - name: "supportedPlmn3"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn3"
+      comment: ""
+    - name: "supportedPlmn4"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn4"
+      comment: ""
+  serviceAreaRestriction:
+    display: "Service Area Restriction"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_ambr'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "restrictionType"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Allowed Areas\", \"1\":\"Not Allowed Areas\"}"
+        display: "Restriction Type"
+        comment: ""
+      - name: "tacs"
+        type: "string"
+        value: '123'
+        access: "read-write"
+        filter: ''
+        display: "TACs"
+        comment: ""
+      - name: "areaCodes"
+        type: "string"
+        value: '123456'
+        access: "read-write"
+        filter: ''
+        display: "Area Codes"
+        comment: ""
+      - name: "maxTAs"
+        type: "int"
+        value: "1"
+        access: "read-write"
+        filter: '^\d{1,2}$'
+        display: "Max TAs"
+        comment: ""
+  pccRules:
+    display: "PCC Rules"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~64'
+        display: "Index"
+        comment: ""
+      - name: "ruleId"
+        type: "string"
+        value: 'internet'
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Rule ID"
+        comment: ""
+      - name: "activate"
+        type: "bool"
+        value: 'true'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "Activate"
+        comment: ""
+      - name: "precedence"
+        type: "int"
+        value: "80"
+        access: "read-write"
+        filter: '0~255'
+        display: "Precedence"
+        comment: ""
+      - name: "flowUsage"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"General\", \"1\":\"IMS-Signalling\"}"
+        display: "Flow Usage"
+        comment: ""
+      - name: "appId"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "APP ID"
+        comment: ""
+      - name: "flowTemplate"
+        type: "string"
+        value: 'flow_any'
+        access: "read-write"
+        filter: '^.{1,255}$'
+        display: "Flow Template"
+        comment: ""
+      - name: "qosId"
+        type: "string"
+        value: 'qos_internet'
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "QoS ID"
+        comment: ""
+      - name: "trafficControlId"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Traffic Control ID"
+        comment: ""
+      - name: "usageMonitoringId"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Usage Monitoring ID"
+        comment: ""
+  sessionRules:
+    display: "Session Rules"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~64'
+        display: "Index"
+        comment: ""
+      - name: "ruleId"
+        type: "string"
+        value: 'internet'
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Rule ID"
+        comment: ""
+      - name: "activate"
+        type: "bool"
+        value: 'true'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "Activate"
+        comment: ""
+      - name: "fiveQI"
+        type: "int"
+        value: "9"
+        access: "read-write"
+        filter: '0~255'
+        display: "5QI"
+        comment: ""
+      - name: "fiveQIPriorityLevel"
+        type: "int"
+        value: "80"
+        access: "read-write"
+        filter: '0~127'
+        display: "5QI Priority Level"
+        comment: ""
+      - name: "flowUsage"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"General\", \"1\":\"IMS-Signalling\"}"
+        display: "Flow Usage"
+        comment: ""
+      - name: "usageMonitoringId"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Usage Monitoring ID"
+        comment: ""
+      - name: "ambrDl"
+        type: "string"
+        value: '200Mbps'
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "AMBR Downlink"
+        comment: ""
+      - name: "ambrUl"
+        type: "string"
+        value: '100Mbps'
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "AMBR Uplink"
+        comment: ""
+      - name: "averagingWindow"
+        type: "int"
+        value: "0"
+        access: "read-write"
+        filter: '0~4095'
+        display: "Averaging Window"
+        comment: ""
+      - name: "maxDataBurstVolume"
+        type: "int"
+        value: "0"
+        access: "read-write"
+        filter: '0~4095'
+        display: "Max Data Burst Volume"
+        comment: ""
+      - name: "arpPriorityLevel"
+        type: "int"
+        value: "1"
+        access: "read-write"
+        filter: '1~15'
+        display: "ARP Priority Level"
+        comment: ""
+      - name: "arpPreemptCap"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"Not Preempt\",\"1\":\"May Preempt\"}"
+        display: "ARP Preempt Capability"
+        comment: ""
+      - name: "arpPreemptVuln"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"Not Preemptable\",\"1\":\"Preemptable\"}"
+        display: "ARP Preempt Vulnerability"
+        comment: ""
+      - name: "maxbrDl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Max Bitrate Downlink"
+        comment: ""
+      - name: "maxbrUl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Max Bitrate Uplink"
+        comment: ""
+      - name: "gbrDl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "GBR Downlink"
+        comment: ""
+      - name: "gbrUl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "GBR Uplink"
+        comment: ""
+  gxServer:
+    display: "Gx Server"
+    list:
+    - name: "enable"
+      type: "bool"
+      value: 'true'
+      access: "read-write"
+      filter: 'false;true;'
+      display: "Enable"
+      comment: ""
+    - name: "netType"
+      type: "enum"
+      value: '1'
+      access: "read-write"
+      filter: "{\"0\":\"TCP\",\"1\":\"SCTP\"}"
+      display: "Link Type"
+      comment: ""
+    - name: "addr"
+      type: "string"
+      value: "172.16.5.140:3868"
+      access: "read-write"
+      filter: ''
+      display: "Address"
+      comment: ""
+    - name: "host"
+      type: "string"
+      value: "hss.ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{0,127}$'
+      display: "Host"
+      comment: ""
+    - name: "realm"
+      type: "string"
+      value: "ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{0,127}$'
+      display: "Realm"
+      comment: ""
+  rxServer:
+    display: "Rx Server"
+    list:
+    - name: "enable"
+      type: "bool"
+      value: 'true'
+      access: "read-write"
+      filter: 'false;true;'
+      display: "Enable"
+      comment: ""
+    - name: "netType"
+      type: "enum"
+      value: '0'
+      access: "read-write"
+      filter: "{\"0\":\"TCP\",\"1\":\"SCTP\"}"
+      display: "Link Type"
+      comment: ""
+    - name: "addr"
+      type: "string"
+      value: "172.16.5.140:3868"
+      access: "read-write"
+      filter: ''
+      display: "Address"
+      comment: ""
+    - name: "host"
+      type: "string"
+      value: "hss.ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{0,127}$'
+      display: "Host"
+      comment: ""
+    - name: "realm"
+      type: "string"
+      value: "ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{0,127}$'
+      display: "Realm"
+      comment: ""
+  flowTemplate:
+    display: "Flow Template"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~256'
+        display: "Index"
+        comment: ""
+      - name: "templateName"
+        type: "string"
+        value: 'flow_any'
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Template Name"
+        comment: ""
+      - name: "flowDescription"
+        type: "string"
+        value: 'permit out ip from any to assigned'
+        access: "read-write"
+        filter: '^.{1,127}$'
+        display: "Flow Description"
+        comment: ""
+      - name: "flowDirection"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Unspecified\", \"1\":\"Uplink\", \"2\":\"Downlink\", \"3\":\"Bidirectional\"}"
+        display: "Flow Direction"
+        comment: ""
+  qosTemplate:
+    display: "QoS Template"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~64'
+        display: "Index"
+        comment: ""
+      - name: "qosId"
+        type: "string"
+        value: 'qos_internet'
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "QoS ID"
+        comment: ""
+      - name: "fiveQI"
+        type: "int"
+        value: "9"
+        access: "read-write"
+        filter: '0~255'
+        display: "5QI"
+        comment: ""
+      - name: "fiveQIPriorityLevel"
+        type: "int"
+        value: "80"
+        access: "read-write"
+        filter: '0~127'
+        display: "5QI Priority Level"
+        comment: ""
+      - name: "maxbrDl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Max Bitrate Downlink"
+        comment: ""
+      - name: "maxbrUl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Max Bitrate Uplink"
+        comment: ""
+      - name: "gbrDl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "GBR Downlink"
+        comment: ""
+      - name: "gbrUl"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "GBR Uplink"
+        comment: ""
+      - name: "arpPriorityLevel"
+        type: "int"
+        value: "1"
+        access: "read-write"
+        filter: '1~15'
+        display: "ARP Priority Level"
+        comment: ""
+      - name: "arpPreemptCap"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"Not Preempt\",\"1\":\"May Preempt\"}"
+        display: "ARP Preempt Capability"
+        comment: ""
+      - name: "arpPreemptVuln"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"Not Preemptable\",\"1\":\"Preemptable\"}"
+        display: "ARP Preempt Vulnerability"
+        comment: ""
+      - name: "defQosFlowIndication"
+        type: "bool"
+        value: 'false'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "Default QoS Flow Indication"
+        comment: ""
+  usageMonitoringTemplate:
+    display: "Usage Monitoring Template"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~64'
+        display: "Index"
+        comment: ""
+      - name: "umId"
+        type: "string"
+        value: 'flow_any'
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Usage Monitoring ID"
+        comment: ""
+      - name: "volumeThreshold"
+        type: "int"
+        value: '5242880'
+        access: "read-write"
+        filter: ''
+        display: "Volume Threshold(KB)"
+        comment: ""
+      - name: "volumeThresholdUplink"
+        type: "int"
+        value: '0'
+        access: "read-write"
+        filter: ''
+        display: "Volume Threshold Uplink(KB)"
+        comment: ""
+      - name: "volumeThresholdDownlink"
+        type: "int"
+        value: '0'
+        access: "read-write"
+        filter: ''
+        display: "Volume Threshold Downlink(KB)"
+        comment: ""
+      - name: "timeThreshold"
+        type: "int"
+        value: '0'
+        access: "read-write"
+        filter: ''
+        display: "Time Threshold"
+        comment: ""
+      - name: "inactivityTime"
+        type: "int"
+        value: '0'
+        access: "read-write"
+        filter: ''
+        display: "Inactivity Time"
+        comment: ""
+  trafficControlTemplate:
+    display: "Traffic Control Template"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~64'
+        display: "Index"
+        comment: ""
+      - name: "tcId"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Traffic Control ID"
+        comment: ""
+      - name: "flowStatus"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Disable\", \"1\":\"Uplink\", \"2\":\"Downlink\", \"3\":\"Enable\", \"4\":\"Remove\"}"
+        display: "Flow Status"
+        comment: ""
+      - name: "muteNotif"
+        type: "bool"
+        value: 'true'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "Mute Notify"
+        comment: ""
+      - name: "dnai"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Route to Location DNAI"
+        comment: ""
+  headerEnrichTemplate:
+    display: "Header Enrich Template"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "templateName"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Template Name"
+        comment: ""
+      - name: "headerType"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"GPSI\", \"1\":\"SUPI\", \"2\":\"UE IP\", \"3\":\"User Location\", \"4\":\"DNN\"}"
+        display: "Header Type"
+        comment: ""
+      - name: "headerName"
+        type: "string"
+        value: ''
+        access: "read-write"
+        filter: '^.{1,63}$'
+        display: "Header Name"
+        comment: ""

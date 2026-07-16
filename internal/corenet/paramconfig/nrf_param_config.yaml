@@ -1,0 +1,64 @@
+nrf:
+  system:
+    display: "System"
+    list:
+    - name: "serviceIP"
+      type: "ipv4"
+      value: "172.16.5.180"
+      access: "read-write"
+      filter: ''
+      display: "Service IP"
+      comment: ""
+    - name: "servicePort"
+      type: "int"
+      value: "8080"
+      access: "read-write"
+      filter: "0~65535"
+      display: "Service Port"
+      comment: ""
+    - name: "scheme"
+      type: "enum"
+      value: "0"
+      access: "read-write"
+      filter: "{\"0\":\"HTTP\", \"1\":\"HTTPS\"}"
+      display: "Scheme"
+      comment: ""
+  registeredNFs:
+    display: "Registered NFs"
+    method: "get"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~256'
+        display: "Index"
+        comment: ""
+      - name: "nfType"
+        type: "string"
+        value: ''
+        access: "read-only"
+        filter: '^.{1,128}$'
+        display: "NF Type"
+        comment: ""
+      - name: "status"
+        type: "string"
+        value: ''
+        access: "read-only"
+        filter: '^.{1,128}$'
+        display: "Status"
+        comment: ""
+      - name: "nfId"
+        type: "string"
+        value: ''
+        access: "read-only"
+        filter: '^.{1,128}$'
+        display: "NF ID"
+        comment: ""
+      - name: "ipAddress"
+        type: "string"
+        value: ''
+        access: "read-only"
+        filter: '^.{1,128}$'
+        display: "IP Address"
+        comment: ""

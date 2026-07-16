@@ -59,6 +59,16 @@ type Service interface {
 	// (mirrors Java kpi() / dealUPFKPI). This is the ingest half of the
 	// KPI collector that makes core_network_kpi non-empty.
 	IngestCoreNetworkKpi(dto IngestCoreNetworkKpiDTO) error
+
+	// Tier 1.5 corenet parameter CRUD (mirrors Java CoreNetworkManagementController
+	// getCoreNetworkParameters / setCoreNetworkParameters / queryCoreNetworkParameters /
+	// deleteCoreNetworkParameter / addCoreNetworkParameter). These operate on the
+	// core-network element's local management API (:33030) plus operation logging.
+	GetCoreNetworkParameters(query GetCoreNetworkParametersQuery) (*CoreNetworkParamElementVO, error)
+	SetCoreNetworkParameters(dto SetCoreNetworkParametersDTO, user string) (int64, error)
+	QueryCoreNetworkParameters(dto QueryCoreNetworkParametersDTO, user string) (int64, error)
+	DeleteCoreNetworkParameter(dto DeleteCoreNetworkParameterDTO, user string) (int64, error)
+	AddCoreNetworkParameter(dto SetCoreNetworkParametersDTO, user string) (int64, error)
 	// GetBuiltInCoreNetworkUpfTraffic returns the built-in UPF traffic
 	// view (excludes user-supplied KPI rows). Mirrors Java
 	// getBuiltInCoreNetworkUpfTraffic.
@@ -427,6 +437,110 @@ func addFloat(base *float64, add float64) float64 {
 		return *base + add
 	}
 	return add
+}
+
+// logCoreNetOp writes a core_network_operation_log row (mirrors Java
+// CoreNetworkOperationLog creation in the parameter endpoints) and returns
+// its id. Failures are logged but non-fatal — Java treats the log as
+// bookkeeping, not the operation result.
+func (s *service) logCoreNetOp(coreNetworkId int, logType, user, info, requestId string) int64 {
+	now := time.Now()
+	log := &CoreNetworkOperationLog{
+		LogType:       &logType,
+		User:          &user,
+		CoreNetworkId: &coreNetworkId,
+		Info:          &info,
+		RequestId:     &requestId,
+		Result:        intPtr(1),
+		OperationTime: &now,
+	}
+	if err := s.repo.CreateOperationLog(log); err != nil {
+		logger.Errorf("logCoreNetOp(%s) failed: %v", logType, err)
+		return 0
+	}
+	return log.Id
+}
+
+func intPtr(i int) *int { return &i }
+
+// GetCoreNetworkParameters returns the parameter catalog for an element type,
+// enriched with the stored config values from core_network_data. Mirrors
+// Java getCoreNetworkParameters.
+func (s *service) GetCoreNetworkParameters(query GetCoreNetworkParametersQuery) (*CoreNetworkParamElementVO, error) {
+	if query.CoreNetworkId <= 0 || query.ElementType == "" {
+		return nil, fmt.Errorf("coreNetworkId and elementType are required")
+	}
+	vo, err := loadCatalog(query.ElementType)
+	if err != nil {
+		return nil, err
+	}
+	var data *CoreNetworkData
+	if d, derr := s.repo.FindCoreNetworkData(query.CoreNetworkId); derr == nil {
+		data = d
+	}
+	for i := range vo.Params {
+		vo.Params[i].Data = enrichCoreNetParamData(data, query.ElementType, vo.Params[i].Name)
+	}
+	return vo, nil
+}
+
+// SetCoreNetworkParameters pushes config values to the element's 33030 API
+// (PUT) and logs the operation. Mirrors Java setCoreNetworkParameters.
+func (s *service) SetCoreNetworkParameters(dto SetCoreNetworkParametersDTO, user string) (int64, error) {
+	if dto.CoreNetworkId == 0 || dto.Name == "" {
+		return 0, fmt.Errorf("coreNetworkId and name are required")
+	}
+	body, _ := json.Marshal(dto.Data)
+	requestID := fmt.Sprintf("set:%s", dto.Name)
+	if _, err := callElementConfig(dto.ElementType, dto.Name, dto.Index, "PUT", dto.Data); err != nil {
+		return 0, err
+	}
+	info := dto.Name + ":" + string(body)
+	return s.logCoreNetOp(dto.CoreNetworkId, "Set Parameter", user, info, requestID), nil
+}
+
+// QueryCoreNetworkParameters reads config values from the element's 33030
+// API (GET) and logs the operation. Mirrors Java queryCoreNetworkParameters.
+func (s *service) QueryCoreNetworkParameters(dto QueryCoreNetworkParametersDTO, user string) (int64, error) {
+	if dto.CoreNetworkId == 0 || dto.Name == "" {
+		return 0, fmt.Errorf("coreNetworkId and name are required")
+	}
+	requestID := fmt.Sprintf("query:%s", dto.Name)
+	if _, err := callElementConfig(dto.ElementType, dto.Name, nil, "GET", nil); err != nil {
+		return 0, err
+	}
+	return s.logCoreNetOp(dto.CoreNetworkId, "Query Parameter", user, dto.Name, requestID), nil
+}
+
+// DeleteCoreNetworkParameter removes a config array element on the element's
+// 33030 API (DELETE) and logs the operation. Mirrors Java
+// deleteCoreNetworkParameter.
+func (s *service) DeleteCoreNetworkParameter(dto DeleteCoreNetworkParameterDTO, user string) (int64, error) {
+	if dto.Name == "" || dto.Index == 0 {
+		return 0, fmt.Errorf("name and index are required")
+	}
+	idx := dto.Index
+	requestID := fmt.Sprintf("delete:%s", dto.Name)
+	if _, err := callElementConfig(dto.ElementType, dto.Name, &idx, "DELETE", nil); err != nil {
+		return 0, err
+	}
+	info := fmt.Sprintf("%s:%d", dto.Name, dto.Index)
+	return s.logCoreNetOp(dto.CoreNetworkId, "Delete Parameter", user, info, requestID), nil
+}
+
+// AddCoreNetworkParameter adds a config array element on the element's 33030
+// API (POST) and logs the operation. Mirrors Java addCoreNetworkParameter.
+func (s *service) AddCoreNetworkParameter(dto SetCoreNetworkParametersDTO, user string) (int64, error) {
+	if dto.Name == "" || dto.Index == nil {
+		return 0, fmt.Errorf("name and index are required")
+	}
+	body, _ := json.Marshal(dto.Data)
+	requestID := fmt.Sprintf("add:%s", dto.Name)
+	if _, err := callElementConfig(dto.ElementType, dto.Name, dto.Index, "POST", dto.Data); err != nil {
+		return 0, err
+	}
+	info := dto.Name + ":" + string(body)
+	return s.logCoreNetOp(dto.CoreNetworkId, "Add Parameter", user, info, requestID), nil
 }
 
 // resolveRmUid returns the device serial number linked to a core network via

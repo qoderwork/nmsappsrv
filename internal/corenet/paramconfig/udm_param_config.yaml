@@ -1,0 +1,878 @@
+udm:
+  system:
+    display: "System"
+    list:
+    - name: "serviceIP"
+      type: "ipv4"
+      value: "172.16.5.140"
+      access: "read-write"
+      filter: ''
+      display: "Service IP"
+      comment: ""
+    - name: "servicePort"
+      type: "int"
+      value: "8080"
+      access: "read-write"
+      filter: "0~65535"
+      display: "Service Port"
+      comment: ""
+    - name: "nrfUri"
+      type: "string"
+      value: "http://172.16.5.180:8080"
+      access: "read-write"
+      filter: ''
+      display: "NRF URI"
+      comment: ""
+    - name: "ausfIP"
+      type: "ipv4"
+      value: "172.16.5.130"
+      access: "read-write"
+      filter: ''
+      display: "AUSF IP"
+      comment: ""
+    - name: "fqdn"
+      type: "string"
+      value: "agt.com"
+      access: "read-write"
+      filter: ''
+      display: "FQDN"
+      comment: ""
+    - name: "priority"
+      type: "int"
+      value: "1"
+      access: "read-write"
+      filter: "0~4095"
+      display: "Priority"
+      comment: ""
+    - name: "capacity"
+      type: "int"
+      value: "4096"
+      access: "read-write"
+      filter: "0~65535"
+      display: "Capacity"
+      comment: ""
+    - name: "groupId"
+      type: "string"
+      value: "0"
+      access: "read-write"
+      filter: ''
+      display: "Group ID"
+      comment: ""
+    - name: "supportedPlmn1"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn1"
+      comment: ""
+    - name: "supportedPlmn2"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn2"
+      comment: ""
+    - name: "supportedPlmn3"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn3"
+      comment: ""
+    - name: "supportedPlmn4"
+      type: "string"
+      value: "00101"
+      access: "read-write"
+      filter: '^\d{5,6}$'
+      display: "Supported Plmn4"
+      comment: ""
+    - name: "supiRanges"
+      type: "regex"
+      value: "imsi-001010100080000~imsi-001010100080099"
+      access: "read-write"
+      filter: '^imsi-\d{15}~imsi-\d{15}$'
+      display: "SUPI Ranges"
+      comment: ""
+    - name: "gpsiRanges"
+      type: "regex"
+      value: "msisdn-69072000~msisdn-69072099"
+      access: "read-write"
+      filter: '^msisdn-\d{2,15}~msisdn-\d{2,15}$'
+      display: "GPSI Ranges"
+      comment: ""
+    - name: "scheme"
+      type: "enum"
+      value: "0"
+      access: "read-write"
+      filter: "{\"0\":\"HTTP\", \"1\":\"HTTPS\"}"
+      display: "Scheme"
+      comment: ""
+    - name: "redisLink"
+      type: "enum"
+      value: '0'
+      access: "read-write"
+      filter: "{\"0\":\"TCP\",\"1\":\"SCTP\"}"
+      display: "Redis Link"
+      comment: ""
+    - name: "redisAddr"
+      type: "string"
+      value: "172.16.5.140:6379"
+      access: "read-write"
+      filter: ''
+      display: "Redis Address"
+      comment: ""
+  subsUEAmbr:
+    display: "Subs UE AMBR"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_ambr'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "uplink"
+        type: "regex"
+        value: '1 Gbps'
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Uplink"
+        comment: ""
+      - name: "downlink"
+        type: "regex"
+        value: '2 Gbps'
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Downlink"
+        comment: ""
+  subsNssais:
+    display: "Subs NSSAIs"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_nssai'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "supportedFeatures"
+        type: "regex"
+        value: "00000001"
+        access: "read-write"
+        filter: '^[0-9a-fA-F]{8}$'
+        display: "Supported Features"
+        comment: ""
+      - name: "defaultSingleNSSAIs"
+        type: "string"
+        value: '1-000001'
+        access: "read-write"
+        filter: ''
+        display: "Default Single NSSAIs"
+        comment: ""
+      - name: "singleNssais"
+        type: "string"
+        value: '1-000002'
+        access: "read-write"
+        filter: ''
+        display: "Single NSSAIs"
+        comment: ""
+  forbiddenAreas:
+    display: "Forbidden Areas"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_ambr'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "tacs"
+        type: "string"
+        value: '123'
+        access: "read-write"
+        filter: ''
+        display: "TACs"
+        comment: ""
+      - name: "areaCodes"
+        type: "string"
+        value: '123456'
+        access: "read-write"
+        filter: ''
+        display: "Area Codes"
+        comment: ""
+  serviceAreaRestriction:
+    display: "Service Area Restriction"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_ambr'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "restrictionType"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Allowed Areas\", \"1\":\"Not Allowed Areas\"}"
+        display: "Restriction Type"
+        comment: ""
+      - name: "tacs"
+        type: "string"
+        value: '123'
+        access: "read-write"
+        filter: ''
+        display: "TACs"
+        comment: ""
+      - name: "areaCodes"
+        type: "string"
+        value: '123456'
+        access: "read-write"
+        filter: ''
+        display: "Area Codes"
+        comment: ""
+      - name: "maxTAs"
+        type: "int"
+        value: "1"
+        access: "read-write"
+        filter: '^\d{1,2}$'
+        display: "Max TAs"
+        comment: ""
+  smfSelection:
+    display: "Subs SMF Selection"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_snssai'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "snssai"
+        type: "string"
+        value: '1-000001'
+        access: "read-write"
+        filter: '^\d{1,3}[A-Fa-f0-9]{6}$'
+        display: "SNSSAI"
+        comment: ""
+      - name: "dnnList"
+        type: "int"
+        value: '1'
+        access: "read-only"
+        filter: '1~4'
+        display: "DNN List"
+        comment: ""
+        array:
+        - name: "index"
+          type: "int"
+          value: "1"
+          access: "read-only"
+          filter: '1~4'
+          display: "Index"
+          comment: ""
+        - name: "dnn"
+          type: "string"
+          value: 'internet'
+          access: "read-write"
+          filter: '^.{1,32}$'
+          display: "DNN"
+          comment: ""
+        - name: "defaultDnnInd"
+          type: "bool"
+          value: 'true'
+          access: "read-write"
+          filter: 'false;true;'
+          display: "Default DNN Indicator"
+          comment: ""
+        - name: "lboRoamingAllowed"
+          type: "bool"
+          value: 'false'
+          access: "read-write"
+          filter: 'false;true;'
+          display: "LBO Roaming Allowed"
+          comment: ""
+        - name: "iwkEpsInd"
+          type: "bool"
+          value: 'false'
+          access: "read-write"
+          filter: 'false;true;'
+          display: "Interworking EPS Indicator"
+          comment: ""
+        - name: "ladnIndicator"
+          type: "bool"
+          value: 'false'
+          access: "read-write"
+          filter: 'false;true;'
+          display: "LADN Indicator"
+          comment: ""
+  dnn:
+    display: "DNN Conf"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_nssai'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "defaultPDUSessionType"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"IPv4\",\"1\":\"IPv6\",\"2\":\"IPv4v6\",\"3\":\"Ethernet\",\"4\":\"Unstruction\"}"
+        display: "Default PDU Session Type"
+        comment: ""
+      - name: "allowedPDUSessionTypes"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"IPv4\",\"1\":\"IPv6\",\"2\":\"IPv4v6\",\"3\":\"Ethernet\",\"4\":\"Unstruction\",\"5\":\"IPv4 & IPv6\",\"6\":\"IPv4 & IPv4v6\",\"7\":\"IPv6 & IPv4v6\",\"8\":\"IPv4 & IPv6 & IPv4v6\"}"
+        display: "Allowed PDU Session Types"
+        comment: ""
+      - name: "5qi"
+        type: "int"
+        value: "9"
+        access: "read-write"
+        filter: "0~255"
+        display: "5QI"
+        comment: ""
+      - name: "priorityLevel"
+        type: "int"
+        value: "9"
+        access: "read-write"
+        filter: "1~127"
+        display: "Priority Level"
+        comment: ""
+      - name: "defaultSSCmode"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"SSC Mode1\",\"1\":\"SSC Mode2\",\"2\":\"SSC Mode3\"}"
+        display: "Default SSC Mode"
+        comment: ""
+      - name: "allowedSSCmodes"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"SSC Mode1\",\"1\":\"SSC Mode2\",\"2\":\"SSC Mode3\",\"3\":\"SSC Mode1 & SSC Mode2\",\"4\":\"SSC Mode1 & SSC Mode3\",\"5\":\"SSC Mode2 & SSC Mode3\",\"6\":\"SSC Mode1 & SSC Mode2 & SSC Mode3\"}"
+        display: "Allowed SSC Modes"
+        comment: ""
+      - name: "interworkingEPSIndicator"
+        type: "bool"
+        value: "1"
+        access: "read-write"
+        filter: ''
+        display: "Interworking EPS Indicator"
+        comment: ""
+      - name: "ladnIndicator"
+        type: "bool"
+        value: "1"
+        access: "read-write"
+        filter: ''
+        display: "LADN Indicator"
+        comment: ""
+      - name: "chargingCharacteristics"
+        type: "string"
+        value: "0001"
+        access: "read-write"
+        filter: '4~4'
+        display: "Charging Characteristics"
+        comment: ""
+      - name: "subscribedSessionAmbrUL"
+        type: "regex"
+        value: "1 Gbps"
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Subscribed Session AMBR Uplink"
+        comment: ""
+      - name: "subscribedSessionAmbrDL"
+        type: "regex"
+        value: "2 Gbps"
+        access: "read-write"
+        filter: '^\d+(\.\d+)?( ?)(bps|Kbps|Mbps|Gbps|Tbps)$'
+        display: "Subscribed Session AMBR Downlink"
+        comment: ""
+      - name: "staticIPAddress"
+        type: "ipv4"
+        value: "192.168.1.100"
+        access: "read-write"
+        filter: ''
+        display: "Static IP Address"
+        comment: ""
+      - name: "userPlaneIntegrity"
+        type: "enum"
+        value: "3"
+        access: "read-write"
+        filter: "{\"0\":\"Null\",\"1\":\"Required\",\"2\":\"Preferred\",\"3\":\"Not Needed\"}"
+        display: "User Plane Integrity"
+        comment: ""
+      - name: "userPlaneConfidentiality"
+        type: "enum"
+        value: "3"
+        access: "read-write"
+        filter: "{\"0\":\"Null\",\"1\":\"Required\",\"2\":\"Preferred\",\"3\":\"Not Needed\"}"
+        display: "User Plane Confidentiality"
+        comment: ""
+      - name: "arpPriorityLevel"
+        type: "int"
+        value: "6"
+        access: "read-write"
+        filter: "0~255"
+        display: "ARP Priority Level"
+        comment: ""
+      - name: "arpPreemptCap"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"Not Preempt\",\"1\":\"May Preempt\"}"
+        display: "ARP Preempt Capability"
+        comment: ""
+      - name: "arpPreemptVuln"
+        type: "enum"
+        value: "0"
+        access: "read-write"
+        filter: "{\"0\":\"Not Preemptable\",\"1\":\"Preemptable\"}"
+        display: "ARP Preempt Vulnerability"
+        comment: ""
+  epsTemplate:
+    display: "EPS User Template"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_eps'
+        access: "read-write"
+        filter: '^.{0,31}$'
+        display: "Name"
+        comment: ""
+      - name: "ambrUplink"
+        type: "int"
+        value: '100000000'
+        access: "read-write"
+        filter: '0~4294967295'
+        display: "AMBR Uplink"
+        comment: ""
+      - name: "ambrDownlink"
+        type: "int"
+        value: '200000000'
+        access: "read-write"
+        filter: '0~4294967295'
+        display: "AMBR Downlink"
+        comment: ""
+      - name: "apnOIReplacement"
+        type: "string"
+        value: 'money'
+        access: "read-write"
+        filter: '^.{0,31}$'
+        display: "APN OI Replacement"
+        comment: ""
+      - name: "rfsp"
+        type: "int"
+        value: '1'
+        access: "read-write"
+        filter: ''
+        display: "RFSP"
+        comment: ""
+      - name: "rauTauTimer"
+        type: "int"
+        value: '120'
+        access: "read-write"
+        filter: ''
+        display: "RAU TAU Timer"
+        comment: ""
+      - name: "chargingCharacteristic"
+        type: "string"
+        value: '0001'
+        access: "read-write"
+        filter: '4~4'
+        display: "Charging Characteristic"
+        comment: ""
+  epsApn:
+    display: "EPS APN"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "dnn"
+        type: "string"
+        value: 'internet'
+        access: "read-write"
+        filter: '^.{0,127}$'
+        display: "DNN"
+        comment: ""
+      - name: "pdnType"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"IPv4\",\"1\":\"IPv6\",\"2\":\"IPv4v6\",\"3\":\"IPv4 or IPv6\"}"
+        display: "PDN Type"
+        comment: ""
+      - name: "qci"
+        type: "int"
+        value: '9'
+        access: "read-write"
+        filter: '1~255'
+        display: "QCI"
+        comment: ""
+      - name: "arpPriorityLevel"
+        type: "int"
+        value: '8'
+        access: "read-write"
+        filter: '1~127'
+        display: "ARP Priority"
+        comment: ""
+      - name: "arpPreemptCap"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Not Preempt\",\"1\":\"May Preempt\"}"
+        display: "ARP Preemption Capability"
+        comment: ""
+      - name: "arpPreemptVuln"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Not Preemptable\",\"1\":\"Preemptable\"}"
+        display: "ARP Preemption Vulnerability"
+        comment: ""
+      - name: "contextIdentifier"
+        type: "int"
+        value: '1'
+        access: "read-write"
+        filter: ''
+        display: "Context Identifier"
+        comment: ""
+      - name: "vplmnDynamicAddressAllowed"
+        type: "bool"
+        value: 'true'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "VPLMN Dynamic Address Allowed"
+        comment: ""
+      - name: "pdnGWAllocationType"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Static\",\"1\":\"Dynamic\"}"
+        display: "PDN GW Allocation Type"
+        comment: ""
+      - name: "ambrUplink"
+        type: "int"
+        value: '100000000'
+        access: "read-write"
+        filter: '0~4294967295'
+        display: "AMBR Uplink"
+        comment: ""
+      - name: "ambrDownlink"
+        type: "int"
+        value: '200000000'
+        access: "read-write"
+        filter: '0~4294967295'
+        display: "AMBR Downlink"
+        comment: ""
+      - name: "chargingCharacteristic"
+        type: "string"
+        value: '0001'
+        access: "read-write"
+        filter: '4~4'
+        display: "Charging Characteristic"
+        comment: ""
+  applicationServer:
+    display: "Application Server"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~32'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'mmtel_as'
+        access: "read-write"
+        filter: '^.{1,31}$'
+        display: "AS Name"
+        comment: ""
+      - name: "defaultHandling"
+        type: "enum"
+        value: '0'
+        access: "read-write"
+        filter: "{\"0\":\"Session Continued\",\"1\":\"Session Terminated\"}"
+        display: "Default Handling"
+        comment: ""
+      - name: "serverName"
+        type: "string"
+        value: 'sip:192.168.8.26:7060'
+        access: "read-write"
+        filter: '^.{1,127}$'
+        display: "Server Name"
+        comment: ""
+      - name: "diameterAddress"
+        type: "string"
+        value: 'mmtel.ims.mnc001.mcc001.3gppnetwork.org'
+        access: "read-write"
+        filter: '^.{1,127}$'
+        display: "Diameter Address"
+        comment: ""
+      - name: "repDataSizeLimit"
+        type: "int"
+        value: '0'
+        access: "read-write"
+        filter: '0~65535'
+        display: "Rep Data Size Limit"
+        comment: ""
+      - name: "includeRegisterRequest"
+        type: "bool"
+        value: 'false'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "Include Register Request"
+        comment: ""
+      - name: "includeRegisterResponse"
+        type: "bool"
+        value: 'false'
+        access: "read-write"
+        filter: 'false;true;'
+        display: "Include Register Response"
+        comment: ""
+  scscfSet:
+    display: "SCSCF Set"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~8'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'mmtel_as'
+        access: "read-write"
+        filter: '^.{1,31}$'
+        display: "Name"
+        comment: ""
+      - name: "priority"
+        type: "int"
+        value: '1'
+        access: "read-write"
+        filter: ''
+        display: "Priority"
+        comment: ""
+      - name: "serverName"
+        type: "string"
+        value: 'sip:scscf.ims.mnc001.mcc001.3gppnetwork.org:6060'
+        access: "read-write"
+        filter: '^.{1,127}$'
+        display: "Server Name"
+        comment: ""
+  triggerPoint:
+    display: "Trigger Point"
+    array:
+      - name: "index"
+        type: "int"
+        value: "1"
+        access: "read-only"
+        filter: '1~16'
+        display: "Index"
+        comment: ""
+      - name: "name"
+        type: "string"
+        value: 'def_snssai'
+        access: "read-write"
+        filter: '^.{1,32}$'
+        display: "Name"
+        comment: ""
+      - name: "conditionTypeCNF"
+        type: "int"
+        value: '0'
+        access: "read-write"
+        filter: '0~1'
+        display: "Condition Type CNF"
+        comment: ""
+      - name: "sptList"
+        type: "int"
+        value: '1'
+        access: "read-only"
+        filter: '1~4'
+        display: "SPT List"
+        comment: ""
+        array:
+        - name: "index"
+          type: "int"
+          value: "1"
+          access: "read-only"
+          filter: '1~4'
+          display: "Index"
+          comment: ""
+        - name: "enable"
+          type: "bool"
+          value: 'true'
+          access: "read-write"
+          filter: ''
+          display: "Enable"
+          comment: ""
+        - name: "conditionNegated"
+          type: "int"
+          value: '0'
+          access: "read-write"
+          filter: '0~1'
+          display: "Condition Negated"
+          comment: ""
+        - name: "group"
+          type: "int"
+          value: '1'
+          access: "read-write"
+          filter: '0~4096'
+          display: "Group"
+          comment: ""
+        - name: "method"
+          type: "string"
+          value: ''
+          access: "read-write"
+          filter: '^.{0,32}$'
+          display: "Method"
+          comment: ""
+        - name: "sipHeader"
+          type: "string"
+          value: ''
+          access: "read-write"
+          filter: '^.{0,64}$'
+          display: "SIP Header"
+          comment: ""
+        - name: "sipContent"
+          type: "string"
+          value: ''
+          access: "read-write"
+          filter: '^.{0,64}$'
+          display: "SIP Content"
+          comment: ""
+  s6aServer:
+    display: "S6a Server"
+    list:
+    - name: "enable"
+      type: "bool"
+      value: 'true'
+      access: "read-write"
+      filter: 'false;true;'
+      display: "Enable"
+      comment: ""
+    - name: "netType"
+      type: "enum"
+      value: '1'
+      access: "read-write"
+      filter: "{\"0\":\"TCP\",\"1\":\"SCTP\"}"
+      display: "Link Type"
+      comment: ""
+    - name: "addr"
+      type: "string"
+      value: "172.16.5.140:3868"
+      access: "read-write"
+      filter: ''
+      display: "Address"
+      comment: ""
+    - name: "host"
+      type: "string"
+      value: "hss.ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{1,127}$'
+      display: "Host"
+      comment: ""
+    - name: "realm"
+      type: "string"
+      value: "ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{1,127}$'
+      display: "Realm"
+      comment: ""
+  cxServer:
+    display: "Cx Server"
+    list:
+    - name: "enable"
+      type: "bool"
+      value: 'true'
+      access: "read-write"
+      filter: 'false;true;'
+      display: "Enable"
+      comment: ""
+    - name: "netType"
+      type: "enum"
+      value: '0'
+      access: "read-write"
+      filter: "{\"0\":\"TCP\",\"1\":\"SCTP\"}"
+      display: "Link Type"
+      comment: ""
+    - name: "addr"
+      type: "string"
+      value: "172.16.5.140:3868"
+      access: "read-write"
+      filter: ''
+      display: "Address"
+      comment: ""
+    - name: "host"
+      type: "string"
+      value: "hss.ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{1,127}$'
+      display: "Host"
+      comment: ""
+    - name: "realm"
+      type: "string"
+      value: "ims.mnc001.mcc001.3gppnetwork.org"
+      access: "read-write"
+      filter: '^.{1,127}$'
+      display: "Realm"
+      comment: ""

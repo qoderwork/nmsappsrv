@@ -397,3 +397,94 @@ func (h *Handler) GetKpiReport(c *gin.Context) {
 	}
 	utils.Success(c, data)
 }
+
+// ---------------------------------------------------------------------------
+// Tier 1.5 corenet parameter CRUD (mirrors Java CoreNetworkManagementController
+// getCoreNetworkParameters / setCoreNetworkParameters / queryCoreNetworkParameters /
+// deleteCoreNetworkParameter / addCoreNetworkParameter).
+// ---------------------------------------------------------------------------
+
+// GetCoreNetworkParameters handles POST /core-networks/parameters
+// Body: {coreNetworkId, elementType}. Returns the param catalog for the
+// element type, enriched with stored values.
+func (h *Handler) GetCoreNetworkParameters(c *gin.Context) {
+	var q GetCoreNetworkParametersQuery
+	if err := c.ShouldBindJSON(&q); err != nil || q.CoreNetworkId <= 0 || q.ElementType == "" {
+		utils.Error(c, http.StatusBadRequest, "coreNetworkId and elementType are required")
+		return
+	}
+	data, err := h.svc.GetCoreNetworkParameters(q)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// SetCoreNetworkParameters handles POST /core-networks/parameters/set
+// Body: {coreNetworkId, name, index?, data, elementType}. Pushes config to
+// the element's 33030 API and logs the operation.
+func (h *Handler) SetCoreNetworkParameters(c *gin.Context) {
+	var dto SetCoreNetworkParametersDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	id, err := h.svc.SetCoreNetworkParameters(dto, middleware.GetUsername(c))
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, map[string]int64{"id": id})
+}
+
+// QueryCoreNetworkParameters handles POST /core-networks/parameters/query
+// Body: {coreNetworkId, name, elementType}. Reads config from the element's
+// 33030 API and logs the operation.
+func (h *Handler) QueryCoreNetworkParameters(c *gin.Context) {
+	var dto QueryCoreNetworkParametersDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	id, err := h.svc.QueryCoreNetworkParameters(dto, middleware.GetUsername(c))
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, map[string]int64{"id": id})
+}
+
+// DeleteCoreNetworkParameter handles POST /core-networks/parameters/delete
+// Body: {coreNetworkId, name, index, elementType}. Deletes a config array
+// element on the element's 33030 API and logs the operation.
+func (h *Handler) DeleteCoreNetworkParameter(c *gin.Context) {
+	var dto DeleteCoreNetworkParameterDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	id, err := h.svc.DeleteCoreNetworkParameter(dto, middleware.GetUsername(c))
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, map[string]int64{"id": id})
+}
+
+// AddCoreNetworkParameter handles POST /core-networks/parameters/add
+// Body: {coreNetworkId, name, index, data, elementType}. Adds a config array
+// element on the element's 33030 API and logs the operation.
+func (h *Handler) AddCoreNetworkParameter(c *gin.Context) {
+	var dto SetCoreNetworkParametersDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	id, err := h.svc.AddCoreNetworkParameter(dto, middleware.GetUsername(c))
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, map[string]int64{"id": id})
+}

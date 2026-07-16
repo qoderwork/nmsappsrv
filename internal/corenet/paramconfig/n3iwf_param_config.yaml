@@ -1,0 +1,61 @@
+n3iwf:
+  system:
+    display: "System"
+    list:
+    - name: "ikeBindAddr"
+      type: "string"
+      value: "192.168.12.160"
+      access: "read-write"
+      filter: ''
+      display: "IKEBindAddress"
+      comment: ""
+    - name: "gtpBindAddr"
+      type: "string"
+      value: "192.168.12.161"
+      access: "read-write"
+      filter: ''
+      display: "GTPBindAddress"
+      comment: ""
+    - name: "fqdn"
+      type: "string"
+      value: "n3iwf.5gc.mnc00.mcc460.pub.3gppnetwork.org"
+      access: "read-write"
+      filter: ''
+      display: "FQDN"
+      comment: ""
+    - name: "internalIP"
+      type: "string"
+      value: "172.16.1.190"
+      access: "read-write"
+      filter: ''
+      display: "InternalIP"
+      comment: ""
+    - name: "udmAddr"
+      type: "string"
+      value: "172.16.1.140:8080"
+      access: "read-write"
+      filter: ''
+      display: "UdmIPAddrPort"
+      comment: ""
+    - name: "smfIPAddr"
+      type: "string"
+      value: "172.16.1.150"
+      access: "read-write"
+      filter: ''
+      display: "SmfIPAddress"
+      comment: ""
+    - name: "n3IPAddr"
+      type: "string"
+      value: "192.168.1.160"
+      access: "read-write"
+      filter: ''
+      display: "N3IPAddress"
+      comment: ""
+    - name: "n6IPAddr"
+      type: "string"
+      value: "192.168.1.161"
+      access: "read-write"
+      filter: ''
+      display: "N6IPAddress"
+      comment: ""
+
