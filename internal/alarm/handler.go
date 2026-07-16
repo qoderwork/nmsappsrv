@@ -650,3 +650,54 @@ func (h *Handler) UpdateEmailNotificationConfig(c *gin.Context) {
 	}
 	utils.Success(c, updated)
 }
+
+// QueryAlarmStatisticResult handles POST /alarms/statistic
+// Mirrors Java queryAlarmStatisticResult.
+func (h *Handler) QueryAlarmStatisticResult(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+	result, err := h.svc.QueryAlarmStatisticResult(licenseId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, result)
+}
+
+// DeleteAlarmLibrary handles DELETE /alarm-library/:id
+// Mirrors Java deleteAlarmLibrary.
+func (h *Handler) DeleteAlarmLibrary(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid alarm library id")
+		return
+	}
+	if err := h.svc.DeleteAlarmLibrary(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// ListActiveAlarmProbableCause handles GET /alarms/active-probable-causes
+// Mirrors Java listActiveAlarmProbableCause.
+func (h *Handler) ListActiveAlarmProbableCause(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+	causes, err := h.svc.ListActiveAlarmProbableCause(licenseId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, causes)
+}
+
+// GetAlarmEventType handles POST /alarms/event-type
+// Mirrors Java getAlarmEventType.
+func (h *Handler) GetAlarmEventType(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+	types, err := h.svc.GetAlarmEventType(licenseId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, types)
+}

@@ -181,6 +181,18 @@ type AlarmStatisticTopN struct {
 	AlarmCount      int64  `json:"alarmCount" gorm:"column:alarm_count"`
 }
 
+// AlarmStatisticResult is the aggregated alarm counts returned by
+// QueryAlarmStatisticResult. Mirrors the Java response shape
+// (total/active/history + per-severity + per-type + per-source maps).
+type AlarmStatisticResult struct {
+	TotalCount   int64            `json:"totalCount"`
+	ActiveCount  int64            `json:"activeCount"`
+	HistoryCount int64            `json:"historyCount"`
+	BySeverity   map[string]int64 `json:"bySeverity"`
+	ByAlarmType  map[string]int64 `json:"byAlarmType"`
+	BySource     map[string]int64 `json:"bySource"`
+}
+
 // EmailNotificationConfig represents the email notification configuration
 // stored in system_config with key "email_notification_config".
 type EmailNotificationConfig struct {

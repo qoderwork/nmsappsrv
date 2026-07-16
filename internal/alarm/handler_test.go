@@ -243,6 +243,22 @@ func (m *mockService) UpdateAlarmTemplateEmailNotification(id int, enable bool) 
 	return nil
 }
 
+func (m *mockService) QueryAlarmStatisticResult(licenseId int) (*AlarmStatisticResult, error) {
+	return &AlarmStatisticResult{}, nil
+}
+
+func (m *mockService) DeleteAlarmLibrary(id int) error {
+	return nil
+}
+
+func (m *mockService) ListActiveAlarmProbableCause(licenseId int) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockService) GetAlarmEventType(licenseId int) ([]string, error) {
+	return nil, nil
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------

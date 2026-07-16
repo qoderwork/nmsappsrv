@@ -2,6 +2,7 @@ package alarm
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"nmsappsrv/pkg/baserepo"
@@ -437,4 +438,97 @@ func (r *Repository) UpdateAlarmTemplateEmailNotification(id int, enable bool) e
 	return r.db.Model(&AlarmTemplate{}).
 		Where("id = ?", id).
 		Update("enable_email_notification", enable).Error
+}
+
+// AlarmStatistic aggregates by licenseId.
+type AlarmStatistic struct {
+	Total     int64
+	Active    int64
+	History   int64
+	BySeverity map[string]int64
+	ByType    map[string]int64
+	BySource  map[string]int64
+}
+
+// FindAlarmStatistic aggregates the alarm table by licenseId. Mirrors Java
+// queryAlarmStatisticResult. Counts split by alarm_type (1=active, 2=history),
+// severity, and alarm_source.
+func (r *Repository) FindAlarmStatistic(licenseId int) (*AlarmStatistic, error) {
+	out := &AlarmStatistic{
+		BySeverity: map[string]int64{},
+		ByType:     map[string]int64{},
+		BySource:   map[string]int64{},
+	}
+	// Totals.
+	if err := r.db.Model(&Alarm{}).Where("license_id = ?", licenseId).
+		Count(new(int64)).Error; err != nil {
+		return nil, err
+	}
+	// Use a single grouped query to avoid three round-trips.
+	type row struct {
+		AlarmType  *int
+		Severity   *string
+		AlarmSource *string
+		Cnt        int64
+	}
+	var rows []row
+	if err := r.db.Model(&Alarm{}).
+		Select("alarm_type, severity, alarm_source, COUNT(*) AS cnt").
+		Where("license_id = ?", licenseId).
+		Group("alarm_type, severity, alarm_source").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out.Total += r.Cnt
+		// alarm_type: 1=active, 2=history.
+		if r.AlarmType != nil {
+			switch *r.AlarmType {
+			case 1:
+				out.Active += r.Cnt
+				out.ByType["active"] += r.Cnt
+			case 2:
+				out.History += r.Cnt
+				out.ByType["history"] += r.Cnt
+			default:
+				out.ByType[fmt.Sprintf("%d", *r.AlarmType)] += r.Cnt
+			}
+		}
+		if r.Severity != nil && *r.Severity != "" {
+			out.BySeverity[*r.Severity] += r.Cnt
+		}
+		if r.AlarmSource != nil && *r.AlarmSource != "" {
+			out.BySource[*r.AlarmSource] += r.Cnt
+		}
+	}
+	return out, nil
+}
+
+// DeleteAlarmLibrary hard-deletes an alarm library entry by id. Mirrors Java
+// deleteAlarmLibrary.
+func (r *Repository) DeleteAlarmLibrary(id int) error {
+	return r.db.Where("id = ?", id).Delete(&AlarmLibrary{}).Error
+}
+
+// FindActiveProbableCauses returns the distinct probable_cause values for
+// active alarms (alarm_type=1) in the given license. Mirrors Java
+// listActiveAlarmProbableCause.
+func (r *Repository) FindActiveProbableCauses(licenseId int) ([]string, error) {
+	var causes []string
+	err := r.db.Model(&Alarm{}).
+		Where("license_id = ? AND alarm_type = ? AND probable_cause IS NOT NULL AND probable_cause <> ''", licenseId, AlarmTypeActive).
+		Distinct("probable_cause").
+		Pluck("probable_cause", &causes).Error
+	return causes, err
+}
+
+// FindAlarmEventTypes returns the distinct event_type values for the given
+// license. Mirrors Java getAlarmEventType.
+func (r *Repository) FindAlarmEventTypes(licenseId int) ([]string, error) {
+	var types []string
+	err := r.db.Model(&Alarm{}).
+		Where("license_id = ? AND event_type IS NOT NULL AND event_type <> ''", licenseId).
+		Distinct("event_type").
+		Pluck("event_type", &types).Error
+	return types, err
 }

@@ -53,6 +53,20 @@ type Service interface {
 	// `enable_email_notification` flag on an alarm template. Mirrors Java
 	// updateEmailNotificationEnableInTemplate.
 	UpdateAlarmTemplateEmailNotification(id int, enable bool) error
+	// QueryAlarmStatisticResult returns aggregated alarm counts (by
+	// severity, by type, by source) for the given license. Mirrors Java
+	// queryAlarmStatisticResult.
+	QueryAlarmStatisticResult(licenseId int) (*AlarmStatisticResult, error)
+	// DeleteAlarmLibrary hard-deletes an alarm library entry. Mirrors Java
+	// deleteAlarmLibrary.
+	DeleteAlarmLibrary(id int) error
+	// ListActiveAlarmProbableCause returns the distinct probable_cause
+	// values for active alarms in the license. Mirrors Java
+	// listActiveAlarmProbableCause.
+	ListActiveAlarmProbableCause(licenseId int) ([]string, error)
+	// GetAlarmEventType returns the distinct event_type values for the
+	// license. Mirrors Java getAlarmEventType.
+	GetAlarmEventType(licenseId int) ([]string, error)
 	GetEmailNotificationConfig() (*EmailNotificationConfig, error)
 	UpdateEmailNotificationConfig(config *EmailNotificationConfig) error
 }
@@ -379,6 +393,51 @@ func (s *service) UpdateAlarmTemplateEmailNotification(id int, enable bool) erro
 		return apperror.Wrap(err, "UPDATE_ALARM_TEMPLATE_EMAIL_NOTIFICATION_FAILED", 500, "failed to update alarm template email notification")
 	}
 	return nil
+}
+
+// QueryAlarmStatisticResult aggregates alarm counts for the license.
+// Mirrors Java queryAlarmStatisticResult.
+func (s *service) QueryAlarmStatisticResult(licenseId int) (*AlarmStatisticResult, error) {
+	stat, err := s.repo.FindAlarmStatistic(licenseId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "QUERY_ALARM_STATISTIC_RESULT_FAILED", 500, "failed to query alarm statistic result")
+	}
+	return &AlarmStatisticResult{
+		TotalCount:   stat.Total,
+		ActiveCount:  stat.Active,
+		HistoryCount: stat.History,
+		BySeverity:   stat.BySeverity,
+		ByAlarmType:  stat.ByType,
+		BySource:     stat.BySource,
+	}, nil
+}
+
+// DeleteAlarmLibrary hard-deletes an alarm library entry. Mirrors Java deleteAlarmLibrary.
+func (s *service) DeleteAlarmLibrary(id int) error {
+	if err := s.repo.DeleteAlarmLibrary(id); err != nil {
+		return apperror.Wrap(err, "DELETE_ALARM_LIBRARY_FAILED", 500, "failed to delete alarm library")
+	}
+	return nil
+}
+
+// ListActiveAlarmProbableCause returns distinct probable_cause values for
+// active alarms in the license. Mirrors Java listActiveAlarmProbableCause.
+func (s *service) ListActiveAlarmProbableCause(licenseId int) ([]string, error) {
+	causes, err := s.repo.FindActiveProbableCauses(licenseId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_ACTIVE_ALARM_PROBABLE_CAUSE_FAILED", 500, "failed to list active alarm probable causes")
+	}
+	return causes, nil
+}
+
+// GetAlarmEventType returns distinct event_type values for the license.
+// Mirrors Java getAlarmEventType.
+func (s *service) GetAlarmEventType(licenseId int) ([]string, error) {
+	types, err := s.repo.FindAlarmEventTypes(licenseId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_ALARM_EVENT_TYPE_FAILED", 500, "failed to get alarm event types")
+	}
+	return types, nil
 }
 
 // ---------------------------------------------------------------------------
