@@ -27,6 +27,7 @@ type Repository interface {
 	// Module-specific methods.
 	TaskNameExists(tenancyId int, name string) bool
 	FindElementIdsByGroup(groupIds []string) ([]int64, error)
+	FindDueTimedTasks(before time.Time) ([]RebootTask, error)
 	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
 	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
 	CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error
@@ -72,6 +73,15 @@ func (r *repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 		Where("group_id IN ?", groupIds).
 		Pluck("element_id", &ids).Error
 	return ids, err
+}
+
+// FindDueTimedTasks returns scheduled (execute_mode=3) Waiting tasks whose
+// trigger time has already passed.
+func (r *repository) FindDueTimedTasks(before time.Time) ([]RebootTask, error) {
+	var tasks []RebootTask
+	err := r.db.Where("execute_mode = ? AND status = ? AND trigger_time IS NOT NULL AND trigger_time <= ?", 3, 1, before).
+		Find(&tasks).Error
+	return tasks, err
 }
 
 // FindElementInfo returns serial_number and device_type for a given element.

@@ -19,6 +19,7 @@ type Service interface {
 	DeleteRebootTask(id int) error
 	StartRebootTask(id int, username string) error
 	CancelRebootTask(id int) error
+	TriggerDueTimedTasks(ctx context.Context) (int, error)
 	ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
 	ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error)
 }
@@ -33,10 +34,24 @@ func NewService(db *gorm.DB) Service {
 	return &service{repo: NewRepository(db)}
 }
 
+// validDeviceTypes mirrors Java's reboot/reset deviceType whitelist
+// (Java rejects anything outside {CPE, BaseStation} with error 10031).
+var validDeviceTypes = map[string]bool{
+	"CPE":         true,
+	"BaseStation": true,
+}
+
+func isValidDeviceType(dt string) bool {
+	return validDeviceTypes[dt]
+}
+
 // AddRebootTask creates a new reboot task and dispatches commands if immediate.
 func (s *service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, username string) (int, error) {
 	if s.repo.TaskNameExists(tenancyId, req.Name) {
 		return 0, fmt.Errorf("task name already exists")
+	}
+	if !isValidDeviceType(req.DeviceType) {
+		return 0, fmt.Errorf("invalid deviceType %q: must be CPE or BaseStation", req.DeviceType)
 	}
 
 	// Resolve element IDs
@@ -204,6 +219,42 @@ func (s *service) dispatchReboot(task *RebootTask, elementIds []int64, username 
 			logger.Errorf("reboot: push to queue for %d: %v", eid, err)
 		}
 	}
+}
+
+// TriggerDueTimedTasks fires any scheduled (ExecuteMode==3) reboot tasks whose
+// trigger time has passed and that are still Waiting. Mirrors Java's Quartz
+// RebootTaskJob. Returns the number of tasks dispatched.
+func (s *service) TriggerDueTimedTasks(ctx context.Context) (int, error) {
+	tasks, err := s.repo.FindDueTimedTasks(time.Now())
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for i := range tasks {
+		task := &tasks[i]
+		lockKey := fmt.Sprintf("reboot_timed_%d", task.Id)
+		if !redis.Lock(ctx, lockKey, 60*time.Second) {
+			continue
+		}
+		// Re-check status under lock to avoid double-dispatch across ticks.
+		fresh, ferr := s.repo.FindByID(task.Id)
+		if ferr != nil || fresh.Status != 1 {
+			redis.Unlock(ctx, lockKey)
+			continue
+		}
+		now := time.Now()
+		fresh.Status = 2
+		fresh.StartTime = &now
+		if err := s.repo.Save(fresh); err != nil {
+			logger.Errorf("reboot: mark scheduled task %d executing: %v", task.Id, err)
+			redis.Unlock(ctx, lockKey)
+			continue
+		}
+		redis.Unlock(ctx, lockKey)
+		s.dispatchReboot(fresh, ParseElementIds(fresh.ElementIds), fresh.User)
+		n++
+	}
+	return n, nil
 }
 
 // newService creates a Service backed by the given mock Repository (test helper).

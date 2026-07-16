@@ -695,6 +695,30 @@ func main() {
 		logger.Errorf("failed to register ztp-external-gen cron job: %v", err)
 	}
 
+	// Scheduled reboot/reset tasks (Java Quartz RebootTaskJob/ResetTaskJob,
+	// ExecuteMode==3). Scans for Waiting tasks whose trigger time has passed
+	// and dispatches them. Runs every 30s.
+	rebootSvc := reboot.NewService(db)
+	resetSvc := reset.NewService(db)
+	if err := mainScheduler.AddJob("reboot-timed", "*/30 * * * * *", func() {
+		if n, err := rebootSvc.TriggerDueTimedTasks(context.Background()); err != nil {
+			logger.Errorf("reboot-timed job failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("reboot-timed: dispatched %d scheduled task(s)", n)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register reboot-timed cron job: %v", err)
+	}
+	if err := mainScheduler.AddJob("reset-timed", "*/30 * * * * *", func() {
+		if n, err := resetSvc.TriggerDueTimedTasks(context.Background()); err != nil {
+			logger.Errorf("reset-timed job failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("reset-timed: dispatched %d scheduled task(s)", n)
+		}
+	}); err != nil {
+		logger.Errorf("failed to register reset-timed cron job: %v", err)
+	}
+
 	// System resource collector (samples CPU/memory every 30s, caches to Redis)
 	resourceCollector := resources.NewCollector()
 	mgr.Add(workerTask("resource-collector", resourceCollector.Start, resourceCollector.Stop))

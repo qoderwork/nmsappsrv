@@ -22,6 +22,7 @@ type Repository interface {
 	UpdateTask(t *ResetTask) error
 	TaskNameExists(tenancyId int, name string) bool
 	FindElementIdsByGroup(groupIds []string) ([]int64, error)
+	FindDueTimedTasks(before time.Time) ([]ResetTask, error)
 	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
 	InsertEventLog(eventType string, elementId int64, user string, status int, faultInfo string) (int64, error)
 	CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error
@@ -46,6 +47,7 @@ type Service interface {
 	DeleteResetTask(id int) error
 	StartResetTask(id int, username string) error
 	CancelResetTask(id int) error
+	TriggerDueTimedTasks(ctx context.Context) (int, error)
 	ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
 	ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error)
 }
@@ -58,6 +60,17 @@ type service struct {
 // NewService creates a new reset service.
 func NewService(db *gorm.DB) Service {
 	return &service{repo: NewRepository(db)}
+}
+
+// validDeviceTypes mirrors Java's reboot/reset deviceType whitelist
+// (Java rejects anything outside {CPE, BaseStation} with error 10031).
+var validDeviceTypes = map[string]bool{
+	"CPE":         true,
+	"BaseStation": true,
+}
+
+func isValidDeviceType(dt string) bool {
+	return validDeviceTypes[dt]
 }
 
 // ---------- Repository methods ----------
@@ -96,6 +109,15 @@ func (r *repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 		Where("group_id IN ?", groupIds).
 		Pluck("element_id", &ids).Error
 	return ids, err
+}
+
+// FindDueTimedTasks returns scheduled (execute_mode=3) Waiting tasks whose
+// trigger time has already passed.
+func (r *repository) FindDueTimedTasks(before time.Time) ([]ResetTask, error) {
+	var tasks []ResetTask
+	err := r.db.Where("execute_mode = ? AND status = ? AND trigger_time IS NOT NULL AND trigger_time <= ?", 3, 1, before).
+		Find(&tasks).Error
+	return tasks, err
 }
 
 func (r *repository) FindElementInfo(elementId int64) (sn string, deviceType string, err error) {
@@ -378,6 +400,9 @@ func (s *service) AddResetTask(req *AddResetTaskRequest, tenancyId int, username
 	if s.repo.TaskNameExists(tenancyId, req.Name) {
 		return 0, fmt.Errorf("task name already exists")
 	}
+	if !isValidDeviceType(req.DeviceType) {
+		return 0, fmt.Errorf("invalid deviceType %q: must be CPE or BaseStation", req.DeviceType)
+	}
 
 	elementIds := req.ElementIds
 	if req.Scope == "deviceGroup" && len(req.DeviceGroupIds) > 0 {
@@ -524,6 +549,42 @@ func (s *service) dispatchReset(task *ResetTask, elementIds []int64, username st
 			logger.Errorf("reset: push to queue for %d: %v", eid, err)
 		}
 	}
+}
+
+// TriggerDueTimedTasks fires any scheduled (ExecuteMode==3) reset tasks whose
+// trigger time has passed and that are still Waiting. Mirrors Java's Quartz
+// ResetTaskJob. Returns the number of tasks dispatched.
+func (s *service) TriggerDueTimedTasks(ctx context.Context) (int, error) {
+	tasks, err := s.repo.FindDueTimedTasks(time.Now())
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for i := range tasks {
+		task := &tasks[i]
+		lockKey := fmt.Sprintf("reset_timed_%d", task.Id)
+		if !redis.Lock(ctx, lockKey, 60*time.Second) {
+			continue
+		}
+		// Re-check status under lock to avoid double-dispatch across ticks.
+		fresh, ferr := s.repo.FindTaskByID(task.Id)
+		if ferr != nil || fresh.Status != 1 {
+			redis.Unlock(ctx, lockKey)
+			continue
+		}
+		now := time.Now()
+		fresh.Status = 2
+		fresh.StartTime = &now
+		if err := s.repo.UpdateTask(fresh); err != nil {
+			logger.Errorf("reset: mark scheduled task %d executing: %v", task.Id, err)
+			redis.Unlock(ctx, lockKey)
+			continue
+		}
+		redis.Unlock(ctx, lockKey)
+		s.dispatchReset(fresh, parseElementIds(fresh.ElementIds), fresh.User)
+		n++
+	}
+	return n, nil
 }
 
 // ---------- helpers ----------
