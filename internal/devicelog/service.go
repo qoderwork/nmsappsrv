@@ -231,24 +231,43 @@ func (s *service) ListLogFiles(c *gin.Context, req *ListLogFileRequest) ([]LogFi
 }
 
 func (s *service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUploadRequest) error {
-	// Get device info to determine TR-069 path
+	// Get device info to determine TR-069 path (Device vs InternetGatewayDevice root).
 	rootNode, err := s.repo.FindDeviceRootNode(req.ElementId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
 
-	// Determine TR-069 path based on rootNode
-	paramPath := "Device.LogPeriodicUpload"
+	prefix := "Device"
 	if rootNode != nil && *rootNode == "InternetGatewayDevice" {
-		paramPath = "InternetGatewayDevice.LogPeriodicUpload"
+		prefix = "InternetGatewayDevice"
+	}
+
+	// Mirror Java enableLogPeriodicUpload: enable + URL + interval + optional creds.
+	// Java sets {rootNode}.LogMgmt.PeriodicUploadEnable="1",
+	// {rootNode}.LogMgmt.URL=getFileServerIp()+"/api/acs-file-server/log/",
+	// {rootNode}.LogMgmt.PeriodicUploadInterval=3600*period, and conditionally
+	// {rootNode}.LogMgmt.Username/Password from the file-server credential holder.
+	fileServerBase := "http://localhost"
+	if config.Cfg != nil && config.Cfg.TR069.FileServerIp != "" {
+		fileServerBase = config.Cfg.TR069.FileServerIp
+	}
+	fsUser, fsPass := config.GetFileServerCredentials()
+
+	ctx := context.Background()
+	params := []soap.ParameterValueStruct{
+		{Name: prefix + ".LogMgmt.PeriodicUploadEnable", Value: "1", Type: "int"},
+		{Name: prefix + ".LogMgmt.URL", Value: fileServerBase + "/api/acs-file-server/log/", Type: "string"},
+		{Name: prefix + ".LogMgmt.PeriodicUploadInterval", Value: strconv.Itoa(req.Interval), Type: "int"},
+	}
+	if fsUser != "" && fsPass != "" {
+		params = append(params,
+			soap.ParameterValueStruct{Name: prefix + ".LogMgmt.Username", Value: fsUser, Type: "string"},
+			soap.ParameterValueStruct{Name: prefix + ".LogMgmt.Password", Value: fsPass, Type: "string"},
+		)
 	}
 
 	// Dispatch TR-069 SetParameterValues command (Java EventType.SET_PARAMETER_VALUES
 	// → unified device-operation dispatcher routes to tr069.OperationSender.SendSetParameterValues).
-	ctx := context.Background()
-	params := []soap.ParameterValueStruct{
-		{Name: paramPath, Value: strconv.Itoa(req.Interval), Type: "int"},
-	}
 	paramJSON, err := json.Marshal(params)
 	if err != nil {
 		return apperror.Wrap(err, "ENABLE_PERIODIC_UPLOAD_MARSHAL_FAILED", 500, "failed to marshal parameter payload")
@@ -275,22 +294,22 @@ func (s *service) EnablePeriodicUpload(c *gin.Context, req *EnablePeriodicUpload
 }
 
 func (s *service) DisablePeriodicUpload(c *gin.Context, req *DisablePeriodicUploadRequest) error {
-	// Get device info to determine TR-069 path
+	// Get device info to determine TR-069 path (Device vs InternetGatewayDevice root).
 	rootNode, err := s.repo.FindDeviceRootNode(req.ElementId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
 
-	// Determine TR-069 path based on rootNode
-	paramPath := "Device.LogPeriodicUpload"
+	prefix := "Device"
 	if rootNode != nil && *rootNode == "InternetGatewayDevice" {
-		paramPath = "InternetGatewayDevice.LogPeriodicUpload"
+		prefix = "InternetGatewayDevice"
 	}
 
-	// Dispatch TR-069 SetParameterValues command to disable (set to 0)
+	// Dispatch TR-069 SetParameterValues command to disable (set LogMgmt.PeriodicUploadEnable=0).
+	// Java disableLogPeriodUpload sets {rootNode}.LogMgmt.PeriodicUploadEnable="0".
 	ctx := context.Background()
 	params := []soap.ParameterValueStruct{
-		{Name: paramPath, Value: "0", Type: "int"},
+		{Name: prefix + ".LogMgmt.PeriodicUploadEnable", Value: "0", Type: "int"},
 	}
 	paramJSON, err := json.Marshal(params)
 	if err != nil {
