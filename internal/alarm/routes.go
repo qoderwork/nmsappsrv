@@ -11,6 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/alarms/statistic", h.QueryAlarmStatisticResult)
 	rg.GET("/alarms/active-probable-causes", h.ListActiveAlarmProbableCause)
 	rg.POST("/alarms/event-type", h.GetAlarmEventType)
+	rg.POST("/alarms/email-notice-results", h.ListEmailNoticeResult)
 	rg.GET("/alarms/:id", h.GetAlarm)
 	rg.DELETE("/alarms/:id", h.DeleteAlarm)
 	rg.POST("/alarms/:id/clear", h.ClearAlarm)

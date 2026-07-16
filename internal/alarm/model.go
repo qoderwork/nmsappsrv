@@ -203,3 +203,27 @@ type EmailNotificationConfig struct {
 	SmtpPassword *string  `json:"smtpPassword"`
 	Recipients   []string `json:"recipients"`
 }
+
+// EmailNoticeResult maps the email_notice_result table (one row per
+// email notification attempt -- populated by the email notifier when
+// an alarm template fires). Schema is the 6 columns defined in the
+// V1_0__baseline migration. Mirrors Java
+// com.waveoss.core.dao.entity.EmailNoticeResult.
+type EmailNoticeResult struct {
+	Id              int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	AlarmTemplateId *int       `gorm:"column:alarm_template_id" json:"alarmTemplateId"`
+	EmailRecipient  *string    `gorm:"column:email_recipient;type:varchar(255)" json:"emailRecipient"`
+	EmailSubject    *string    `gorm:"column:email_subject;type:longtext" json:"emailSubject"`
+	FailureReason   *string    `gorm:"column:failure_reason;type:longtext" json:"failureReason"`
+	PostTime        *time.Time `gorm:"column:post_time" json:"postTime"`
+	Result          *int       `gorm:"column:result" json:"result"`
+}
+
+func (EmailNoticeResult) TableName() string { return "email_notice_result" }
+
+// EmailNoticeResultQuery is the JSON body for POST /alarms/email-notice-results
+// (mirrors Java ListEmailNoticeResultQuery).
+type EmailNoticeResultQuery struct {
+	AlarmTemplateId *int   `json:"alarmTemplateId"`
+	EmailSubject    string `json:"emailSubject"`
+}

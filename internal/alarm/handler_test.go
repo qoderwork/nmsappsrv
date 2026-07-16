@@ -259,6 +259,10 @@ func (m *mockService) GetAlarmEventType(licenseId int) ([]string, error) {
 	return nil, nil
 }
 
+func (m *mockService) ListEmailNoticeResult(query EmailNoticeResultQuery, page, pageSize int) ([]EmailNoticeResult, int64, error) {
+	return nil, 0, nil
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------

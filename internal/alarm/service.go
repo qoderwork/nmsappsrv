@@ -67,6 +67,11 @@ type Service interface {
 	// GetAlarmEventType returns the distinct event_type values for the
 	// license. Mirrors Java getAlarmEventType.
 	GetAlarmEventType(licenseId int) ([]string, error)
+	// ListEmailNoticeResult returns paginated email notification
+	// results (one row per email-notifier attempt), filtered by
+	// alarmTemplateId (exact) and emailSubject (LIKE). Mirrors Java
+	// listEmailNoticeResult. Sort: id DESC.
+	ListEmailNoticeResult(query EmailNoticeResultQuery, page, pageSize int) ([]EmailNoticeResult, int64, error)
 	GetEmailNotificationConfig() (*EmailNotificationConfig, error)
 	UpdateEmailNotificationConfig(config *EmailNotificationConfig) error
 }
@@ -729,4 +734,23 @@ func (s *service) UpdateEmailNotificationConfig(config *EmailNotificationConfig)
 		return apperror.Wrap(err, "UPDATE_EMAIL_NOTIFICATION_CONFIG_FAILED", 500, "failed to update email notification config")
 	}
 	return nil
+}
+
+// ListEmailNoticeResult returns paginated email notification results
+// (one row per email-notifier attempt), filtered by alarmTemplateId
+// (exact) and emailSubject (LIKE). Mirrors Java listEmailNoticeResult.
+// Sort: id DESC.
+func (s *service) ListEmailNoticeResult(query EmailNoticeResultQuery, page, pageSize int) ([]EmailNoticeResult, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	items, total, err := s.repo.FindEmailNoticeResults(query.AlarmTemplateId, query.EmailSubject, offset, pageSize)
+	if err != nil {
+		return nil, 0, apperror.Wrap(err, "LIST_EMAIL_NOTICE_RESULT_FAILED", 500, "failed to list email notice results")
+	}
+	return items, total, nil
 }

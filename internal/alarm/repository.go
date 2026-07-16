@@ -532,3 +532,23 @@ func (r *Repository) FindAlarmEventTypes(licenseId int) ([]string, error) {
 		Pluck("event_type", &types).Error
 	return types, err
 }
+
+// FindEmailNoticeResults returns paginated email_notice_result rows
+// filtered by template id and email subject (LIKE). Mirrors Java
+// listEmailNoticeResult. Sort: id DESC.
+func (r *Repository) FindEmailNoticeResults(alarmTemplateId *int, emailSubject string, offset, limit int) ([]EmailNoticeResult, int64, error) {
+	var items []EmailNoticeResult
+	var total int64
+	q := r.db.Model(&EmailNoticeResult{})
+	if alarmTemplateId != nil {
+		q = q.Where("alarm_template_id = ?", *alarmTemplateId)
+	}
+	if emailSubject != "" {
+		q = q.Where("email_subject LIKE ?", "%"+emailSubject+"%")
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&items).Error
+	return items, total, err
+}

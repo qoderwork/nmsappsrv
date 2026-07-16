@@ -701,3 +701,24 @@ func (h *Handler) GetAlarmEventType(c *gin.Context) {
 	}
 	utils.Success(c, types)
 }
+
+// ListEmailNoticeResult handles POST /alarms/email-notice-results
+// Body: {query: {alarmTemplateId?, emailSubject?}, page, pageSize}.
+// Mirrors Java listEmailNoticeResult.
+func (h *Handler) ListEmailNoticeResult(c *gin.Context) {
+	var body struct {
+		Query    EmailNoticeResultQuery `json:"query"`
+		Page     int                    `json:"page"`
+		PageSize int                    `json:"pageSize"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, 400, "invalid request body")
+		return
+	}
+	data, total, err := h.svc.ListEmailNoticeResult(body.Query, body.Page, body.PageSize)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Paginated(c, data, total, body.Page, body.PageSize)
+}
