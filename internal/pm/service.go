@@ -3,14 +3,17 @@ package pm
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 
 	"nmsappsrv/internal/config"
@@ -58,15 +61,14 @@ type Service interface {
 	GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error)
 	GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error)
 	// ExportPMExcel serialises the dashboard PM data for the license in the
-	// given date range as CSV. Mirrors Java exportPMExcel (Go uses CSV; the
-	// Java side builds an xlsx workbook -- the row semantics are the same).
-	// The Go side ignores elementId/templateId and exports the full tenancy
-	// dashboard; the Java 7-day cap is enforced here too.
+	// given date range as an xlsx workbook. Mirrors Java exportPMExcel
+	// (Java uses Apache POI; Go uses excelize). Enforces the Java 7-day cap.
 	ExportPMExcel(tenancyId int, startTime, endTime string) ([]byte, string, error)
-	// ImportKPIs bulk-inserts KPIs from a JSON array. Mirrors Java importKPI
-	// (Go uses JSON; the Java side parses an uploaded xlsx -- same bulk
-	// semantics on the DB side).
-	ImportKPIs(items []PerformanceKpi) (int, error)
+	// ImportKPIsFromXLSX parses an uploaded xlsx workbook (mirror of Java
+	// importKPI) and bulk-inserts the rows. `version` is the KPI-set version
+	// (mirrors Java's "version" form field); used to set Type / update time
+	// markers but does not gate the import.
+	ImportKPIsFromXLSX(data []byte, version string) (int, error)
 	// DownloadPMFile serves the newest pm_file_log file for the device in
 	// the given time range. Mirrors Java downloadPMFile. The file is read
 	// from the configured file_server.pm_dir using the row's file_name
@@ -428,9 +430,8 @@ func strVal(s *string) string {
 }
 
 // ExportPMExcel serialises the dashboard PM data for the license in the
-// given date range as CSV. Mirrors Java exportPMExcel (Go uses CSV; the
-// Java side builds an xlsx workbook -- the row semantics are the same).
-// Enforces the Java 7-day cap.
+// given date range as an xlsx workbook. Mirrors Java exportPMExcel
+// (Java uses Apache POI; Go uses excelize). Enforces the Java 7-day cap.
 func (s *service) ExportPMExcel(tenancyId int, startTime, endTime string) ([]byte, string, error) {
 	st, et, err := parseTimeRange(startTime, endTime)
 	if err != nil {
@@ -443,38 +444,166 @@ func (s *service) ExportPMExcel(tenancyId int, startTime, endTime string) ([]byt
 	if err != nil {
 		return nil, "", apperror.Wrap(err, "EXPORT_PM_EXCEL_FAILED", 500, "failed to load dashboard data")
 	}
-	var buf bytes.Buffer
-	w := csv.NewWriter(&buf)
-	_ = w.Write([]string{"id", "time", "pdcp_ul_rate", "pdcp_dl_rate", "cell_available_rate", "tenancy_id"})
-	for _, r := range rows {
+	f := excelize.NewFile()
+	defer f.Close()
+	sheet := f.GetSheetName(f.GetActiveSheetIndex())
+	header := []string{"id", "time", "pdcp_ul_rate", "pdcp_dl_rate", "cell_available_rate", "tenancy_id"}
+	for i, h := range header {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		_ = f.SetCellValue(sheet, cell, h)
+	}
+	for rowIdx, r := range rows {
 		var timeStr string
 		if r.Time != nil {
 			timeStr = r.Time.Format(time.RFC3339)
 		}
-		_ = w.Write([]string{
-			strconv.FormatInt(r.Id, 10),
+		values := []interface{}{
+			r.Id,
 			timeStr,
 			optFloat(r.PdcpUlRate),
 			optFloat(r.PdcpDlRate),
 			optFloat(r.CellAvailableRate),
 			optInt(r.TenancyId),
-		})
+		}
+		for colIdx, v := range values {
+			cell, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+2)
+			_ = f.SetCellValue(sheet, cell, v)
+		}
 	}
-	w.Flush()
-	filename := fmt.Sprintf("pm-export-%s.csv", time.Now().Format("20060102-150405"))
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "EXPORT_PM_EXCEL_WRITE_FAILED", 500, "failed to write xlsx")
+	}
+	filename := fmt.Sprintf("pm-export-%s.xlsx", time.Now().Format("20060102-150405"))
 	return buf.Bytes(), filename, nil
 }
 
-// ImportKPIs bulk-inserts KPIs from a JSON array. Mirrors Java importKPI.
-func (s *service) ImportKPIs(items []PerformanceKpi) (int, error) {
-	if len(items) == 0 {
+// ImportKPIsFromXLSX parses an uploaded xlsx workbook (mirror of Java
+// importKPI, which uses Apache POI) and bulk-inserts the rows.
+// Expected xlsx layout (header row):
+//
+//	id | kpi_name | kpi_name_translation | kpi | unit | unit_translation |
+//	statistic_type | description | description_translation |
+//	trigger_point | trigger_point_translation | kpi_set_id | id_formula |
+//	type | default_kpi
+//
+// `version` is the KPI-set version marker (Java's form field); it is
+// stored in UpdateUser so the source batch is traceable.
+func (s *service) ImportKPIsFromXLSX(data []byte, version string) (int, error) {
+	if len(data) == 0 {
+		return 0, apperror.New("IMPORT_KPIS_EMPTY_FILE", 400, "empty xlsx file")
+	}
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		return 0, apperror.Wrap(err, "IMPORT_KPIS_OPEN_FAILED", 400, "failed to open xlsx")
+	}
+	defer f.Close()
+	sheet := f.GetSheetName(0)
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		return 0, apperror.Wrap(err, "IMPORT_KPIS_READ_FAILED", 500, "failed to read sheet")
+	}
+	if len(rows) < 2 {
+		return 0, apperror.New("IMPORT_KPIS_NO_DATA", 400, "xlsx has no data rows")
+	}
+	// Map header column -> index. Header row is row[0].
+	colIdx := make(map[string]int, 16)
+	for i, h := range rows[0] {
+		colIdx[strings.TrimSpace(strings.ToLower(h))] = i
+	}
+	now := time.Now()
+	out := make([]PerformanceKpi, 0, len(rows)-1)
+	for _, r := range rows[1:] {
+		if len(r) == 0 {
+			continue
+		}
+		kpi := PerformanceKpi{
+			Id:         generateKpiID(),
+			UpdateTime: &now,
+			UpdateUser: strPtr(version),
+		}
+		kpi.KpiName = cellString(r, colIdx, "kpi_name")
+		kpi.KpiNameTranslation = cellString(r, colIdx, "kpi_name_translation")
+		kpi.Kpi = cellString(r, colIdx, "kpi")
+		kpi.Unit = cellString(r, colIdx, "unit")
+		kpi.UnitTranslation = cellString(r, colIdx, "unit_translation")
+		kpi.StatisticType = cellString(r, colIdx, "statistic_type")
+		kpi.Description = cellString(r, colIdx, "description")
+		kpi.DescriptionTranslation = cellString(r, colIdx, "description_translation")
+		kpi.TriggerPoint = cellString(r, colIdx, "trigger_point")
+		kpi.TriggerPointTranslation = cellString(r, colIdx, "trigger_point_translation")
+		kpi.IdFormula = cellString(r, colIdx, "id_formula")
+		if v, ok := cellInt(r, colIdx, "type"); ok {
+			kpi.Type = &v
+		}
+		if v, ok := cellInt(r, colIdx, "kpi_set_id"); ok {
+			kpi.KpiSetId = &v
+		}
+		if v, ok := cellBool(r, colIdx, "default_kpi"); ok {
+			kpi.DefaultKpi = &v
+		}
+		out = append(out, kpi)
+	}
+	if len(out) == 0 {
 		return 0, nil
 	}
-	if err := s.repo.BulkCreateKPIs(items); err != nil {
+	if err := s.repo.BulkCreateKPIs(out); err != nil {
 		return 0, apperror.Wrap(err, "IMPORT_KPIS_FAILED", 500, "failed to import KPIs")
 	}
-	return len(items), nil
+	return len(out), nil
 }
+
+// cellString returns a pointer to the trimmed cell value at the given
+// column, or nil if the column is missing / cell is empty.
+func cellString(row []string, colIdx map[string]int, col string) *string {
+	i, ok := colIdx[col]
+	if !ok || i >= len(row) {
+		return nil
+	}
+	v := strings.TrimSpace(row[i])
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+// cellInt parses the cell as an int; ok=false on missing/invalid.
+func cellInt(row []string, colIdx map[string]int, col string) (int, bool) {
+	s := cellString(row, colIdx, col)
+	if s == nil {
+		return 0, false
+	}
+	v, err := strconv.Atoi(*s)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// cellBool parses the cell as a bool (true/1/yes/y -> true).
+func cellBool(row []string, colIdx map[string]int, col string) (bool, bool) {
+	s := cellString(row, colIdx, col)
+	if s == nil {
+		return false, false
+	}
+	switch strings.ToLower(*s) {
+	case "true", "1", "yes", "y":
+		return true, true
+	case "false", "0", "no", "n":
+		return false, true
+	}
+	return false, false
+}
+
+// generateKpiID returns a short random hex id (16 chars) for new KPI rows.
+// Mirrors the Java UUID-style id.
+func generateKpiID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func strPtr(s string) *string { return &s }
 
 // DownloadPMFile serves the newest pm_file_log file for the device in
 // the given time range. Mirrors Java downloadPMFile. File path is

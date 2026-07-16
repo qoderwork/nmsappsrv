@@ -2,6 +2,7 @@ package pm
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -403,18 +404,31 @@ func (h *Handler) ExportPMExcel(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
 }
 
 // ImportKPIs handles POST /pm/kpis/import
-// Body: array of PerformanceKpi. Mirrors Java importKPI.
+// multipart/form-data: file=<xlsx>, version=<string>. Mirrors Java
+// importKPI (Java uses Apache POI; Go uses excelize).
 func (h *Handler) ImportKPIs(c *gin.Context) {
-	var items []PerformanceKpi
-	if err := c.ShouldBindJSON(&items); err != nil {
-		utils.Error(c, 400, "invalid request body: expected array of KPIs")
+	fh, err := c.FormFile("file")
+	if err != nil {
+		utils.Error(c, 400, "missing 'file' multipart field (xlsx)")
 		return
 	}
-	count, err := h.svc.ImportKPIs(items)
+	f, err := fh.Open()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	version := c.PostForm("version")
+	count, err := h.svc.ImportKPIsFromXLSX(data, version)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
