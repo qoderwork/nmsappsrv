@@ -1,8 +1,14 @@
 package corenet
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"nmsappsrv/internal/tr069/soap"
+	"nmsappsrv/pkg/logger"
+	"nmsappsrv/pkg/redis"
 
 	"gorm.io/gorm"
 )
@@ -37,17 +43,22 @@ type Service interface {
 	// GetUeInfos returns UE detail records. No Go schema; returns empty
 	// list. Mirrors Java getUeInfos.
 	GetUeInfos(coreNetworkId int) ([]UeInfo, error)
-	// ChangeCoreNetworkSwitch flips a boolean switch on the core network
-	// row. Mirrors Java changeCoreNetworkSwitch. The Go schema has no
-	// dedicated switch column; the row's `description` field is updated
-	// with a marker line for now (a future migration can add a real column).
-	ChangeCoreNetworkSwitch(coreNetworkId int, enable bool) error
+	// ChangeCoreNetworkSwitch flips the NGCSwitch on the core network's
+	// device via TR-069 SetParameterValues (mirrors Java
+	// changeCoreNetworkSwitch -> operationDTOGenerateUtil.setParamValue
+	// Device.FAP.NGC.NGCSwitch). It also keeps a local marker on the row
+	// for traceability (Java relies on device state).
+	ChangeCoreNetworkSwitch(coreNetworkId int, enable bool, username string) error
 	// GetCoreNetworkUserInfo returns aggregated user counts across the
 	// core network's KPI rows. Mirrors Java getCoreNetworkUserInfo.
 	GetCoreNetworkUserInfo(coreNetworkId int) (*CoreNetworkUserInfoVo, error)
 	// GetCoreNetworkUpfTraffic returns aggregated UPF traffic across the
 	// core network's KPI rows. Mirrors Java getCoreNetworkUpfTraffic.
 	GetCoreNetworkUpfTraffic(coreNetworkId int) (*CoreNetworkUpfTrafficVo, error)
+	// IngestCoreNetworkKpi stores device-reported KPI into core_network_kpi
+	// (mirrors Java kpi() / dealUPFKPI). This is the ingest half of the
+	// KPI collector that makes core_network_kpi non-empty.
+	IngestCoreNetworkKpi(dto IngestCoreNetworkKpiDTO) error
 	// GetBuiltInCoreNetworkUpfTraffic returns the built-in UPF traffic
 	// view (excludes user-supplied KPI rows). Mirrors Java
 	// getBuiltInCoreNetworkUpfTraffic.
@@ -228,21 +239,224 @@ func (s *service) GetUeInfos(coreNetworkId int) ([]UeInfo, error) {
 	return []UeInfo{}, nil
 }
 
-// ChangeCoreNetworkSwitch flips the switch on the core network row.
-// Mirrors Java changeCoreNetworkSwitch.
-func (s *service) ChangeCoreNetworkSwitch(coreNetworkId int, enable bool) error {
-	return s.repo.UpdateCoreNetworkSwitch(coreNetworkId, enable)
+// ChangeCoreNetworkSwitch flips the NGCSwitch on the core network's device
+// via a TR-069 SetParameterValues, mirroring Java changeCoreNetworkSwitch
+// (operationDTOGenerateUtil.setParamValue Device.FAP.NGC.NGCSwitch). It also
+// keeps a local marker on the row for traceability.
+func (s *service) ChangeCoreNetworkSwitch(coreNetworkId int, enable bool, username string) error {
+	// Local marker (kept for traceability; Java relies on device state).
+	if err := s.repo.UpdateCoreNetworkSwitch(coreNetworkId, enable); err != nil {
+		logger.Warnf("ChangeCoreNetworkSwitch: local marker update failed: %v", err)
+	}
+
+	// Resolve the linked device and dispatch the SPV to it.
+	cn, err := s.repo.FindByID(coreNetworkId)
+	if err != nil || cn == nil || cn.ElementId == nil {
+		logger.Infof("ChangeCoreNetworkSwitch: core network %d has no linked device; marker only", coreNetworkId)
+		return nil
+	}
+	var serial string
+	if err := s.db.Table("cpe_element").
+		Select("serial_number").
+		Where("ne_neid = ? AND deleted = ?", *cn.ElementId, false).
+		Scan(&serial).Error; err != nil || serial == "" {
+		logger.Warnf("ChangeCoreNetworkSwitch: no device serial for core network %d", coreNetworkId)
+		return nil
+	}
+
+	value := "0"
+	if enable {
+		value = "1"
+	}
+	headerId := soap.GenerateHeaderID()
+	params := []soap.ParameterValueStruct{
+		{Name: "Device.FAP.NGC.NGCSwitch", Value: value, Type: "xsd:string"},
+	}
+	soapXml := soap.BuildSetParameterValues(headerId, params, "")
+
+	if eventLogId, lerr := s.insertCoreNetEventLog(*cn.ElementId, username, headerId); lerr == nil && eventLogId != 0 {
+		trackKey := fmt.Sprintf("tr069:track:%s", headerId)
+		trackJson, _ := json.Marshal(map[string]interface{}{
+			"header_id":      headerId,
+			"sn":             serial,
+			"operation_type": "SET_PARAMETER_VALUES",
+			"event_log_id":   eventLogId,
+		})
+		redis.Set(context.Background(), trackKey, string(trackJson), 24*time.Hour)
+	}
+
+	queueKey := fmt.Sprintf("tr069:queue:%s", serial)
+	if err := redis.LPush(context.Background(), queueKey, soapXml); err != nil {
+		logger.Errorf("ChangeCoreNetworkSwitch: failed to push SPV to %s: %v", serial, err)
+	}
+	return nil
 }
 
-// GetCoreNetworkUserInfo returns aggregated user counts derived from
-// the core network's KPI rows (count of distinct device reports in the
-// range). Mirrors Java getCoreNetworkUserInfo.
+// insertCoreNetEventLog writes an event_log row for a core-network device
+// operation and returns its id (mirrors parameter.repository.InsertEventLog).
+func (s *service) insertCoreNetEventLog(elementId int64, user, headerId string) (int64, error) {
+	row := struct {
+		Id               int64     `gorm:"primaryKey;autoIncrement"`
+		EventType        string    `gorm:"column:event_type"`
+		OperationTime    time.Time `gorm:"column:operation_time"`
+		User             string    `gorm:"column:user"`
+		ElementId        int64     `gorm:"column:element_id"`
+		Status           int       `gorm:"column:status"`
+		CommandTrackData string    `gorm:"column:command_track_data"`
+	}{
+		EventType:        "SetParameterValues",
+		OperationTime:    time.Now(),
+		User:             user,
+		ElementId:        elementId,
+		Status:           1,
+		CommandTrackData: headerId,
+	}
+	if err := s.db.Table("event_log").Create(&row).Error; err != nil {
+		return 0, err
+	}
+	return row.Id, nil
+}
+
+// IngestCoreNetworkKpiDTO is the request body for device-reported KPI
+// (mirrors Java CoreNetworkElementKPIDTO).
+type IngestCoreNetworkKpiDTO struct {
+	Task struct {
+		Period struct {
+			StartTime string `json:"startTime"`
+			EndTime   string `json:"endTime"`
+		} `json:"period"`
+		Ne struct {
+			NeType string `json:"neType"`
+			RmUid  string `json:"rmUid"`
+			Kpis   []struct {
+				KpiId  string `json:"kpiId"`
+				KpiId1 string `json:"kpiId1"`
+				Value  int    `json:"value"`
+			} `json:"kpis"`
+		} `json:"ne"`
+	} `json:"task"`
+}
+
+// IngestCoreNetworkKpi stores device-reported KPI into core_network_kpi.
+// Mirrors Java kpi() / dealUPFKPI. This is the ingest half of the KPI
+// collector that makes core_network_kpi non-empty (the previous Go side had
+// no writer, so traffic/user KPIs were always empty). UDM/IMS KPI feed an
+// in-memory user-count cache in Java; Go records their arrival but does not
+// yet populate a user-count store.
+func (s *service) IngestCoreNetworkKpi(dto IngestCoreNetworkKpiDTO) error {
+	ne := dto.Task.Ne
+	if ne.RmUid == "" {
+		return fmt.Errorf("kpi report missing rmUid")
+	}
+	startTime := dto.Task.Period.StartTime
+	if startTime == "" {
+		startTime = time.Now().Format(time.RFC3339)
+	}
+	st, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		st, err = time.Parse("2006-01-02 15:04:05", startTime)
+		if err != nil {
+			return err
+		}
+	}
+	bucket := belong5Min(st)
+
+	kpiMap := map[string]int{}
+	for _, k := range ne.Kpis {
+		id := k.KpiId
+		if id == "" {
+			id = k.KpiId1
+		}
+		kpiMap[id] = k.Value
+	}
+
+	switch ne.NeType {
+	case "UPF":
+		if err := s.upsertCoreNetworkKpi(ne.RmUid, bucket,
+			float64(kpiMap["UPF.03"]), float64(kpiMap["UPF.04"]),
+			float64(kpiMap["UPF.07"]), float64(kpiMap["UPF.08"])); err != nil {
+			return err
+		}
+	case "UDM", "IMS":
+		logger.Infof("IngestCoreNetworkKpi: received %s KPI for rmUid=%s (user-count store not yet ported)", ne.NeType, ne.RmUid)
+	default:
+		logger.Warnf("IngestCoreNetworkKpi: unknown neType %q", ne.NeType)
+	}
+	return nil
+}
+
+// upsertCoreNetworkKpi accumulates a 5-minute KPI bucket into
+// core_network_kpi (mirrors Java dealUPFKPI accumulating into its per-(time,
+// rmUid) cache entry).
+func (s *service) upsertCoreNetworkKpi(rmUid string, bucket time.Time, n6Ul, n6Dl, sgiUl, sgiDl float64) error {
+	var existing CoreNetworkKpi
+	err := s.db.Table("core_network_kpi").
+		Where("rm_uid = ? AND start_time = ?", rmUid, bucket).
+		First(&existing).Error
+	if err == nil {
+		return s.db.Table("core_network_kpi").Where("id = ?", existing.Id).Updates(map[string]interface{}{
+			"n6_ul_traffic":  addFloat(existing.N6UlTraffic, n6Ul),
+			"n6_dl_traffic":  addFloat(existing.N6DlTraffic, n6Dl),
+			"sgi_ul_traffic": addFloat(existing.SgiUlTraffic, sgiUl),
+			"sgi_dl_traffic": addFloat(existing.SgiDlTraffic, sgiDl),
+		}).Error
+	}
+	kpi := CoreNetworkKpi{
+		StartTime:    &bucket,
+		N6UlTraffic:  &n6Ul,
+		N6DlTraffic:  &n6Dl,
+		SgiUlTraffic: &sgiUl,
+		SgiDlTraffic: &sgiDl,
+		RmUid:        &rmUid,
+	}
+	return s.db.Table("core_network_kpi").Create(&kpi).Error
+}
+
+// belong5Min floors a time to its 5-minute bucket (mirrors Java
+// CoreNetworkKPIManagementServiceImpl.belong5Min).
+func belong5Min(t time.Time) time.Time {
+	y, mo, d := t.Date()
+	h, m, _ := t.Clock()
+	m = (m / 5) * 5
+	return time.Date(y, mo, d, h, m, 0, 0, t.Location())
+}
+
+// addFloat adds add to *base (treating nil as 0) and returns the sum.
+func addFloat(base *float64, add float64) float64 {
+	if base != nil {
+		return *base + add
+	}
+	return add
+}
+
+// resolveRmUid returns the device serial number linked to a core network via
+// core_network.element_id -> cpe_element.ne_neid (mirrors the rm_uid scoping
+// Java uses in getBuiltInCoreNetworkUpfTraffic).
+func (s *service) resolveRmUid(coreNetworkId int) (string, error) {
+	var rmUid string
+	if err := s.db.Table("cpe_element").
+		Select("cpe_element.serial_number").
+		Joins("JOIN core_network cn ON cpe_element.ne_neid = cn.element_id").
+		Where("cn.id = ? AND cpe_element.deleted = ?", coreNetworkId, false).
+		Scan(&rmUid).Error; err != nil {
+		return "", err
+	}
+	return rmUid, nil
+}
+
+// GetCoreNetworkUserInfo returns aggregated user counts derived from the
+// core network's KPI rows (count of device reports scoped by rm_uid).
+// Mirrors Java getCoreNetworkUserInfo (which uses an in-memory user-count
+// cache fed by UDM/IMS KPI; Go approximates with the KPI-row count).
 func (s *service) GetCoreNetworkUserInfo(coreNetworkId int) (*CoreNetworkUserInfoVo, error) {
+	rmUid, _ := s.resolveRmUid(coreNetworkId)
 	var count int64
-	if err := s.db.Table("core_network_kpi").
-		Where("core_network_id = ?", coreNetworkId).
-		Count(&count).Error; err != nil {
-		return nil, err
+	if rmUid != "" {
+		if err := s.db.Table("core_network_kpi").
+			Where("rm_uid = ?", rmUid).
+			Count(&count).Error; err != nil {
+			return nil, err
+		}
 	}
 	return &CoreNetworkUserInfoVo{
 		TotalUsers:  count,
@@ -253,36 +467,50 @@ func (s *service) GetCoreNetworkUserInfo(coreNetworkId int) (*CoreNetworkUserInf
 	}, nil
 }
 
-// GetCoreNetworkUpfTraffic returns aggregated UPF traffic derived from
-// the core network's KPI rows (sum of uplink + downlink bytes). Mirrors
-// Java getCoreNetworkUpfTraffic.
+// GetCoreNetworkUpfTraffic returns aggregated UPF traffic derived from the
+// core network's KPI rows (sum of N6 + SGI uplink/downlink). Mirrors Java
+// getCoreNetworkUpfTraffic, which reads the n6_* / sgi_* traffic columns and
+// scopes by rm_uid. The previous implementation queried non-existent columns
+// (uplink_bps/downlink_bps) and a non-existent core_network_id column, so
+// traffic was always 0.
 func (s *service) GetCoreNetworkUpfTraffic(coreNetworkId int) (*CoreNetworkUpfTrafficVo, error) {
+	rmUid, _ := s.resolveRmUid(coreNetworkId)
+	vo := &CoreNetworkUpfTrafficVo{GeneratedAt: time.Now().Format(time.RFC3339)}
+	if rmUid == "" {
+		return vo, nil
+	}
 	type row struct {
-		Uplink   *float64 `gorm:"column:uplink_bps"`
-		Downlink *float64 `gorm:"column:downlink_bps"`
+		N6UlTraffic  *float64 `gorm:"column:n6_ul_traffic"`
+		N6DlTraffic  *float64 `gorm:"column:n6_dl_traffic"`
+		SgiUlTraffic *float64 `gorm:"column:sgi_ul_traffic"`
+		SgiDlTraffic *float64 `gorm:"column:sgi_dl_traffic"`
 	}
 	var rows []row
 	if err := s.db.Table("core_network_kpi").
-		Select("uplink_bps, downlink_bps").
-		Where("core_network_id = ?", coreNetworkId).
+		Select("n6_ul_traffic, n6_dl_traffic, sgi_ul_traffic, sgi_dl_traffic").
+		Where("rm_uid = ?", rmUid).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	var up, down float64
 	for _, r := range rows {
-		if r.Uplink != nil {
-			up += *r.Uplink
+		if r.N6UlTraffic != nil {
+			up += *r.N6UlTraffic
 		}
-		if r.Downlink != nil {
-			down += *r.Downlink
+		if r.SgiUlTraffic != nil {
+			up += *r.SgiUlTraffic
+		}
+		if r.N6DlTraffic != nil {
+			down += *r.N6DlTraffic
+		}
+		if r.SgiDlTraffic != nil {
+			down += *r.SgiDlTraffic
 		}
 	}
-	return &CoreNetworkUpfTrafficVo{
-		UplinkBps:   up,
-		DownlinkBps: down,
-		TotalBytes:  int64((up + down) / 8),
-		GeneratedAt: time.Now().Format(time.RFC3339),
-	}, nil
+	vo.UplinkBps = up
+	vo.DownlinkBps = down
+	vo.TotalBytes = int64((up + down) / 8)
+	return vo, nil
 }
 
 // GetBuiltInCoreNetworkUpfTraffic returns the built-in UPF traffic

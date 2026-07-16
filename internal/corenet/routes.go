@@ -22,6 +22,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/core-networks/ue-number-statistic", h.ListUENumberStatistic)
 	rg.POST("/core-networks/ue-infos", h.GetUeInfos)
 	rg.POST("/core-networks/switch", h.ChangeCoreNetworkSwitch)
+	rg.POST("/core-networks/kpi/ingest", h.IngestCoreNetworkKpi)
 	rg.POST("/core-networks/kpi/user-info", h.GetCoreNetworkUserInfo)
 	rg.POST("/core-networks/kpi/upf-traffic", h.GetCoreNetworkUpfTraffic)
 	rg.POST("/core-networks/kpi/upf-traffic/built-in", h.GetBuiltInCoreNetworkUpfTraffic)

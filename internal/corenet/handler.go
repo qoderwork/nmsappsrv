@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/utils"
 
 	"gorm.io/gorm"
@@ -293,7 +294,25 @@ func (h *Handler) ChangeCoreNetworkSwitch(c *gin.Context) {
 		utils.Error(c, 400, "coreNetworkId is required")
 		return
 	}
-	if err := h.svc.ChangeCoreNetworkSwitch(body.CoreNetworkId, body.Enable); err != nil {
+	if err := h.svc.ChangeCoreNetworkSwitch(body.CoreNetworkId, body.Enable, middleware.GetUsername(c)); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// IngestCoreNetworkKpi handles POST /core-networks/kpi/ingest
+// Body: Task{Period{StartTime,EndTime},Ne{NeType,RmUid,Kpis[{kpiId/kpiId1,value}]}}.
+// Mirrors Java kpi()/dealUPFKPI device-reported KPI collector. This is the
+// ingest half that makes core_network_kpi non-empty (the rewrite previously
+// had no writer, so traffic/user KPIs were always empty).
+func (h *Handler) IngestCoreNetworkKpi(c *gin.Context) {
+	var dto IngestCoreNetworkKpiDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid ingest body")
+		return
+	}
+	if err := h.svc.IngestCoreNetworkKpi(dto); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
