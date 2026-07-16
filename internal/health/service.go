@@ -19,6 +19,7 @@ import (
 // Service defines the business-logic contract for health checks.
 type Service interface {
 	HealthCheck() HealthStatus
+	Readiness() HealthStatus
 	GetMysqlInfo() (*MysqlInfo, error)
 	GetRedisInfo() (*RedisInfo, error)
 	GetQueueInfo() []QueueInfo
@@ -44,6 +45,35 @@ func newService(repo Repository) Service {
 // HealthCheck returns basic health status
 func (s *service) HealthCheck() HealthStatus {
 	return newHealthStatus()
+}
+
+// Readiness returns liveness plus dependency checks (MySQL + Redis).
+// Status is "ok" when all dependencies are up, otherwise "down".
+func (s *service) Readiness() HealthStatus {
+	st := newHealthStatus()
+	deps := map[string]string{}
+
+	if s.repo != nil {
+		if err := s.repo.Ping(); err != nil {
+			deps["mysql"] = "down"
+			logger.Warnf("readiness: mysql down: %v", err)
+		} else {
+			deps["mysql"] = "up"
+		}
+	}
+
+	if err := redis.RDB.Ping(context.Background()).Err(); err != nil {
+		deps["redis"] = "down"
+		logger.Warnf("readiness: redis down: %v", err)
+	} else {
+		deps["redis"] = "up"
+	}
+
+	st.Dependencies = deps
+	if deps["mysql"] == "down" || deps["redis"] == "down" {
+		st.Status = "down"
+	}
+	return st
 }
 
 // GetMysqlInfo returns MySQL health metrics

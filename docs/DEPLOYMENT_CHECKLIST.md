@@ -197,7 +197,7 @@ export NMS_MAIL_AES_KEY=<64-hex>
 export NMS_LICENSE_INSTALL_DIR=./data/license
 ```
 
-> 当前 nmsappsrv 还未把所有 `Cfg.*` 字段接 env 覆盖。**上线前需要补 env-binding**（这是 Tier 2 的代码工作之一）。
+> env 覆盖已于 2026-07-16 补齐：`NMS_DB_*` / `NMS_REDIS_*` 经 `applyEnvOverrides()` 显式生效；`NMS_JWT_SECRET` / `NMS_FILE_SERVER_*` / `NMS_MAIL_AES_KEY` / `NMS_LICENSE_INSTALL_DIR` 经 viper `AutomaticEnv` 生效（见 §7 项 1）。
 
 ---
 
@@ -218,7 +218,7 @@ export NMS_LICENSE_INSTALL_DIR=./data/license
    ```
 2. **配置加载**：启动进程，看 `config loaded` 日志，无 `invalid` 报错。
 3. **license 校验**：`license-tool fingerprint` 输出与 `dmidecode -s system-uuid`（去杠大写）一致；放入 `./data/license/*.lic` 后 `license.required=true` 下能正常通过中间件。
-4. **HTTP 健康检查**：`curl -sf http://localhost:8080/healthz`（如果加了健康检查端点）或 `curl -sf http://localhost:8080/api/v2/...` 任一未鉴权端点。
+4. **HTTP 健康检查**：`curl -sf http://localhost:8080/healthz`（liveness）与 `curl -sf http://localhost:8080/readyz`（readiness，依赖异常返 503）。两端点已于 2026-07-16 补齐。
 5. **TR-069 Inform**：启动后 `tr069:queue:<sn>` LIST 出现；任意一台设备 Inform 进来后 `online_<neId>` 出现。
 6. **operation_queue 链路**：调一个 SPV（如 `SetParameterValues`），看 `redis-cli LRANGE operation_queue 0 -1` 出现，worker 消费后队列清空。
 7. **web_callback 链路**：Inform 触发后 `redis-cli LRANGE queue:web_callback 0 -1` 出现并被 bridge 消费。
@@ -230,12 +230,14 @@ export NMS_LICENSE_INSTALL_DIR=./data/license
 
 ## 7. 已知"上线前必须修"的代码缺口（Tier 2 范围）
 
-1. **env 覆盖缺失**：`internal/config/config.go` 多数字段没接 env，需要补 `NMS_DB_*` / `NMS_REDIS_*` / `NMS_JWT_SECRET` / `NMS_FILE_SERVER_*` 绑定（当前只有 `mail.aes_key` 的 validator，没有 from-env loader）。
-2. **健康检查端点**：未确认有 `/healthz`，需要补（容器探针用）。
-3. **优雅关闭信号**：确认 `pkg/shutdown` 已生效，所有 worker（`operation-worker` / `mml-worker` / `param-scheduler` / `ws-bridge` / `offline-worker`）都能 graceful stop。
-4. **mTLS 中间件**：如果有 GMLC/LMF 客户端证书需求，需要在 router 层加 TLS 双向认证中间件 + `ca cert pool`。
-5. **license fingerprint 一致性**：宿主机 `dmidecode -s system-uuid` 在容器内能读到（`java-compose.yml` 已挂 `/dev/mem` + `/sbin/dmidecode`，nmsappsrv 容器需要同样挂载）。
-6. **T-Platform 私钥读取**：`tr069.private_key_path` / `certificate_path` 启动时存在性检查 + 失败 fail-fast。
+> 状态更新 2026-07-16：项 1/2/3 已修复或确认，余 4/5/6。
+
+1. **env 覆盖缺失 — 已修复 (2026-07-16)**：`internal/config/config.go` 增加 `applyEnvOverrides()`，在 `Unmarshal` 后显式读取 `NMS_DB_HOST/PORT/USER/PASSWORD/NAME` 与 `NMS_REDIS_HOST/PORT/PASSWORD/DB` 覆盖 `Cfg.DB.*` / `Cfg.Redis.*`。原因：viper `AutomaticEnv` 按 `database.host`→`NMS_DATABASE_HOST` 派生，但本文档 §4 用更短的 `NMS_DB_*` 形式，故需显式补。其余 `NMS_JWT_SECRET` / `NMS_FILE_SERVER_*` / `NMS_MAIL_AES_KEY` / `NMS_LICENSE_INSTALL_DIR` 经 `AutomaticEnv` 已生效。
+2. **健康检查端点 — 已修复 (2026-07-16)**：`internal/health` 增加 `/healthz`（liveness，无依赖，恒 200）与 `/readyz`（readiness，ping MySQL+Redis，依赖异常返 503）。原有 `/health`、`/ready`、`/healthCheck` 保留兼容。
+3. **优雅关闭 — 已确认 (2026-07-16)**：实际机制为 `github.com/qoderwork/go-infra/lifecycle`（`pkg/shutdown` 未接线，属死代码，可删除）。`cmd/main.go` 用 `mgr.Add(workerTask(...))` 注册全部 worker，含清单要求的 `operation-worker` / `mml-worker` / `param-scheduler` / `ws-bridge` / `offline-worker`，外加 `http-server` / `snmp-worker` / `snmp-poller` / `upgrade-worker` / `ztp-worker` / `resource-collector` / `main-scheduler` / `alarm-notifier` / `pmfile-processor` / `param-threshold` / `stun-server`；SIGINT/SIGTERM 触发 LIFO 停止。
+4. **mTLS 中间件**：如果有 GMLC/LMF 客户端证书需求，需要在 router 层加 TLS 双向认证中间件 + `ca cert pool`（按需，非阻塞）。
+5. **license fingerprint 一致性**：宿主机 `dmidecode -s system-uuid` 在容器内能读到（`java-compose.yml` 已挂 `/dev/mem` + `/sbin/dmidecode`，nmsappsrv 容器需同样挂载 + 给 go-infra 加 system-uuid 指纹源，见 §0）。属部署配置项。
+6. **T-Platform 私钥读取**：`tr069.private_key_path` / `certificate_path` 启动时存在性检查 + 失败 fail-fast（待补，P1）。
 
 ---
 

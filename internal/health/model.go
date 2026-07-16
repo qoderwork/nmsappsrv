@@ -42,8 +42,9 @@ type RedisInfo struct {
 
 // HealthStatus represents overall health
 type HealthStatus struct {
-	Status    string `json:"status"`
-	Timestamp string `json:"timestamp"`
+	Status       string            `json:"status"`
+	Timestamp    string            `json:"timestamp"`
+	Dependencies map[string]string `json:"dependencies,omitempty"`
 }
 
 func newHealthStatus() HealthStatus {

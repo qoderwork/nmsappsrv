@@ -22,6 +22,23 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 	utils.Success(c, h.svc.HealthCheck())
 }
 
+// Liveness handles GET /healthz — process is alive, no dependency checks.
+// Intended for Kubernetes liveness probes.
+func (h *Handler) Liveness(c *gin.Context) {
+	utils.Success(c, h.svc.HealthCheck())
+}
+
+// Readiness handles GET /readyz — checks DB + Redis. Returns HTTP 503 with a
+// status body when any dependency is down (Kubernetes readiness probe contract).
+func (h *Handler) Readiness(c *gin.Context) {
+	st := h.svc.Readiness()
+	if st.Status == "down" {
+		c.JSON(503, utils.Response{Code: 503, Message: "service not ready", Data: st})
+		return
+	}
+	utils.Success(c, st)
+}
+
 // GetMysqlInfo handles GET /api/v1/getMysqlInfo
 func (h *Handler) GetMysqlInfo(c *gin.Context) {
 	info, err := h.svc.GetMysqlInfo()

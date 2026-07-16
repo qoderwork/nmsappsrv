@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -255,6 +256,13 @@ func Load(configPath ...string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Apply explicit environment overrides (see docs/DEPLOYMENT_CHECKLIST.md §4).
+	// viper's AutomaticEnv maps database.host -> NMS_DATABASE_HOST, but the
+	// deployment guide documents the shorter NMS_DB_* form; apply those on top
+	// of the unmarshaled config so the documented names actually take effect.
+	// Only non-empty values override.
+	applyEnvOverrides(Cfg)
+
 	// Apply defaults for platform file paths if not set
 	if Cfg.PlatformFiles.RSAPublicKeyPath == "" {
 		Cfg.PlatformFiles.RSAPublicKeyPath = "./cert/password/publicKey.pem"
@@ -301,6 +309,50 @@ func GetSNMPEnterpriseOID() string {
 		return ""
 	}
 	return Cfg.SNMP.EnterpriseOID
+}
+
+// applyEnvOverrides applies the documented NMS_DB_* / NMS_REDIS_* environment
+// variables (see docs/DEPLOYMENT_CHECKLIST.md §4) on top of the unmarshaled
+// config. viper's AutomaticEnv derives NMS_DATABASE_HOST from database.host,
+// but the deployment guide uses the shorter NMS_DB_* names; we honor both by
+// applying the short names explicitly here. Only non-empty values take effect.
+//
+// Redis env vars (NMS_REDIS_*) already match viper's derived keys, but we set
+// them explicitly too for determinism and to make the override point obvious.
+func applyEnvOverrides(c *Config) {
+	if h := os.Getenv("NMS_DB_HOST"); h != "" {
+		c.DB.Host = h
+	}
+	if p := os.Getenv("NMS_DB_PORT"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			c.DB.Port = v
+		}
+	}
+	if u := os.Getenv("NMS_DB_USER"); u != "" {
+		c.DB.User = u
+	}
+	if pw := os.Getenv("NMS_DB_PASSWORD"); pw != "" {
+		c.DB.Password = pw
+	}
+	if n := os.Getenv("NMS_DB_NAME"); n != "" {
+		c.DB.DBName = n
+	}
+	if h := os.Getenv("NMS_REDIS_HOST"); h != "" {
+		c.Redis.Host = h
+	}
+	if p := os.Getenv("NMS_REDIS_PORT"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			c.Redis.Port = v
+		}
+	}
+	if pw := os.Getenv("NMS_REDIS_PASSWORD"); pw != "" {
+		c.Redis.Password = pw
+	}
+	if d := os.Getenv("NMS_REDIS_DB"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil {
+			c.Redis.DB = v
+		}
+	}
 }
 
 // Validate checks that all required configuration fields are set.

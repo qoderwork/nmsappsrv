@@ -9,6 +9,8 @@ import (
 // Repository defines the data-access contract for health checks
 type Repository interface {
 	GetMysqlGlobalStatus() (map[string]string, error)
+	// Ping verifies the database connection is alive.
+	Ping() error
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -38,4 +40,16 @@ func (r *repository) GetMysqlGlobalStatus() (map[string]string, error) {
 		metrics[name] = value
 	}
 	return metrics, nil
+}
+
+// Ping verifies the underlying *sql.DB connection is reachable.
+func (r *repository) Ping() error {
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return apperror.Wrap(err, "DB_PING_FAILED", 500, "failed to get sql.DB")
+	}
+	if err := sqlDB.Ping(); err != nil {
+		return apperror.Wrap(err, "DB_PING_FAILED", 500, "database ping failed")
+	}
+	return nil
 }
