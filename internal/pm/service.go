@@ -2,6 +2,7 @@ package pm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,15 +21,26 @@ type Service interface {
 	DeleteKPI(id string) error
 	ListKPISets(tenancyId int) ([]PerformanceKpiSet, error)
 	CreateKPISet(set *PerformanceKpiSet) error
+	DeleteKPISet(id int) error
 	ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error)
 	CreateKPITemplate(t *PerformanceKpiTemplate) error
 	UpdateKPITemplate(t *PerformanceKpiTemplate) error
 	DeleteKPITemplate(id int) error
+	GetKPITemplate(id int) (*PerformanceKpiTemplate, error)
+	// DownloadKPITemplate returns the template serialized as bytes plus a
+	// suggested filename. The handler sets Content-Disposition and writes
+	// the body. Mirrors Java downloadKPITemplate.
+	DownloadKPITemplate(id int) ([]byte, string, error)
 	ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog, int64, error)
 	ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error)
 	CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	DeleteKPIAlarmTemplate(id int) error
+	GetKPIAlarmTemplate(id int) (*KpiAlarmTemplate, error)
+	// UpdateKPIAlarmTemplateStatus toggles the `enable` flag on a KPI alarm
+	// template. Mirrors Java updateKPIAlarmTemplateStatus (the Java endpoint
+	// is a status-only update distinct from the full update).
+	UpdateKPIAlarmTemplateStatus(id int, enable bool) error
 	GetDashboardData(tenancyId int, startTime, endTime string) ([]DashboardPmStatisticData, error)
 	GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error)
 	GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error)
@@ -101,6 +113,13 @@ func (s *service) CreateKPISet(set *PerformanceKpiSet) error {
 	return nil
 }
 
+func (s *service) DeleteKPISet(id int) error {
+	if err := s.repo.DeleteKPISet(id); err != nil {
+		return apperror.Wrap(err, "DELETE_KPI_SET_FAILED", 500, "failed to delete KPI set")
+	}
+	return nil
+}
+
 // ---------- PerformanceKpiTemplate ----------
 
 func (s *service) ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
@@ -109,6 +128,27 @@ func (s *service) ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, err
 		return nil, apperror.Wrap(err, "LIST_KPI_TEMPLATES_FAILED", 500, "failed to list KPI templates")
 	}
 	return data, nil
+}
+
+func (s *service) GetKPITemplate(id int) (*PerformanceKpiTemplate, error) {
+	data, err := s.repo.FindKPITemplate(id)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_KPI_TEMPLATE_FAILED", 500, "failed to get KPI template")
+	}
+	return data, nil
+}
+
+func (s *service) DownloadKPITemplate(id int) ([]byte, string, error) {
+	tpl, err := s.repo.FindKPITemplate(id)
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "DOWNLOAD_KPI_TEMPLATE_FAILED", 500, "failed to load KPI template")
+	}
+	body, err := json.MarshalIndent(tpl, "", "  ")
+	if err != nil {
+		return nil, "", apperror.Wrap(err, "MAR_KPI_TEMPLATE_FAILED", 500, "failed to marshal KPI template")
+	}
+	filename := fmt.Sprintf("kpi-template-%d.json", id)
+	return body, filename, nil
 }
 
 func (s *service) CreateKPITemplate(t *PerformanceKpiTemplate) error {
@@ -153,6 +193,14 @@ func (s *service) ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, erro
 	return data, nil
 }
 
+func (s *service) GetKPIAlarmTemplate(id int) (*KpiAlarmTemplate, error) {
+	data, err := s.repo.FindKPIAlarmTemplate(id)
+	if err != nil {
+		return nil, apperror.Wrap(err, "GET_KPI_ALARM_TEMPLATE_FAILED", 500, "failed to get KPI alarm template")
+	}
+	return data, nil
+}
+
 func (s *service) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	if err := s.repo.CreateKPIAlarmTemplate(t); err != nil {
 		return apperror.Wrap(err, "CREATE_KPI_ALARM_TEMPLATE_FAILED", 500, "failed to create KPI alarm template")
@@ -163,6 +211,13 @@ func (s *service) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 func (s *service) UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	if err := s.repo.UpdateKPIAlarmTemplate(t); err != nil {
 		return apperror.Wrap(err, "UPDATE_KPI_ALARM_TEMPLATE_FAILED", 500, "failed to update KPI alarm template")
+	}
+	return nil
+}
+
+func (s *service) UpdateKPIAlarmTemplateStatus(id int, enable bool) error {
+	if err := s.repo.UpdateKPIAlarmTemplateStatus(id, enable); err != nil {
+		return apperror.Wrap(err, "UPDATE_KPI_ALARM_TEMPLATE_STATUS_FAILED", 500, "failed to update KPI alarm template status")
 	}
 	return nil
 }

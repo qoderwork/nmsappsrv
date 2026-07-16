@@ -24,15 +24,19 @@ type Repository interface {
 	FindKPIs(tenancyId int) ([]PerformanceKpi, error)
 	FindKPISets(tenancyId int) ([]PerformanceKpiSet, error)
 	CreateKPISet(s *PerformanceKpiSet) error
+	DeleteKPISet(id int) error
 	FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error)
+	FindKPITemplate(id int) (*PerformanceKpiTemplate, error)
 	CreateKPITemplate(t *PerformanceKpiTemplate) error
 	UpdateKPITemplate(t *PerformanceKpiTemplate) error
 	DeleteKPITemplate(id int) error
 	FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error)
 	FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error)
+	FindKPIAlarmTemplate(id int) (*KpiAlarmTemplate, error)
 	CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	DeleteKPIAlarmTemplate(id int) error
+	UpdateKPIAlarmTemplateStatus(id int, enable bool) error
 	FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error)
 	FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error)
 	FindAllActiveElements(licenseId int) ([]elementRow, error)
@@ -80,6 +84,10 @@ func (r *repository) CreateKPISet(s *PerformanceKpiSet) error {
 	return r.db.Create(s).Error
 }
 
+func (r *repository) DeleteKPISet(id int) error {
+	return r.db.Where("id = ?", id).Delete(&PerformanceKpiSet{}).Error
+}
+
 // ---------------------------------------------------------------------------
 // PerformanceKpiTemplate (different entity type)
 // ---------------------------------------------------------------------------
@@ -88,6 +96,14 @@ func (r *repository) FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, 
 	var items []PerformanceKpiTemplate
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
 	return items, err
+}
+
+func (r *repository) FindKPITemplate(id int) (*PerformanceKpiTemplate, error) {
+	var item PerformanceKpiTemplate
+	if err := r.db.Where("id = ?", id).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
 }
 
 func (r *repository) CreateKPITemplate(t *PerformanceKpiTemplate) error {
@@ -127,12 +143,26 @@ func (r *repository) FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, e
 	return items, err
 }
 
+func (r *repository) FindKPIAlarmTemplate(id int) (*KpiAlarmTemplate, error) {
+	var item KpiAlarmTemplate
+	if err := r.db.Where("id = ?", id).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 func (r *repository) CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	return r.db.Create(t).Error
 }
 
 func (r *repository) UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error {
 	return r.db.Save(t).Error
+}
+
+func (r *repository) UpdateKPIAlarmTemplateStatus(id int, enable bool) error {
+	return r.db.Model(&KpiAlarmTemplate{}).
+		Where("id = ?", id).
+		Update("enable", enable).Error
 }
 
 func (r *repository) DeleteKPIAlarmTemplate(id int) error {

@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -104,6 +106,19 @@ func (h *Handler) CreateKPISet(c *gin.Context) {
 	utils.Success(c, item)
 }
 
+func (h *Handler) DeleteKPISet(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "invalid id")
+		return
+	}
+	if err := h.svc.DeleteKPISet(id); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
 // ---------- PerformanceKpiTemplate ----------
 
 func (h *Handler) ListKPITemplates(c *gin.Context) {
@@ -147,6 +162,35 @@ func (h *Handler) UpdateKPITemplate(c *gin.Context) {
 		return
 	}
 	utils.Success(c, item)
+}
+
+func (h *Handler) GetKPITemplate(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "invalid id")
+		return
+	}
+	item, err := h.svc.GetKPITemplate(id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, item)
+}
+
+func (h *Handler) DownloadKPITemplate(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "invalid id")
+		return
+	}
+	data, filename, err := h.svc.DownloadKPITemplate(id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
 }
 
 func (h *Handler) DeleteKPITemplate(c *gin.Context) {
@@ -208,6 +252,20 @@ func (h *Handler) CreateKPIAlarm(c *gin.Context) {
 	utils.Success(c, item)
 }
 
+func (h *Handler) GetKPIAlarmTemplate(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "invalid id")
+		return
+	}
+	item, err := h.svc.GetKPIAlarmTemplate(id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, item)
+}
+
 func (h *Handler) UpdateKPIAlarm(c *gin.Context) {
 	id := c.Param("id")
 	intID, err := strconv.Atoi(id)
@@ -226,6 +284,26 @@ func (h *Handler) UpdateKPIAlarm(c *gin.Context) {
 		return
 	}
 	utils.Success(c, item)
+}
+
+func (h *Handler) UpdateKPIAlarmTemplateStatus(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "invalid id")
+		return
+	}
+	var body struct {
+		Enable bool `json:"enable"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, 400, err.Error())
+		return
+	}
+	if err := h.svc.UpdateKPIAlarmTemplateStatus(id, body.Enable); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
 }
 
 func (h *Handler) DeleteKPIAlarm(c *gin.Context) {
