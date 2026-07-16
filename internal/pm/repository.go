@@ -44,6 +44,7 @@ type Repository interface {
 	FindAllActiveElementsAllTenants() ([]elementRow, error)
 	BulkCreateKPIs(items []PerformanceKpi) error
 	FindPMFileLogsInRange(elementId int64, startTime, endTime time.Time) ([]PMFileLog, error)
+	FindENBDevicesForMeas(licenseId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -240,4 +241,25 @@ func (r *repository) FindPMFileLogsInRange(elementId int64, startTime, endTime t
 		Order("start_time DESC").
 		Find(&items).Error
 	return items, err
+}
+
+// FindENBDevicesForMeas returns paginated eNB devices (device_type='enb')
+// for the license, optionally filtered by a name/serial search text.
+// Mirrors Java listKPIMeas (which queries NeElement where device_type='enb').
+func (r *repository) FindENBDevicesForMeas(licenseId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error) {
+	var items []MeasDeviceVo
+	var total int64
+
+	q := r.db.Table("cpe_element").
+		Select("ne_neid, device_name, serial_number, device_type, root_node").
+		Where("deleted = 0 AND device_type = 'enb' AND license_id = ?", licenseId)
+	if searchText != "" {
+		like := "%" + searchText + "%"
+		q = q.Where("device_name LIKE ? OR serial_number LIKE ?", like, like)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := q.Offset(offset).Limit(limit).Order("ne_neid ASC").Scan(&items).Error
+	return items, total, err
 }

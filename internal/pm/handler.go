@@ -440,3 +440,48 @@ func (h *Handler) DownloadPMFile(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	c.Data(http.StatusOK, "application/octet-stream", data)
 }
+
+// ListKPIMeas handles POST /pm/kpi-meas
+// Body: {page, pageSize, searchText}. Mirrors Java listKPIMeas.
+func (h *Handler) ListKPIMeas(c *gin.Context) {
+	tenancyId := middleware.GetLicenseId(c)
+	var body struct {
+		Page       int    `json:"page"`
+		PageSize   int    `json:"pageSize"`
+		SearchText string `json:"searchText"`
+	}
+	_ = c.ShouldBindJSON(&body) // optional body; defaults handled in service
+	items, total, err := h.svc.ListKPIMeas(tenancyId, body.SearchText, body.Page, body.PageSize)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Paginated(c, items, total, body.Page, body.PageSize)
+}
+
+// UpdateMeasTaskSwitch handles POST /pm/kpi-meas/switch
+// Body: {elementId, enable, username?}. Mirrors Java updateMeasTaskSwitch.
+func (h *Handler) UpdateMeasTaskSwitch(c *gin.Context) {
+	var body struct {
+		ElementId int64  `json:"elementId"`
+		Enable    bool   `json:"enable"`
+		Username  string `json:"username"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.Error(c, 400, "invalid request body")
+		return
+	}
+	if body.ElementId <= 0 {
+		utils.Error(c, 400, "elementId is required")
+		return
+	}
+	username := body.Username
+	if username == "" {
+		username = "system"
+	}
+	if err := h.svc.UpdateMeasTaskSwitch(body.ElementId, body.Enable, username); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}

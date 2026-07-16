@@ -14,6 +14,9 @@ import (
 	"gorm.io/gorm"
 
 	"nmsappsrv/internal/config"
+	"nmsappsrv/internal/mq"
+	"nmsappsrv/internal/opmsg"
+	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/redis"
 )
@@ -71,16 +74,27 @@ type Service interface {
 	// writes files under the configured root is not ported yet, so this
 	// endpoint will 404 until a producer exists).
 	DownloadPMFile(elementId int64, startTime, endTime string) ([]byte, string, error)
+	// ListKPIMeas returns paginated eNB devices for the license. Mirrors
+	// Java listKPIMeas (which queries NeElement where device_type='enb').
+	// The Go side has no separate meas_task table -- the meas task is a
+	// per-device TR-069 FAP.PerfMgmt.Config.1.* parameter block.
+	ListKPIMeas(tenancyId int, searchText string, page, pageSize int) ([]MeasDeviceVo, int64, error)
+	// UpdateMeasTaskSwitch sends a SetParameterValues to the device to
+	// enable/disable the TR-069 FAP.PerfMgmt.Config.1.* measurement block.
+	// Mirrors Java updateMeasTaskSwitch. The SPV is dispatched via the
+	// unified operation queue (mq.OperationQueue -> internal/operation).
+	UpdateMeasTaskSwitch(elementId int64, enable bool, username string) error
 }
 
 // service is the concrete implementation of Service.
 type service struct {
 	repo Repository
+	db   *gorm.DB
 }
 
 // NewService creates a new PM service.
 func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db)}
+	return &service{repo: NewRepository(db), db: db}
 }
 
 // ---------- PerformanceKpi ----------
@@ -516,6 +530,85 @@ func optInt(p *int) string {
 		return ""
 	}
 	return strconv.Itoa(*p)
+}
+
+// ListKPIMeas returns paginated eNB devices for the license, optionally
+// filtered by a name/serial search text. Mirrors Java listKPIMeas
+// (queries NeElement where device_type='enb').
+func (s *service) ListKPIMeas(tenancyId int, searchText string, page, pageSize int) ([]MeasDeviceVo, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	items, total, err := s.repo.FindENBDevicesForMeas(tenancyId, searchText, offset, pageSize)
+	if err != nil {
+		return nil, 0, apperror.Wrap(err, "LIST_KPI_MEAS_FAILED", 500, "failed to list KPI meas devices")
+	}
+	return items, total, nil
+}
+
+// measSwitchParamName returns the full TR-069 path for the FAP PerfMgmt
+// Enable flag given a device's root node. Root nodes seen in the wild:
+// "Device" (BBU/TR-181) and "InternetGatewayDevice" (legacy).
+func measSwitchParamName(rootNode *string) string {
+	rn := "Device"
+	if rootNode != nil && *rootNode != "" {
+		rn = *rootNode
+	}
+	return rn + ".FAP.PerfMgmt.Config.1.Enable"
+}
+
+// UpdateMeasTaskSwitch sends a SetParameterValues to the device to flip
+// the FAP.PerfMgmt.Config.1.Enable flag. Mirrors Java updateMeasTaskSwitch.
+// Dispatched via mq.OperationQueue -> internal/operation worker ->
+// tr069.OperationSender.SendSetParameterValues.
+func (s *service) UpdateMeasTaskSwitch(elementId int64, enable bool, username string) error {
+	// Look up the device to get its root node and serial number.
+	type deviceRow struct {
+		SerialNumber *string `gorm:"column:serial_number"`
+		RootNode     *string `gorm:"column:root_node"`
+	}
+	var row deviceRow
+	if err := s.db.Table("cpe_element").
+		Select("serial_number, root_node").
+		Where("ne_neid = ? AND deleted = 0", elementId).
+		Scan(&row).Error; err != nil {
+		return apperror.Wrap(err, "UPDATE_MEAS_TASK_SWITCH_DEVICE_NOT_FOUND", 404, "device not found")
+	}
+	if row.SerialNumber == nil || *row.SerialNumber == "" {
+		return apperror.New("UPDATE_MEAS_TASK_SWITCH_NO_SN", 400, "device has no serial number")
+	}
+
+	paramName := measSwitchParamName(row.RootNode)
+	paramValue := "0"
+	if enable {
+		paramValue = "1"
+	}
+	params := []soap.ParameterValueStruct{{Name: paramName, Value: paramValue, Type: "xsd:boolean"}}
+	paramJSON, _ := json.Marshal(params)
+
+	expiredAt := time.Now().Add(5 * time.Minute).UnixMilli()
+	msg := opmsg.Message{
+		EventType:      "SetParameterValues",
+		NeNeid:         elementId,
+		Operation:      "SetParameterValues",
+		OperationParam: string(paramJSON),
+		OperationUser:  username,
+		ProtocolType:   opmsg.ProtocolTR069,
+		ExpiredAt:      expiredAt,
+	}
+	msgBytes, err := msg.Marshal()
+	if err != nil {
+		return apperror.Wrap(err, "UPDATE_MEAS_TASK_SWITCH_MARSHAL_FAILED", 500, "failed to marshal opmsg")
+	}
+	ctx := context.Background()
+	if err := redis.LPush(ctx, mq.OperationQueue, string(msgBytes)); err != nil {
+		return apperror.Wrap(err, "UPDATE_MEAS_TASK_SWITCH_PUSH_FAILED", 500, "failed to enqueue operation")
+	}
+	return nil
 }
 
 // newService creates a Service backed by the given Repository (test/mock helper).

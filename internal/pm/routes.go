@@ -35,4 +35,6 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/pm/export-excel", h.ExportPMExcel)
 	rg.POST("/pm/kpis/import", h.ImportKPIs)
 	rg.GET("/pm/file-logs/download", h.DownloadPMFile)
+	rg.POST("/pm/kpi-meas", h.ListKPIMeas)
+	rg.POST("/pm/kpi-meas/switch", h.UpdateMeasTaskSwitch)
 }

@@ -178,3 +178,16 @@ type elementRow struct {
 	Generation *string `gorm:"column:generation"`
 	ModelName  *string `gorm:"column:model_name"`
 }
+
+// MeasDeviceVo is the API response item for listKPIMeas (paginated eNB
+// devices eligible for KPI measurement). Mirrors the Java response shape.
+type MeasDeviceVo struct {
+	NeNeid      int64   `json:"neNeid"`
+	DeviceName  *string `json:"deviceName"`
+	SerialNumber *string `json:"serialNumber"`
+	DeviceType  *string `json:"deviceType"`
+	RootNode    *string `json:"rootNode"`
+	// MeasSwitch is the current state of FAP.PerfMgmt.Config.1.Enable
+	// for the device (true if a recent value is "1"). nil if unknown.
+	MeasSwitch *bool `json:"measSwitch"`
+}
