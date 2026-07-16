@@ -1,7 +1,6 @@
 package webssh
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"gorm.io/gorm"
 
 	"nmsappsrv/pkg/logger"
 )
@@ -20,103 +18,13 @@ import (
 // ---------------------------------------------------------------------------
 
 // DeviceSSHInfo holds everything needed to dial an SSH session to a device.
+// Credentials are provided by the client via the WebSocket "connect" message,
+// aligned with Java WebSSHServiceImpl semantics.
 type DeviceSSHInfo struct {
-	ElementID  int64
-	DeviceName string
-	Host       string // management IP
-	Port       int
-	Username   string
-	Password   string
-}
-
-// WebSSHConfig mirrors the JSON stored in system_config under key "webssh_config".
-type WebSSHConfig struct {
-	Username *string `json:"username"`
-	Password *string `json:"password"` // plain text (server-side only)
-	Port     *int    `json:"port"`
-}
-
-// ---------------------------------------------------------------------------
-// Repository
-// ---------------------------------------------------------------------------
-
-// Repository defines the data-access contract for WebSSH.
-type Repository interface {
-	FindDeviceSSHInfo(elementID int64) (*DeviceSSHInfo, error)
-	GetWebSSHConfig() (*WebSSHConfig, error)
-}
-
-type repository struct {
-	db *gorm.DB
-}
-
-// NewRepository creates a GORM-backed Repository.
-func NewRepository(db *gorm.DB) Repository {
-	return &repository{db: db}
-}
-
-// FindDeviceSSHInfo looks up the device management IP and basic info from
-// cpe_element. It does NOT fill Username/Password -- those come from
-// GetWebSSHConfig or are passed by the client.
-func (r *repository) FindDeviceSSHInfo(elementID int64) (*DeviceSSHInfo, error) {
-	var row struct {
-		NeNeid     int64   `gorm:"column:ne_neid"`
-		DeviceName *string `gorm:"column:device_name"`
-		DeviceIp   *string `gorm:"column:device_ip"`
-		Ip         *string `gorm:"column:ip"`
-	}
-	err := r.db.Table("cpe_element").
-		Select("ne_neid, device_name, device_ip, ip").
-		Where("ne_neid = ? AND deleted = 0", elementID).
-		Scan(&row).Error
-	if err != nil {
-		return nil, fmt.Errorf("device not found: %w", err)
-	}
-
-	host := ""
-	if row.DeviceIp != nil && *row.DeviceIp != "" {
-		host = *row.DeviceIp
-	} else if row.Ip != nil && *row.Ip != "" {
-		host = *row.Ip
-	}
-	if host == "" {
-		return nil, fmt.Errorf("device %d has no management IP", elementID)
-	}
-
-	name := ""
-	if row.DeviceName != nil {
-		name = *row.DeviceName
-	}
-
-	return &DeviceSSHInfo{
-		ElementID:  row.NeNeid,
-		DeviceName: name,
-		Host:       host,
-		Port:       22, // default; overridden by WebSSHConfig
-	}, nil
-}
-
-// GetWebSSHConfig reads the "webssh_config" key from system_config.
-func (r *repository) GetWebSSHConfig() (*WebSSHConfig, error) {
-	var row struct {
-		Value *string `gorm:"column:config_value"`
-	}
-	err := r.db.Table("system_config").
-		Select("config_value").
-		Where("config_key = ?", "webssh_config").
-		Scan(&row).Error
-	if err != nil {
-		// Not found -- return empty config, caller uses defaults.
-		return &WebSSHConfig{}, nil
-	}
-	if row.Value == nil || *row.Value == "" {
-		return &WebSSHConfig{}, nil
-	}
-	var cfg WebSSHConfig
-	if err := json.Unmarshal([]byte(*row.Value), &cfg); err != nil {
-		return &WebSSHConfig{}, nil
-	}
-	return &cfg, nil
+	Host     string // SSH host (management IP)
+	Port     int    // SSH port (default 22)
+	Username string
+	Password string
 }
 
 // ---------------------------------------------------------------------------
@@ -125,48 +33,16 @@ func (r *repository) GetWebSSHConfig() (*WebSSHConfig, error) {
 
 // Service defines the business-logic contract for WebSSH.
 type Service interface {
-	// ResolveDeviceInfo returns the fully-resolved SSH connection info for a
-	// device, merging DB data with system-wide WebSSH config.
-	ResolveDeviceInfo(elementID int64) (*DeviceSSHInfo, error)
-
-	// DialSSH establishes an SSH connection and returns a *ssh.Session ready
-	// for interactive use.
+	// DialSSH establishes an SSH connection using client-provided credentials
+	// and returns a *ssh.Client + *ssh.Session ready for interactive use.
 	DialSSH(info *DeviceSSHInfo) (*ssh.Client, *ssh.Session, error)
 }
 
-type service struct {
-	repo Repository
-}
+type service struct{}
 
 // NewService creates a new WebSSH service.
-func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db)}
-}
-
-func (s *service) ResolveDeviceInfo(elementID int64) (*DeviceSSHInfo, error) {
-	info, err := s.repo.FindDeviceSSHInfo(elementID)
-	if err != nil {
-		return nil, err
-	}
-
-	cfg, err := s.repo.GetWebSSHConfig()
-	if err != nil {
-		return nil, fmt.Errorf("load webssh config: %w", err)
-	}
-
-	if cfg.Username != nil && *cfg.Username != "" {
-		info.Username = *cfg.Username
-	} else {
-		info.Username = "root" // fallback default
-	}
-	if cfg.Password != nil && *cfg.Password != "" {
-		info.Password = *cfg.Password
-	}
-	if cfg.Port != nil && *cfg.Port > 0 {
-		info.Port = *cfg.Port
-	}
-
-	return info, nil
+func NewService() Service {
+	return &service{}
 }
 
 func (s *service) DialSSH(info *DeviceSSHInfo) (*ssh.Client, *ssh.Session, error) {
@@ -185,7 +61,12 @@ func (s *service) DialSSH(info *DeviceSSHInfo) (*ssh.Client, *ssh.Session, error
 		Timeout:         10 * time.Second,
 	}
 
-	addr := net.JoinHostPort(info.Host, strconv.Itoa(info.Port))
+	port := info.Port
+	if port <= 0 {
+		port = 22
+	}
+
+	addr := net.JoinHostPort(info.Host, strconv.Itoa(port))
 	client, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ssh dial %s: %w", addr, err)

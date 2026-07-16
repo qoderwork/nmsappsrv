@@ -356,8 +356,8 @@ func main() {
 	// WebSocket route (no auth required)
 	router.GET("/ws", wsH.ServeWS)
 
-	// WebSSH WebSocket route (SSH auth handled server-side via system_config)
-	webssh.RegisterRoutes(router.Group(""), db)
+	// WebSSH WebSocket route (credentials provided by client via WebSocket "connect" message)
+	webssh.RegisterRoutes(router.Group(""))
 
 	// 启动SSH Access Timer后台过期检查
 	sshH.StartExpiredChecker()
