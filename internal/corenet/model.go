@@ -56,3 +56,73 @@ type CoreNetworkStatisticData struct {
 }
 
 func (CoreNetworkStatisticData) TableName() string { return "core_network_statistic_data" }
+
+// CoreNetworkAlarmVo is the response item for getCoreNetworkAlarms
+// (mirrors Java GetCoreNetworkAlarmsVO). The Go side does not have a
+// dedicated corenet_alarm table; the core_network_id link is not yet
+// modelled. For now we surface recent license-scoped alarms as a
+// proxy -- a future migration can add the proper join.
+type CoreNetworkAlarmVo struct {
+	Id              int64      `json:"id"`
+	Severity        *string    `json:"severity"`
+	AlarmIdentifier *string    `json:"alarmIdentifier"`
+	ProbableCause   *string    `json:"probableCause"`
+	EventTime       *time.Time `json:"eventTime"`
+	AlarmStatus     *int       `json:"alarmStatus"`
+}
+
+// UeInfo is the response item for getUeInfos (mirrors Java ImsiDetailDTO).
+// The Go side has no UE table; the endpoint returns an empty list until
+// the schema lands.
+type UeInfo struct {
+	Imsi      string `json:"imsi"`
+	Imei      string `json:"imei"`
+	Msisdn    string `json:"msisdn"`
+	State     string `json:"state"`
+	StartTime string `json:"startTime"`
+}
+
+// UeListVo is the response item for listUEList (mirrors Java
+// ListUEListVO). No Go schema yet; returns empty list.
+type UeListVo struct {
+	Imsi     string `json:"imsi"`
+	Msisdn   string `json:"msisdn"`
+	Category string `json:"category"`
+}
+
+// UeNumberStatisticVo is the response for listUENumberStatistic
+// (mirrors Java ListUENumberStatisticVO). Aggregated UE counts.
+type UeNumberStatisticVo struct {
+	Total       int64            `json:"total"`
+	ByCategory  map[string]int64 `json:"byCategory"`
+	ByState     map[string]int64 `json:"byState"`
+	GeneratedAt string           `json:"generatedAt"`
+}
+
+// CoreNetworkUserInfoVo is the response for getCoreNetworkUserInfo /
+// getBuiltInCoreNetworkUserInfo (mirrors Java
+// GetCoreNetworkUpfUserCountVO).
+type CoreNetworkUserInfoVo struct {
+	TotalUsers   int64            `json:"totalUsers"`
+	ActiveUsers  int64            `json:"activeUsers"`
+	IdleUsers    int64            `json:"idleUsers"`
+	ByCoreNet    map[string]int64 `json:"byCoreNet"`
+	GeneratedAt  string           `json:"generatedAt"`
+}
+
+// CoreNetworkUpfTrafficVo is the response for getCoreNetworkUpfTraffic /
+// getBuiltInCoreNetworkUpfTraffic (mirrors Java
+// GetCoreNetworkUpfTrafficVO).
+type CoreNetworkUpfTrafficVo struct {
+	UplinkBps   float64 `json:"uplinkBps"`
+	DownlinkBps float64 `json:"downlinkBps"`
+	TotalBytes  int64   `json:"totalBytes"`
+	GeneratedAt string  `json:"generatedAt"`
+}
+
+// KpiReportRow is one row of the KPI report (mirrors Java's
+// kpiReport/{index} response). Index selects the report kind.
+type KpiReportRow struct {
+	Timestamp time.Time              `json:"timestamp"`
+	Metrics   map[string]interface{} `json:"metrics"`
+}

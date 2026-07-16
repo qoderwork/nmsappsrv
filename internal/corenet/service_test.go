@@ -68,6 +68,10 @@ func (m *mockRepository) FindOperationLogs(id, offset, limit int) ([]CoreNetwork
 	return m.logResult, m.logTotal, nil
 }
 
+func (m *mockRepository) UpdateCoreNetworkSwitch(id int, enable bool) error {
+	return nil
+}
+
 func TestDeleteCoreNetwork_CascadesToData(t *testing.T) {
 	m := &mockRepository{}
 	svc := newService(m)

@@ -217,3 +217,164 @@ func (h *Handler) ListOperationLogs(c *gin.Context) {
 	}
 	utils.Paginated(c, data, total, page, pageSize)
 }
+
+// ---------------------------------------------------------------------------
+// Tier 1 corenet KPI batch
+// ---------------------------------------------------------------------------
+
+// GetCoreNetworkAlarms handles POST /core-networks/alarms
+// Body: {coreNetworkId}. Mirrors Java getCoreNetworkAlarms.
+func (h *Handler) GetCoreNetworkAlarms(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetCoreNetworkAlarms(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// ListUEList handles POST /core-networks/ue-list
+// Body: {coreNetworkId}. Mirrors Java listUEList.
+func (h *Handler) ListUEList(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.ListUEList(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// ListUENumberStatistic handles POST /core-networks/ue-number-statistic
+// Body: {coreNetworkId}. Mirrors Java listUENumberStatistic.
+func (h *Handler) ListUENumberStatistic(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.ListUENumberStatistic(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// GetUeInfos handles POST /core-networks/ue-infos
+// Body: {coreNetworkId}. Mirrors Java getUeInfos.
+func (h *Handler) GetUeInfos(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetUeInfos(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// ChangeCoreNetworkSwitch handles POST /core-networks/switch
+// Body: {coreNetworkId, enable}. Mirrors Java changeCoreNetworkSwitch.
+func (h *Handler) ChangeCoreNetworkSwitch(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int  `json:"coreNetworkId"`
+		Enable        bool `json:"enable"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.CoreNetworkId <= 0 {
+		utils.Error(c, 400, "coreNetworkId is required")
+		return
+	}
+	if err := h.svc.ChangeCoreNetworkSwitch(body.CoreNetworkId, body.Enable); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, nil)
+}
+
+// GetCoreNetworkUserInfo handles POST /core-networks/kpi/user-info
+// Body: {coreNetworkId}. Mirrors Java getCoreNetworkUserInfo.
+func (h *Handler) GetCoreNetworkUserInfo(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetCoreNetworkUserInfo(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// GetCoreNetworkUpfTraffic handles POST /core-networks/kpi/upf-traffic
+// Body: {coreNetworkId}. Mirrors Java getCoreNetworkUpfTraffic.
+func (h *Handler) GetCoreNetworkUpfTraffic(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetCoreNetworkUpfTraffic(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// GetBuiltInCoreNetworkUpfTraffic handles POST /core-networks/kpi/upf-traffic/built-in
+// Body: {coreNetworkId}. Mirrors Java getBuiltInCoreNetworkUpfTraffic.
+func (h *Handler) GetBuiltInCoreNetworkUpfTraffic(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetBuiltInCoreNetworkUpfTraffic(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// GetBuiltInCoreNetworkUserInfo handles POST /core-networks/kpi/user-info/built-in
+// Body: {coreNetworkId}. Mirrors Java getBuiltInCoreNetworkUserInfo.
+func (h *Handler) GetBuiltInCoreNetworkUserInfo(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int `json:"coreNetworkId"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetBuiltInCoreNetworkUserInfo(body.CoreNetworkId)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}
+
+// GetKpiReport handles POST /core-networks/kpi/report
+// Body: {coreNetworkId, index, startTime, endTime}. Mirrors Java
+// kpiReport/{index}.
+func (h *Handler) GetKpiReport(c *gin.Context) {
+	var body struct {
+		CoreNetworkId int    `json:"coreNetworkId"`
+		Index         int    `json:"index"`
+		StartTime     string `json:"startTime"`
+		EndTime       string `json:"endTime"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	data, err := h.svc.GetKpiReport(body.CoreNetworkId, body.Index, body.StartTime, body.EndTime)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, data)
+}

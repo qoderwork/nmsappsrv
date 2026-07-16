@@ -29,6 +29,7 @@ type Repository interface {
 	FindCoreNetworkStatisticData(coreNetworkId int, startTime, endTime time.Time) ([]CoreNetworkStatisticData, error)
 	CreateOperationLog(log *CoreNetworkOperationLog) error
 	FindOperationLogs(coreNetworkId int, offset, limit int) ([]CoreNetworkOperationLog, int64, error)
+	UpdateCoreNetworkSwitch(id int, enable bool) error
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -133,4 +134,19 @@ func (r *repository) FindOperationLogs(coreNetworkId int, offset, limit int) ([]
 		return nil, 0, err
 	}
 	return logs, total, nil
+}
+
+// UpdateCoreNetworkSwitch flips a switch on the core network row. The
+// Go schema has no dedicated switch column; the row's `description`
+// field is updated with a marker line for now (a future migration can
+// add a real column). Mirrors Java changeCoreNetworkSwitch.
+func (r *repository) UpdateCoreNetworkSwitch(id int, enable bool) error {
+	value := "off"
+	if enable {
+		value = "on"
+	}
+	return r.db.Model(&CoreNetwork{}).
+		Where("id = ?", id).
+		Update("description", gorm.Expr("CONCAT(IFNULL(description, ''), '|switch:", value, "'")).
+		Error
 }
