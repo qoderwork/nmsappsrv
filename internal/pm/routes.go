@@ -10,6 +10,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/pm/kpis", h.CreateKPI)
 	rg.PUT("/pm/kpis/:id", h.UpdateKPI)
 	rg.DELETE("/pm/kpis/:id", h.DeleteKPI)
+	rg.POST("/pm/kpis/all", h.ListAllKPIs)
 	rg.GET("/pm/kpi-sets", h.ListKPISets)
 	rg.POST("/pm/kpi-sets", h.CreateKPISet)
 	rg.DELETE("/pm/kpi-sets/:id", h.DeleteKPISet)

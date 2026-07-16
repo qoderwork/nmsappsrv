@@ -19,6 +19,9 @@ type Service interface {
 	CreateKPI(k *PerformanceKpi) error
 	UpdateKPI(k *PerformanceKpi) error
 	DeleteKPI(id string) error
+	// ListAllKPIs returns every KPI across all tenancies (admin-style lookup).
+	// Mirrors Java listAllKPI. Use with care -- no tenancy scoping.
+	ListAllKPIs() ([]PerformanceKpi, error)
 	ListKPISets(tenancyId int) ([]PerformanceKpiSet, error)
 	CreateKPISet(set *PerformanceKpiSet) error
 	DeleteKPISet(id int) error
@@ -63,6 +66,14 @@ func (s *service) ListKPIs(tenancyId int) ([]PerformanceKpi, error) {
 	data, err := s.repo.FindKPIs(tenancyId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPIS_FAILED", 500, "failed to list KPIs")
+	}
+	return data, nil
+}
+
+func (s *service) ListAllKPIs() ([]PerformanceKpi, error) {
+	data, err := s.repo.FindAllKPIs()
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_ALL_KPIS_FAILED", 500, "failed to list all KPIs")
 	}
 	return data, nil
 }

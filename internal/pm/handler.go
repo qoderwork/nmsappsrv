@@ -34,6 +34,15 @@ func (h *Handler) ListKPIs(c *gin.Context) {
 	utils.Success(c, items)
 }
 
+func (h *Handler) ListAllKPIs(c *gin.Context) {
+	items, err := h.svc.ListAllKPIs()
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, items)
+}
+
 func (h *Handler) GetKPI(c *gin.Context) {
 	id := c.Param("id")
 	item, err := h.svc.GetKPI(id)

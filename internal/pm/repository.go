@@ -22,6 +22,7 @@ type Repository interface {
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[PerformanceKpi], error)
 
 	FindKPIs(tenancyId int) ([]PerformanceKpi, error)
+	FindAllKPIs() ([]PerformanceKpi, error)
 	FindKPISets(tenancyId int) ([]PerformanceKpiSet, error)
 	CreateKPISet(s *PerformanceKpiSet) error
 	DeleteKPISet(id int) error
@@ -67,6 +68,12 @@ func NewRepository(db *gorm.DB) Repository {
 func (r *repository) FindKPIs(tenancyId int) ([]PerformanceKpi, error) {
 	var items []PerformanceKpi
 	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
+	return items, err
+}
+
+func (r *repository) FindAllKPIs() ([]PerformanceKpi, error) {
+	var items []PerformanceKpi
+	err := r.db.Find(&items).Error
 	return items, err
 }
 
