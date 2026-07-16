@@ -485,3 +485,74 @@ func (h *Handler) UpdateMeasTaskSwitch(c *gin.Context) {
 	}
 	utils.Success(c, nil)
 }
+
+// AddReplenishTask handles POST /pm/replenish-tasks
+// Body: PMReplenishTask JSON. Mirrors Java addReplenishTask.
+func (h *Handler) AddReplenishTask(c *gin.Context) {
+	tenancyId := middleware.GetLicenseId(c)
+	var t PMReplenishTask
+	if err := c.ShouldBindJSON(&t); err != nil {
+		utils.Error(c, 400, "invalid request body")
+		return
+	}
+	t.TenancyId = &tenancyId
+	if err := h.svc.AddReplenishTask(&t); err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, &t)
+}
+
+// ListReplenishTask handles POST /pm/replenish-tasks/list
+// Body: {page, pageSize, name?}. Mirrors Java listReplenishTask.
+func (h *Handler) ListReplenishTask(c *gin.Context) {
+	tenancyId := middleware.GetLicenseId(c)
+	var body struct {
+		Page     int    `json:"page"`
+		PageSize int    `json:"pageSize"`
+		Name     string `json:"name"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	items, total, err := h.svc.ListReplenishTask(tenancyId, body.Name, body.Page, body.PageSize)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Paginated(c, items, total, body.Page, body.PageSize)
+}
+
+// ViewReplenishTask handles POST /pm/replenish-tasks/view
+// Body: {id}. Mirrors Java viewReplenishTask.
+func (h *Handler) ViewReplenishTask(c *gin.Context) {
+	var body struct {
+		Id int `json:"id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Id <= 0 {
+		utils.Error(c, 400, "id is required")
+		return
+	}
+	t, err := h.svc.ViewReplenishTask(body.Id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, t)
+}
+
+// ListDeviceReplenish handles POST /pm/replenish-tasks/devices
+// Body: {id}. Mirrors Java listDeviceReplenish.
+func (h *Handler) ListDeviceReplenish(c *gin.Context) {
+	var body struct {
+		Id int `json:"id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Id <= 0 {
+		utils.Error(c, 400, "id is required")
+		return
+	}
+	rows, err := h.svc.ListDeviceReplenish(body.Id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+	utils.Success(c, rows)
+}

@@ -37,4 +37,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.GET("/pm/file-logs/download", h.DownloadPMFile)
 	rg.POST("/pm/kpi-meas", h.ListKPIMeas)
 	rg.POST("/pm/kpi-meas/switch", h.UpdateMeasTaskSwitch)
+	rg.POST("/pm/replenish-tasks", h.AddReplenishTask)
+	rg.POST("/pm/replenish-tasks/list", h.ListReplenishTask)
+	rg.POST("/pm/replenish-tasks/view", h.ViewReplenishTask)
+	rg.POST("/pm/replenish-tasks/devices", h.ListDeviceReplenish)
 }

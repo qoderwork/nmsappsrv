@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"nmsappsrv/pkg/baserepo"
@@ -45,6 +47,10 @@ type Repository interface {
 	BulkCreateKPIs(items []PerformanceKpi) error
 	FindPMFileLogsInRange(elementId int64, startTime, endTime time.Time) ([]PMFileLog, error)
 	FindENBDevicesForMeas(licenseId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error)
+	CreateReplenishTask(t *PMReplenishTask) error
+	FindReplenishTasks(tenancyId int, name string, offset, limit int) ([]PMReplenishTask, int64, error)
+	FindReplenishTask(id int) (*PMReplenishTask, error)
+	FindReplenishTaskDevices(taskId int) ([]ReplenishDeviceVo, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -262,4 +268,89 @@ func (r *repository) FindENBDevicesForMeas(licenseId int, searchText string, off
 	}
 	err := q.Offset(offset).Limit(limit).Order("ne_neid ASC").Scan(&items).Error
 	return items, total, err
+}
+
+// CreateReplenishTask inserts a new pm_replenish_task row. Mirrors Java
+// addReplenishTask.
+func (r *repository) CreateReplenishTask(t *PMReplenishTask) error {
+	return r.db.Create(t).Error
+}
+
+// FindReplenishTasks returns paginated replenish tasks for the license,
+// optionally filtered by name. Mirrors Java listReplenishTask.
+func (r *repository) FindReplenishTasks(tenancyId int, name string, offset, limit int) ([]PMReplenishTask, int64, error) {
+	var items []PMReplenishTask
+	var total int64
+	q := r.db.Model(&PMReplenishTask{}).Where("tenancy_id = ?", tenancyId)
+	if name != "" {
+		like := "%" + name + "%"
+		q = q.Where("name LIKE ?", like)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&items).Error
+	return items, total, err
+}
+
+// FindReplenishTask returns a single replenish task by id. Mirrors Java
+// viewReplenishTask.
+func (r *repository) FindReplenishTask(id int) (*PMReplenishTask, error) {
+	var t PMReplenishTask
+	if err := r.db.Where("id = ?", id).First(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// FindReplenishTaskDevices returns the cpe_element rows listed in the
+// task's comma-separated element_ids column. The Go side does not have
+// a separate pm_replenish_task_device join table; the Java entity
+// stores element ids as a @Lob String. Mirrors Java listDeviceReplenish.
+func (r *repository) FindReplenishTaskDevices(taskId int) ([]ReplenishDeviceVo, error) {
+	t, err := r.FindReplenishTask(taskId)
+	if err != nil {
+		return nil, err
+	}
+	if t.ElementIds == nil || *t.ElementIds == "" {
+		return []ReplenishDeviceVo{}, nil
+	}
+	parts := strings.Split(*t.ElementIds, ",")
+	ids := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 64)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return []ReplenishDeviceVo{}, nil
+	}
+	type row struct {
+		NeNeid       int64   `gorm:"column:ne_neid"`
+		DeviceName   *string `gorm:"column:device_name"`
+		SerialNumber *string `gorm:"column:serial_number"`
+	}
+	var rows []row
+	if err := r.db.Table("cpe_element").
+		Select("ne_neid, device_name, serial_number").
+		Where("ne_neid IN ? AND deleted = 0", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]ReplenishDeviceVo, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ReplenishDeviceVo{
+			NeNeid:       r.NeNeid,
+			DeviceName:   r.DeviceName,
+			SerialNumber: r.SerialNumber,
+			Done:         false, // Go side: replenish worker not ported yet.
+		})
+	}
+	return out, nil
 }

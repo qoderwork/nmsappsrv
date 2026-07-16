@@ -84,6 +84,18 @@ type Service interface {
 	// Mirrors Java updateMeasTaskSwitch. The SPV is dispatched via the
 	// unified operation queue (mq.OperationQueue -> internal/operation).
 	UpdateMeasTaskSwitch(elementId int64, enable bool, username string) error
+	// AddReplenishTask persists a new replenish task. Mirrors Java
+	// addReplenishTask. ElementIds is stored as a comma-separated string.
+	AddReplenishTask(t *PMReplenishTask) error
+	// ListReplenishTask returns paginated replenish tasks for the license.
+	// Mirrors Java listReplenishTask.
+	ListReplenishTask(tenancyId int, name string, page, pageSize int) ([]PMReplenishTask, int64, error)
+	// ViewReplenishTask returns a single replenish task. Mirrors Java
+	// viewReplenishTask.
+	ViewReplenishTask(id int) (*PMReplenishTask, error)
+	// ListDeviceReplenish returns the cpe_element rows listed in a
+	// replenish task's element_ids. Mirrors Java listDeviceReplenish.
+	ListDeviceReplenish(taskId int) ([]ReplenishDeviceVo, error)
 }
 
 // service is the concrete implementation of Service.
@@ -609,6 +621,56 @@ func (s *service) UpdateMeasTaskSwitch(elementId int64, enable bool, username st
 		return apperror.Wrap(err, "UPDATE_MEAS_TASK_SWITCH_PUSH_FAILED", 500, "failed to enqueue operation")
 	}
 	return nil
+}
+
+// AddReplenishTask persists a new replenish task. Mirrors Java addReplenishTask.
+func (s *service) AddReplenishTask(t *PMReplenishTask) error {
+	now := time.Now()
+	t.OperationTime = &now
+	if t.Status == nil {
+		waiting := 1
+		t.Status = &waiting
+	}
+	if err := s.repo.CreateReplenishTask(t); err != nil {
+		return apperror.Wrap(err, "ADD_REPLENISH_TASK_FAILED", 500, "failed to create replenish task")
+	}
+	return nil
+}
+
+// ListReplenishTask returns paginated replenish tasks for the license.
+// Mirrors Java listReplenishTask.
+func (s *service) ListReplenishTask(tenancyId int, name string, page, pageSize int) ([]PMReplenishTask, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	items, total, err := s.repo.FindReplenishTasks(tenancyId, name, offset, pageSize)
+	if err != nil {
+		return nil, 0, apperror.Wrap(err, "LIST_REPLENISH_TASK_FAILED", 500, "failed to list replenish tasks")
+	}
+	return items, total, nil
+}
+
+// ViewReplenishTask returns a single replenish task. Mirrors Java viewReplenishTask.
+func (s *service) ViewReplenishTask(id int) (*PMReplenishTask, error) {
+	t, err := s.repo.FindReplenishTask(id)
+	if err != nil {
+		return nil, apperror.Wrap(err, "VIEW_REPLENISH_TASK_FAILED", 500, "failed to view replenish task")
+	}
+	return t, nil
+}
+
+// ListDeviceReplenish returns the cpe_element rows in a replenish task's
+// element_ids. Mirrors Java listDeviceReplenish.
+func (s *service) ListDeviceReplenish(taskId int) ([]ReplenishDeviceVo, error) {
+	rows, err := s.repo.FindReplenishTaskDevices(taskId)
+	if err != nil {
+		return nil, apperror.Wrap(err, "LIST_DEVICE_REPLENISH_FAILED", 500, "failed to list device replenish")
+	}
+	return rows, nil
 }
 
 // newService creates a Service backed by the given Repository (test/mock helper).

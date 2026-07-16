@@ -191,3 +191,38 @@ type MeasDeviceVo struct {
 	// for the device (true if a recent value is "1"). nil if unknown.
 	MeasSwitch *bool `json:"measSwitch"`
 }
+
+// PMReplenishTask 对应 pm_replenish_task 表 (对齐 Java PMReplenishTask + Task 父类).
+// Holds a KPI data replenish task (fills missing PM data for a scope
+// of devices). ElementIds / DeviceGroupIds are comma-separated ids
+// (mirrors the Java @Lob String fields).
+type PMReplenishTask struct {
+	Id                  int       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name                *string   `gorm:"column:name;type:varchar(255)" json:"name"`
+	User                *string   `gorm:"column:user;type:varchar(255)" json:"user"`
+	OperationTime       *time.Time `gorm:"column:operation_time" json:"operation_time"`
+	Status              *int      `gorm:"column:status" json:"status"`           // 1:Waiting for start, 2:Executing, 3:Executed
+	StartTime           *time.Time `gorm:"column:start_time" json:"start_time"`
+	EndTime             *time.Time `gorm:"column:end_time" json:"end_time"`
+	ExecuteMode         *int      `gorm:"column:execute_mode" json:"execute_mode"`  // 1:Immediately; 2:Awaiting start; 3:Schedule Time
+	TriggerTime         *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
+	TenancyId           *int      `gorm:"column:tenancy_id" json:"tenancy_id"`
+	ElementIds          *string   `gorm:"column:element_ids;type:longtext" json:"element_ids"`
+	Scope               *string   `gorm:"column:scope;type:varchar(255)" json:"scope"`
+	DeviceGroupIds      *string   `gorm:"column:device_group_ids;type:longtext" json:"device_group_ids"`
+	ReplenishStartTime  *time.Time `gorm:"column:replenish_start_time" json:"replenish_start_time"`
+	ReplenishEndTime    *time.Time `gorm:"column:replenish_end_time" json:"replenish_end_time"`
+}
+
+func (PMReplenishTask) TableName() string { return "pm_replenish_task" }
+
+// ReplenishDeviceVo is one row of listDeviceReplenish: a device that is
+// in scope of a replenish task plus the current replenish state
+// (0=pending, 1=done -- the Go side reports pending; the Java
+// replenish worker would set done=true once it has pulled PM data).
+type ReplenishDeviceVo struct {
+	NeNeid      int64   `json:"neNeid"`
+	DeviceName  *string `json:"deviceName"`
+	SerialNumber *string `json:"serialNumber"`
+	Done        bool    `json:"done"`
+}
