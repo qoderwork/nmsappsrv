@@ -374,6 +374,9 @@ func (ep *EventProcessor) ProcessResult(soapXml string, sn string, deviceType st
 	case soap.MsgFault:
 		ep.processFault(ctx, soapXml, sn, headerId, &eventLog)
 
+	case soap.MsgUpdateCBSDStatusResponse:
+		ep.processUpdateCBSDStatusResponse(ctx, soapXml, sn, &eventLog)
+
 	default:
 		logger.Infof("unhandled message type %d for SN=%s", msgType, sn)
 	}

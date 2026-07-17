@@ -469,6 +469,96 @@ func (ep *EventProcessor) processRebootResponse(ctx context.Context, sn string, 
 	}
 }
 
+// processUpdateCBSDStatusResponse handles the response to UpdateCBSDStatus.
+// It mirrors Java UpdateCBSDStatusProcessor.processResult — for each fault entry:
+//   - FaultCode 9020 (bandwidth mismatch): disable the CBSD, store the preferred
+//     bandwidth, set a Redis flag "cbsd_bandwidth_not_match_{id}", and trigger
+//     relinquishment of the current grant.
+//   - FaultCode 9021: reserved (no-op in Java as well).
+func (ep *EventProcessor) processUpdateCBSDStatusResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing UpdateCBSDStatusResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("UPDATE_CBSD_STATUS_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	resp, err := soap.ParseUpdateCBSDStatusResponse(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse UpdateCBSDStatusResponse for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(3)
+		return
+	}
+
+	for _, fi := range resp.CBSDFaultInfos {
+		switch fi.FaultCode {
+		case 9020:
+			logger.Warnf("UpdateCBSDStatus: bandwidth mismatch for CBSD %s (SN=%s), bw=%d",
+				fi.CBSDSerialNumber, sn, fi.Bandwidth)
+
+			var cpe device.CpeElement
+			if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).
+				Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
+				logger.Warnf("UpdateCBSDStatus: cannot find CPE for SN=%s", sn)
+				continue
+			}
+
+			var info struct {
+				Id                 string  `gorm:"column:id"`
+				Enable             *bool   `gorm:"column:enable"`
+				CbsdID             *string `gorm:"column:cbsd_id"`
+				GrantID            *string `gorm:"column:grant_id"`
+				PreferredBandwidth *int    `gorm:"column:preferred_bandwidth"`
+			}
+			if err := ep.db.Table("cbsd_info").
+				Where("serial_number = ? AND cbsd_serial_number = ? AND license_id = ?",
+					sn, fi.CBSDSerialNumber, cpe.LicenseId).
+				Take(&info).Error; err != nil {
+				logger.Warnf("UpdateCBSDStatus: no CBSD info for SN=%s, cbsdSN=%s: %v",
+					sn, fi.CBSDSerialNumber, err)
+				continue
+			}
+
+			if info.Enable != nil && *info.Enable {
+				falseVal := false
+				bw := fi.Bandwidth
+				ep.db.Table("cbsd_info").
+					Where("id = ?", info.Id).
+					Updates(map[string]interface{}{
+						"enable":              &falseVal,
+						"preferred_bandwidth": &bw,
+					})
+
+				redis.Set(ctx, "cbsd_bandwidth_not_match_"+info.Id, "yes", 0)
+
+				if info.CbsdID != nil && info.GrantID != nil {
+					logger.Infof("UpdateCBSDStatus: triggering relinquishment for CBSD %s (grant %s)",
+						*info.CbsdID, *info.GrantID)
+					utils.SafeGo("CbsdRelinquish-"+info.Id, func() {
+						triggerCbsdRelinquishment(info.Id, *info.CbsdID, *info.GrantID)
+					})
+				}
+			}
+
+		case 9021:
+			logger.Debugf("UpdateCBSDStatus: fault 9021 for CBSD %s (SN=%s)",
+				fi.CBSDSerialNumber, sn)
+
+		default:
+			if fi.FaultCode != 0 {
+				logger.Warnf("UpdateCBSDStatus: fault code %d for CBSD %s (SN=%s)",
+					fi.FaultCode, fi.CBSDSerialNumber, sn)
+			}
+		}
+	}
+}
+
+// triggerCbsdRelinquishment is a placeholder that will be wired to the CBSD
+// service's Relinquishment method in a subsequent refactor. For now it logs
+// the intent so operators know a relinquishment should follow.
+func triggerCbsdRelinquishment(cbsdInfoId, cbsdId, grantId string) {
+	logger.Infof("CBSD relinquishment triggered: id=%s cbsdId=%s grantId=%s "+
+		"(wired to cbsd.Service.Relinquishment pending)", cbsdInfoId, cbsdId, grantId)
+}
+
 // processFault handles SOAP Fault responses from CPE.
 // It looks up the tracking data from Redis, updates the event_log status to failed,
 // and logs the fault with context about which operation failed.

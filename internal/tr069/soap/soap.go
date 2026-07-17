@@ -75,6 +75,7 @@ const (
 	MsgCancelFutureUpgradeResponse
 	MsgSetParameterAttributesResponse
 	MsgGetParameterAttributesResponse
+	MsgUpdateCBSDStatusResponse
 )
 
 // Standard TR-069 CWMP fault codes
@@ -238,6 +239,8 @@ func methodNameToType(name string) MessageType {
 		return MsgSetParameterAttributesResponse
 	case "GetParameterAttributesResponse":
 		return MsgGetParameterAttributesResponse
+	case "UpdateCBSDStatusResponse":
+		return MsgUpdateCBSDStatusResponse
 	default:
 		return MsgUnknown
 	}

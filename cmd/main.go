@@ -59,6 +59,7 @@ import (
 	"nmsappsrv/internal/tenancy"
 	"nmsappsrv/internal/topology"
 	"nmsappsrv/internal/tr069"
+	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/internal/upgrade"
 	"nmsappsrv/internal/user"
 	"nmsappsrv/internal/websocket"
@@ -68,6 +69,7 @@ import (
 	"path/filepath"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
+	"gorm.io/gorm"
 	"nmsappsrv/pkg/metrics"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -664,6 +666,15 @@ func main() {
 		logger.Errorf("failed to register cbsd-opstate-maintain cron job: %v", err)
 	}
 
+	// CBSD result task (every 2 minutes) — mirrors Java CBSDResultTask.noticeDevice.
+	// Scans online devices with CBSD records and pushes UpdateCBSDStatus SOAP to
+	// notify each CPE of its CBSDs' current SAS state (AUTHORIZED/GRANTED/REGISTERED...).
+	if err := mainScheduler.AddJob("cbsd-notice-device", "0 */2 * * *", func() {
+		notifyCbsdStatusToDevices(db, tr069OpSender)
+	}); err != nil {
+		logger.Errorf("failed to register cbsd-notice-device cron job: %v", err)
+	}
+
 	// ZTP AOS-file generation scan (Java ZTPTask, every 10s). Picks up devices
 	// flagged read_to_ztp=true with no AOS file yet and generates the pull-path
 	// AOS XML (served by /acs-file-server/ztpFile). Runs every 30s.
@@ -781,5 +792,92 @@ func main() {
 	// Run: start all tasks → wait for signal → stop all tasks (LIFO) → cleanup
 	if err := mgr.Run(); err != nil {
 		logger.Errorf("lifecycle error: %v", err)
+	}
+}
+
+// cbsdInfoForNotice is a slim view of cbsd_info used by the notice-device
+// cron job. Mirrors the fields Java CBSDResultTask reads per CBSD.
+type cbsdInfoForNotice struct {
+	CbsdSerialNumber   string  `gorm:"column:cbsd_serial_number"`
+	OperationState     string  `gorm:"column:operation_state"`
+	LowFrequency       *int64  `gorm:"column:low_frequency"`
+	HighFrequency      *int64  `gorm:"column:high_frequency"`
+	TransmitExpireTime string  `gorm:"column:transmit_expire_time"`
+	MaxEirp            float64 `gorm:"column:max_eirp"`
+	PathLoss           int     `gorm:"column:path_loss"`
+	AntennaGain        int     `gorm:"column:antenna_gain"`
+}
+
+// notifyCbsdStatusToDevices scans all CBSD records, groups them by device SN,
+// builds UpdateCBSDStatus SOAP messages, and enqueues them. It mirrors Java
+// CBSDResultTask.noticeDevice (every 2 min).
+//
+// For each CBSD in AUTHORIZED or GRANTED state, transmit power is computed as
+//   floor(maxEirp + 10 + pathLoss - antennaGain)
+// mirroring Java's expression.
+func notifyCbsdStatusToDevices(db *gorm.DB, opSender *tr069.OperationSender) {
+	ctx := context.Background()
+
+	var rows []struct {
+		SerialNumber string `gorm:"column:serial_number"`
+		LicenseId    int    `gorm:"column:license_id"`
+		cbsdInfoForNotice
+	}
+	if err := db.Table("cbsd_info").
+		Where("serial_number IS NOT NULL AND serial_number <> '' AND deleted = ?", false).
+		Select("serial_number, license_id, cbsd_serial_number, operation_state, low_frequency, high_frequency, transmit_expire_time, max_eirp, path_loss, antenna_gain").
+		Scan(&rows).Error; err != nil {
+		logger.Errorf("cbsd-notice-device: failed to scan cbsd_info: %v", err)
+		return
+	}
+
+	type devKey struct {
+		sn   string
+		lic  int
+	}
+	byDevice := make(map[devKey][]cbsdInfoForNotice)
+	for _, r := range rows {
+		k := devKey{sn: r.SerialNumber, lic: r.LicenseId}
+		byDevice[k] = append(byDevice[k], r.cbsdInfoForNotice)
+	}
+
+	sent := 0
+	for k, infos := range byDevice {
+		onlineVal, _ := redis.Get(ctx, "online_"+k.sn)
+		if onlineVal != "yes" {
+			continue
+		}
+
+		cbsdInfos := make([]soap.CBSDInfo, 0, len(infos))
+		for _, info := range infos {
+			entry := soap.CBSDInfo{
+				CBSDSerialNumber:   info.CbsdSerialNumber,
+				State:              info.OperationState,
+				LowFrequency:       info.LowFrequency,
+				HighFrequency:      info.HighFrequency,
+				TransmitExpireTime: info.TransmitExpireTime,
+			}
+			if info.OperationState == "AUTHORIZED" || info.OperationState == "GRANTED" {
+				power := int(info.MaxEirp + 10 + float64(info.PathLoss) - float64(info.AntennaGain))
+				entry.TxPower = &power
+			}
+			cbsdInfos = append(cbsdInfos, entry)
+		}
+
+		if len(cbsdInfos) == 0 {
+			continue
+		}
+
+		ucs := &soap.UpdateCBSDStatus{CBSDInfos: cbsdInfos}
+		opId := fmt.Sprintf("cbsd_notice_%s_%d", k.sn, time.Now().Unix())
+		if err := opSender.SendUpdateCBSDStatus(k.sn, ucs, opId); err != nil {
+			logger.Warnf("cbsd-notice-device: failed to enqueue for SN=%s: %v", k.sn, err)
+			continue
+		}
+		sent++
+	}
+
+	if sent > 0 {
+		logger.Infof("cbsd-notice-device: sent UpdateCBSDStatus to %d device(s)", sent)
 	}
 }

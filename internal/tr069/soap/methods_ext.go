@@ -1,6 +1,8 @@
 package soap
 
 import (
+	"encoding/xml"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -143,6 +145,43 @@ func BuildShellDownload(headerId string, sd *ShellDownload) string {
 	b.WriteString(`</UploadURL>`)
 	writeSoapClose(&b, "ShellDownload")
 	return b.String()
+}
+
+// CBSDFaultInfo mirrors Java CBSDFaultInfo — a single fault entry in
+// UpdateCBSDStatusResponse.
+type CBSDFaultInfo struct {
+	CBSDSerialNumber string `xml:"CBSDSerialNumber"`
+	FaultCode        int    `xml:"FaultCode"`
+	Bandwidth        int    `xml:"Bandwidth"`
+	CellId           string `xml:"cellId"`
+}
+
+type updateCbsdStatusRespXML struct {
+	XMLName    xml.Name         `xml:"UpdateCBSDStatusResponse"`
+	FaultInfos []CBSDFaultInfo  `xml:"FaultInfos>CBSDFaultInfo"`
+}
+
+// UpdateCBSDStatusResponse mirrors Java UpdateCBSDStatusResponse.
+type UpdateCBSDStatusResponse struct {
+	Header         SoapHeader
+	CBSDFaultInfos []CBSDFaultInfo
+}
+
+// ParseUpdateCBSDStatusResponse parses an UpdateCBSDStatusResponse SOAP
+// envelope (CPE -> ACS). It mirrors Java UpdateCBSDStatusHandler.parseXml.
+func ParseUpdateCBSDStatusResponse(xmlStr string) (*UpdateCBSDStatusResponse, error) {
+	var env soapEnvelope
+	if err := xml.Unmarshal([]byte(xmlStr), &env); err != nil {
+		return nil, fmt.Errorf("failed to parse SOAP envelope: %w", err)
+	}
+	var resp updateCbsdStatusRespXML
+	if err := xml.Unmarshal(env.Body.Content, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse UpdateCBSDStatusResponse: %w", err)
+	}
+	return &UpdateCBSDStatusResponse{
+		Header:         SoapHeader{ID: env.Header.ID},
+		CBSDFaultInfos: resp.FaultInfos,
+	}, nil
 }
 
 // BuildHttpRequestProxy builds HttpRequestProxy request SOAP XML (vendor extension)
