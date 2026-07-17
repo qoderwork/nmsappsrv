@@ -50,7 +50,8 @@ type CbsdInfo struct {
 
 func (CbsdInfo) TableName() string { return "cbsd_info" }
 
-// CBSDCertFileSendTask 对应 cbsdcert_file_send_task 表
+// CBSDCertFileSendTask 对应 cbsd_cert_file_send_task 表
+// (Java: CBSDCertFileSendTask @Table(name = "cbsd_cert_file_send_task"))
 type CBSDCertFileSendTask struct {
 	Id             int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name           *string    `gorm:"column:name;type:varchar(255)" json:"name"`
@@ -66,7 +67,7 @@ type CBSDCertFileSendTask struct {
 	DeviceType     *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 }
 
-func (CBSDCertFileSendTask) TableName() string { return "cbsdcert_file_send_task" }
+func (CBSDCertFileSendTask) TableName() string { return "cbsd_cert_file_send_task" }
 
 // SendCBSDCertFileLog 对应 send_cbsd_cert_file_log 表
 type SendCBSDCertFileLog struct {

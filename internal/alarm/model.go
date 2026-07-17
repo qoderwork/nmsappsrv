@@ -142,7 +142,7 @@ type AlarmTemplate struct {
 	AlarmIds                    *string    `gorm:"column:alarm_ids;type:longtext" json:"alarm_ids"`
 	EnableEmailNotification     *bool      `gorm:"column:enable_email_notification" json:"enable_email_notification"`
 	ToleranceDuration           *int       `gorm:"column:tolerance_duration" json:"tolerance_duration"`
-	Interval_                   *int       `gorm:"column:it" json:"interval"`
+	Interval_                   *int       `gorm:"column:interval" json:"interval"`
 	EnableNotifyDefaultRecipients *bool    `gorm:"column:enable_notify_default_recipients" json:"enable_notify_default_recipients"`
 	AlarmSources                *string    `gorm:"column:alarm_sources;type:varchar(255)" json:"alarm_sources"`
 	Emails                      *string    `gorm:"column:emails;type:varchar(255)" json:"emails"`
