@@ -44,8 +44,12 @@ type CbsdInfo struct {
 	LastRegistrationTime *time.Time `gorm:"column:last_registration_time" json:"last_registration_time"`
 	LicenseId            *int       `gorm:"column:license_id;uniqueIndex:idx_cbsd_unique" json:"license_id"`
 	PreferredBandwidth   *int       `gorm:"column:preferred_bandwidth" json:"preferred_bandwidth"`
-	GroupIds             *string    `gorm:"column:group_ids;type:varchar(255)" json:"group_ids"`
-	UpdateTime           *time.Time `gorm:"column:update_time" json:"update_time"`
+	GroupIds               *string    `gorm:"column:group_ids;type:varchar(255)" json:"group_ids"`
+	UpdateTime             *time.Time `gorm:"column:update_time" json:"update_time"`
+	AvailableChannel       *string    `gorm:"column:available_channel;type:longtext" json:"available_channel"`
+	CbsdInPower            *bool      `gorm:"column:cbsd_in_power" json:"cbsd_in_power"`
+	DeviceTransmitExpireTime *string  `gorm:"column:device_transmit_expire_time;type:varchar(255)" json:"device_transmit_expire_time"`
+	OperationParam         *string    `gorm:"column:operation_param;type:text" json:"operation_param"`
 }
 
 func (CbsdInfo) TableName() string { return "cbsd_info" }
@@ -74,6 +78,7 @@ type SendCBSDCertFileLog struct {
 	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	EventLogId *int64     `gorm:"column:event_log_id" json:"event_log_id"`
 	Status     *int       `gorm:"column:status" json:"status"`
+	FaultInfo  *string    `gorm:"column:fault_info;type:text" json:"fault_info"`
 	TaskId     *int       `gorm:"column:task_id" json:"task_id"`
 	ElementId  *int64     `gorm:"column:element_id" json:"element_id"`
 	EndTime    *time.Time `gorm:"column:end_time" json:"end_time"`

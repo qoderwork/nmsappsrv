@@ -30,6 +30,7 @@ type SysUser struct {
 	UpdateTime           *time.Time `gorm:"column:update_time" json:"update_time"`
 	FirstLogin           *bool      `gorm:"column:first_login" json:"first_login"`
 	Deleted              *bool      `gorm:"column:deleted" json:"deleted"`
+	HistoryPasswords     *string    `gorm:"column:history_passwords;type:longtext" json:"-"`
 }
 
 func (SysUser) TableName() string { return "sys_user" }

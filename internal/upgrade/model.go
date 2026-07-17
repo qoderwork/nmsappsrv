@@ -92,6 +92,7 @@ type UpgradeLog struct {
 	IsDone           *bool      `gorm:"column:is_done" json:"is_done"`
 	Message          *string    `gorm:"column:message;type:text" json:"message"`
 	CommandTrackId   *int64     `gorm:"column:command_track_id" json:"command_track_id"`
+	FileId           *string    `gorm:"column:file_id;type:varchar(255)" json:"file_id"`
 	IsDownloaded     *bool      `gorm:"column:is_downloaded;default:false" json:"is_downloaded"`
 	DownloadedTime   *time.Time `gorm:"column:downloaded_time" json:"downloaded_time"`
 	UpgradeType      *string    `gorm:"column:upgrade_type;type:varchar(255)" json:"upgrade_type"`

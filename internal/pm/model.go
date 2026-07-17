@@ -76,6 +76,7 @@ type PMFileLog struct {
 	FileName       *string    `gorm:"column:file_name;type:varchar(255)" json:"file_name"`
 	CollectionTime *time.Time `gorm:"column:collection_time" json:"collection_time"`
 	StartTime      *time.Time `gorm:"column:start_time;index:idx_ne_start" json:"start_time"`
+	EndTime        *time.Time `gorm:"column:end_time" json:"end_time"`
 	TenancyId      *int       `gorm:"column:tenancy_id;index:idx_tenancy_start" json:"tenancy_id"`
 }
 

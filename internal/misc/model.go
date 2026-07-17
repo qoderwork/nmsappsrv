@@ -651,6 +651,7 @@ type PresetParametersTask struct {
 	ElementId  *int64  `gorm:"column:element_id" json:"element_id"`
 	Parameters *string `gorm:"column:parameters;type:longtext" json:"parameters"`
 	EventLogId *int64  `gorm:"column:event_log_id" json:"event_log_id"`
+	Status     *int    `gorm:"column:status" json:"status"`
 	InSet      *bool   `gorm:"column:in_set" json:"in_set"`
 }
 

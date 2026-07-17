@@ -108,8 +108,10 @@ type TBGDevice struct {
 	SerialNumber  *string `gorm:"column:serial_number;type:varchar(255);uniqueIndex" json:"serial_number"`
 	Band          *string `gorm:"column:band;type:varchar(255)" json:"band"`
 	Address       *string `gorm:"column:address;type:varchar(255)" json:"address"`
-	WanMacAddress *string `gorm:"column:wan_mac_address;type:varchar(255)" json:"wan_mac_address"`
-	LicenseId     *int    `gorm:"column:license_id" json:"license_id"`
+	WanMacAddress   *string `gorm:"column:wan_mac_address;type:varchar(255)" json:"wan_mac_address"`
+	RadiusThreshold *int    `gorm:"column:radius_threshold" json:"radius_threshold"`
+	EnableGeofence  *bool   `gorm:"column:enable_geofence" json:"enable_geofence"`
+	LicenseId       *int    `gorm:"column:license_id" json:"license_id"`
 }
 
 func (TBGDevice) TableName() string { return "tbg" }
