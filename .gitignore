@@ -33,6 +33,7 @@ go.work
 
 # runtime logs
 internal/user/logs/nmsappsrv.log
+*.log
 
 # Dev-only license issuer private key — NEVER commit the real signing key.
 # The matching public.pem is embedded in the binary and is safe to commit.
