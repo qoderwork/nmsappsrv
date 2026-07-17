@@ -35,6 +35,8 @@ type Repository interface {
 	// Module-specific queries
 	ListSchedules(licenseId int, page, pageSize int) ([]NMSBackupAndRevert, int64, error)
 	FindScheduledSchedules() ([]NMSBackupAndRevert, error)
+	FindByBackupName(name string) ([]NMSBackupAndRevert, error)
+	FindAnyRunning() (*NMSBackupAndRevert, error)
 	CreateTask(task *NMSBackupAndRevertTask) error
 	GetTaskById(id int) (*NMSBackupAndRevertTask, error)
 	UpdateTask(task *NMSBackupAndRevertTask) error
@@ -85,6 +87,29 @@ func (r *repository) FindScheduledSchedules() ([]NMSBackupAndRevert, error) {
 	var schedules []NMSBackupAndRevert
 	err := r.db.Where("backup_type = ? AND backup_begin_time IS NOT NULL", 1).Find(&schedules).Error
 	return schedules, err
+}
+
+// FindByBackupName returns schedules whose backup_name matches the given name.
+// Mirrors Java nmsBackupAndRevertRepository.findByBackupName(name).
+func (r *repository) FindByBackupName(name string) ([]NMSBackupAndRevert, error) {
+	var schedules []NMSBackupAndRevert
+	err := r.db.Where("backup_name = ?", name).Find(&schedules).Error
+	return schedules, err
+}
+
+// FindAnyRunning returns the first schedule with backup_status=1 (running),
+// or nil if none. Mirrors Java NMSBackupTaskJob's loop checking for any
+// schedule with backupStatus==1 before starting a new backup.
+func (r *repository) FindAnyRunning() (*NMSBackupAndRevert, error) {
+	var schedule NMSBackupAndRevert
+	err := r.db.Where("backup_status = ?", 1).First(&schedule).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &schedule, nil
 }
 
 // ---------------------------------------------------------------------------

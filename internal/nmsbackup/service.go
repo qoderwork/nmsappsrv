@@ -2,6 +2,8 @@ package nmsbackup
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"nmsappsrv/internal/middleware"
@@ -39,6 +41,25 @@ func newService(repo Repository) Service {
 
 // AddBackupSchedule creates a new backup schedule definition (nms_backup_and_revert)
 func (s *service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest) (*NMSBackupAndRevert, error) {
+	// Mirrors Java AddNMSBackupTask input validation:
+	// - backupName must not be empty
+	// - backupName must not contain "/"
+	// - backupName must not already exist
+	if strings.TrimSpace(req.BackupName) == "" {
+		return nil, apperror.New("INVALID_INPUT", 400, "The group name cannot be empty")
+	}
+	if strings.Contains(req.BackupName, "/") {
+		return nil, apperror.New("INVALID_INPUT", 400, "The name cannot contain \"/\"")
+	}
+	existing, err := s.repo.FindByBackupName(req.BackupName)
+	if err != nil {
+		logger.Errorf("Failed to query backup name %s: %v", req.BackupName, err)
+		return nil, apperror.ErrInternal.WithMessage("failed to validate backup name")
+	}
+	if len(existing) > 0 {
+		return nil, apperror.New("DUPLICATE_NAME", 400, "The group name already exists")
+	}
+
 	username := middleware.GetUsername(c)
 	licenseId := middleware.GetLicenseId(c)
 	now := time.Now()
@@ -128,7 +149,23 @@ func (s *service) ModifyBackupSchedule(c *gin.Context, req *ModifyNMSBackupTaskR
 		return apperror.ErrNotFound.WithMessage("backup schedule not found")
 	}
 
-	if req.BackupName != "" {
+	// Mirrors Java updateBackupTask: reject updates while a backup is running.
+	if derefInt(schedule.BackupStatus) == 1 {
+		return apperror.New("TASK_RUNNING", 400, "The task is running")
+	}
+
+	// Mirrors Java updateBackupTask: if backupName is changing, ensure the new
+	// name is not already used by a different schedule.
+	if req.BackupName != "" && req.BackupName != derefString(schedule.BackupName) {
+		existing, err := s.repo.FindByBackupName(req.BackupName)
+		if err != nil {
+			return apperror.ErrInternal.WithMessage("failed to validate backup name")
+		}
+		for _, ex := range existing {
+			if ex.Id != req.Id {
+				return apperror.New("DUPLICATE_NAME", 400, "The group name already exists")
+			}
+		}
 		schedule.BackupName = strPtr(req.BackupName)
 	}
 	if req.BackupType != nil {
@@ -170,6 +207,20 @@ func (s *service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 	schedule, err := s.repo.FindByID(req.Id)
 	if err != nil {
 		return apperror.ErrNotFound.WithMessage("backup schedule not found")
+	}
+
+	// Mirrors Java runBackupTask: reject if this schedule is already running.
+	if derefInt(schedule.BackupStatus) == 1 {
+		return apperror.New("TASK_RUNNING", 400, "The task is running")
+	}
+
+	// Mirrors Java NMSBackupTaskJob.executeInternal: reject if any other
+	// schedule is currently running (backupStatus==1).
+	running, err := s.repo.FindAnyRunning()
+	if err != nil {
+		logger.Errorf("Failed to check running backups: %v", err)
+	} else if running != nil && running.Id != req.Id {
+		return apperror.New("BACKUP_IN_PROGRESS", 400, "Another backup is currently running")
 	}
 
 	now := time.Now()
@@ -243,8 +294,43 @@ func (s *service) RunBackup(c *gin.Context, req *RunNMSBackupTaskRequest) error 
 	return nil
 }
 
-// DeleteBackupSchedule deletes a backup schedule
+// DeleteBackupSchedule deletes a backup schedule and its physical backup files.
+// Mirrors Java NMSBackupAndRevertServiceImpl.delete which:
+// 1. Deletes any associated Quartz task (Go has no Quartz — skipped)
+// 2. Reads the schedule to obtain file_name (semicolon-separated zip paths)
+// 3. Deletes each physical backup file from disk
+// 4. Deletes the database record
 func (s *service) DeleteBackupSchedule(c *gin.Context, req *DeleteNMSBackupTaskRequest) error {
+	// Read schedule first so we can clean up physical files.
+	schedule, err := s.repo.FindByID(req.Id)
+	if err != nil {
+		// Already deleted — nothing to do.
+		return nil
+	}
+
+	// Delete physical backup files. Java supports semicolon-separated file_name
+	// for manual backups that accumulate multiple zip files.
+	if schedule.FileName != nil && *schedule.FileName != "" {
+		fileNameStr := *schedule.FileName
+		var files []string
+		if strings.Contains(fileNameStr, ";") {
+			files = strings.Split(fileNameStr, ";")
+		} else {
+			files = []string{fileNameStr}
+		}
+		for _, f := range files {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			if _, err := os.Stat(f); err == nil {
+				if err := os.Remove(f); err != nil {
+					logger.Warnf("Failed to delete backup file %s: %v", f, err)
+				}
+			}
+		}
+	}
+
 	if err := s.repo.DeleteByID(req.Id); err != nil {
 		logger.Errorf("Failed to delete backup schedule %d: %v", req.Id, err)
 		return apperror.ErrInternal.WithMessage("failed to delete backup schedule")

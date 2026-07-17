@@ -103,6 +103,16 @@ func (bc *BackupScheduler) getLastFireTime(scheduleId int) *time.Time {
 
 // executeBackup runs a single backup for a schedule outside of an HTTP request.
 func (bc *BackupScheduler) executeBackup(schedule *NMSBackupAndRevert) {
+	// Mirrors Java NMSBackupTaskJob.executeInternal: skip if any other backup
+	// is currently running (backupStatus==1).
+	if running, err := bc.repo.FindAnyRunning(); err != nil {
+		logger.Errorf("nmsbackup: cron trigger — failed to check running backups: %v", err)
+		return
+	} else if running != nil && running.Id != schedule.Id {
+		logger.Warnf("nmsbackup: cron trigger — another backup (id=%d) is running, skipping schedule %d", running.Id, schedule.Id)
+		return
+	}
+
 	now := time.Now()
 
 	// Mark schedule as running
