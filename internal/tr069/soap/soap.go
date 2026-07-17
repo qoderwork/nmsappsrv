@@ -76,6 +76,10 @@ const (
 	MsgSetParameterAttributesResponse
 	MsgGetParameterAttributesResponse
 	MsgUpdateCBSDStatusResponse
+
+	// Device → ACS messages (incoming notifications)
+	MsgReportTransmissionProgress
+	MsgAutonomousFragmentTransferComplete
 )
 
 // Standard TR-069 CWMP fault codes
@@ -241,6 +245,10 @@ func methodNameToType(name string) MessageType {
 		return MsgGetParameterAttributesResponse
 	case "UpdateCBSDStatusResponse":
 		return MsgUpdateCBSDStatusResponse
+	case "ReportTransmissionProgress":
+		return MsgReportTransmissionProgress
+	case "AutonomousFragmentTransferComplete":
+		return MsgAutonomousFragmentTransferComplete
 	default:
 		return MsgUnknown
 	}

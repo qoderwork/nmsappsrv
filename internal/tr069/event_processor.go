@@ -362,7 +362,7 @@ func (ep *EventProcessor) ProcessResult(soapXml string, sn string, deviceType st
 	case soap.MsgSetParameterValuesResponse:
 		ep.processSetParameterValuesResponse(ctx, soapXml, sn, &eventLog)
 
-	case soap.MsgTransferComplete, soap.MsgAutonomousTransferComplete, soap.MsgFragmentTransferComplete:
+	case soap.MsgTransferComplete, soap.MsgAutonomousTransferComplete, soap.MsgFragmentTransferComplete, soap.MsgAutonomousFragmentTransferComplete:
 		ep.processTransferComplete(ctx, soapXml, sn, &eventLog)
 
 	case soap.MsgDownloadResponse:
@@ -370,6 +370,9 @@ func (ep *EventProcessor) ProcessResult(soapXml string, sn string, deviceType st
 
 	case soap.MsgRebootResponse:
 		ep.processRebootResponse(ctx, sn, &eventLog)
+
+	case soap.MsgReportTransmissionProgress:
+		ep.processReportTransmissionProgress(ctx, soapXml, sn, &eventLog)
 
 	case soap.MsgFault:
 		ep.processFault(ctx, soapXml, sn, headerId, &eventLog)

@@ -469,6 +469,78 @@ func (ep *EventProcessor) processRebootResponse(ctx context.Context, sn string, 
 	}
 }
 
+// processReportTransmissionProgress handles an incoming
+// ReportTransmissionProgress (CPE -> ACS) notification.
+//
+// Mirrors Java PositiveMessageProcessor.REPORT_TRANSMISSION_PROGRESS:
+//   1. Parse CommandKey (format: "log_{eventLogId}") and ProgressPercentage.
+//   2. If commandKey is non-empty and parses to an eventLogId, update
+//      progress on the matching ne_log (DeviceLogFileLog) row.
+//   3. Propagate the progress message to upgrade_log (via
+//      event_log_id), manual_upgrade_log and capture_log tables
+//      so that the operator UI displays real-time progress.
+//
+// The CPE expects an empty <ReportTransmissionProgressResponse/> body
+// (already returned by soap.BuildReportTransmissionProgressResponse).
+func (ep *EventProcessor) processReportTransmissionProgress(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing ReportTransmissionProgress for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("REPORT_TRANSMISSION_PROGRESS")
+	eventLog.Status = intPtr(0)
+
+	rtp, err := soap.ParseReportTransmissionProgress(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse ReportTransmissionProgress for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		eventLog.FaultInfo = stringPtr(err.Error())
+		return
+	}
+
+	if rtp.CommandKey == "" {
+		logger.Debugf("ReportTransmissionProgress: empty CommandKey for SN=%s", sn)
+		return
+	}
+
+	// CommandKey format: "log_{eventLogId}" — match Java PositiveMessageProcessor.
+	// split[0] = "log", split[1] = eventLogId.
+	parts := strings.SplitN(rtp.CommandKey, "_", 2)
+	if len(parts) != 2 {
+		logger.Warnf("ReportTransmissionProgress: unexpected CommandKey format %q for SN=%s", rtp.CommandKey, sn)
+		return
+	}
+	eventLogId, parseErr := strconv.ParseInt(parts[1], 10, 64)
+	if parseErr != nil {
+		logger.Warnf("ReportTransmissionProgress: failed to parse eventLogId from %q: %v", rtp.CommandKey, parseErr)
+		return
+	}
+
+	progress := rtp.ProgressPercentage + "%"
+
+	// 1. Update ne_log.progress (DeviceLogFileLog in Java).
+	res := ep.db.Table("ne_log").
+		Where("command_track_id = ?", eventLogId).
+		Update("progress", progress)
+	if res.Error != nil {
+		logger.Warnf("ReportTransmissionProgress: failed to update ne_log progress for eventLogId=%d: %v", eventLogId, res.Error)
+	}
+
+	// 2. Propagate to upgrade_log.message via event_log_id.
+	upgradeMsg := "download progress:" + progress
+	ep.db.Table("upgrade_log").
+		Where("event_log_id = ?", eventLogId).
+		Update("message", upgradeMsg)
+
+	// 3. Propagate to manual_upgrade_log.progress via event_log_id.
+	ep.db.Table("manual_upgrade_log").
+		Where("event_log_id = ?", eventLogId).
+		Update("progress", progress)
+
+	// 4. Propagate to capture_log.progress via event_log_id.
+	ep.db.Table("capture_log").
+		Where("event_log_id = ?", eventLogId).
+		Update("progress", progress)
+}
+
 // processUpdateCBSDStatusResponse handles the response to UpdateCBSDStatus.
 // It mirrors Java UpdateCBSDStatusProcessor.processResult — for each fault entry:
 //   - FaultCode 9020 (bandwidth mismatch): disable the CBSD, store the preferred

@@ -231,8 +231,12 @@ func (h *ACSHandler) processSoap(c *gin.Context, soapXml string, sn string, devi
 
 	case soap.MsgTransferComplete,
 		soap.MsgAutonomousTransferComplete,
-		soap.MsgFragmentTransferComplete:
+		soap.MsgFragmentTransferComplete,
+		soap.MsgAutonomousFragmentTransferComplete:
 		h.handleTransferComplete(c, soapXml, sn, deviceType, generation)
+
+	case soap.MsgReportTransmissionProgress:
+		h.handleReportTransmissionProgress(c, soapXml, sn, deviceType, generation)
 
 	case soap.MsgGetRPCMethods:
 		h.handleGetRPCMethods(c, soapXml, sn)
@@ -291,6 +295,28 @@ func (h *ACSHandler) handleTransferComplete(c *gin.Context, soapXml string, sn s
 
 	// No SN available, close session
 	h.sendEmptyResponse(c)
+}
+
+// handleReportTransmissionProgress processes a ReportTransmissionProgress
+// notification from the CPE.
+//
+// The CPE is reporting progress on an ongoing Download/Upload. Per
+// TR-069 §3.7.1, the ACS MUST respond with an empty
+// ReportTransmissionProgressResponse (not poll for new commands, since the
+// transfer is still in progress). This handler also enqueues the SOAP into
+// the event-result queue so EventProcessor.processReportTransmissionProgress
+// can update the matching ne_log / upgrade_log / manual_upgrade_log /
+// capture_log progress fields (mirrors Java PositiveMessageProcessor).
+func (h *ACSHandler) handleReportTransmissionProgress(c *gin.Context, soapXml string, sn string, deviceType string, generation string) {
+	// Persist the result and propagate progress to the related log tables.
+	h.eventProcessor.ProcessResult(soapXml, sn, deviceType, generation)
+
+	// Build the empty ReportTransmissionProgressResponse.
+	headerId := extractHeaderIDFromXML(soapXml)
+	if headerId == "" {
+		headerId = soap.GenerateHeaderID()
+	}
+	h.sendSoapToResponse(c, soap.BuildReportTransmissionProgressResponse(headerId))
 }
 
 // handleGetRPCMethods processes a GetRPCMethods request from CPE.

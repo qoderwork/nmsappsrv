@@ -432,6 +432,30 @@ func BuildSoftReboot(headerId string, commandKey string) string {
 	return b.String()
 }
 
+// BuildReportTransmissionProgressResponse builds the empty
+// ReportTransmissionProgressResponse SOAP envelope that the ACS returns
+// to a CPE after processing a ReportTransmissionProgress notification.
+//
+// Mirrors Java NgLogProcessHandler.build().
+func BuildReportTransmissionProgressResponse(headerId string) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
+	b.WriteString(`<soap:Envelope`)
+	b.WriteString(` xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"`)
+	b.WriteString(` xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/"`)
+	b.WriteString(` xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"`)
+	b.WriteString(` xmlns:xsd="http://www.w3.org/2001/XMLSchema"`)
+	b.WriteString(` xmlns:cwmp="urn:dslforum-org:cwmp-1-0">`)
+	b.WriteString(`<soap:Header><cwmp:ID>`)
+	b.WriteString(EscapeXML(headerId))
+	b.WriteString(`</cwmp:ID></soap:Header>`)
+	b.WriteString(`<soap:Body>`)
+	b.WriteString(`<cwmp:ReportTransmissionProgressResponse/>`)
+	b.WriteString(`</soap:Body>`)
+	b.WriteString(`</soap:Envelope>`)
+	return b.String()
+}
+
 // BuildBatchUpgrade builds BatchUpgrade request SOAP XML (vendor extension)
 func BuildBatchUpgrade(headerId string, batch *BatchUpgrade) string {
 	var b strings.Builder
