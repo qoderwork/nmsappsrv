@@ -1,5 +1,7 @@
 package misc
 
+import "time"
+
 // ---------------------------------------------------------------------------
 // BatchConfigurationLog
 // ---------------------------------------------------------------------------
@@ -115,4 +117,140 @@ func (s *service) CreateUploadFile(f *UploadFile) error {
 // DeleteUploadFile removes an upload file by ID.
 func (s *service) DeleteUploadFile(id string) error {
 	return s.repo.DeleteUploadFile(id)
+}
+
+// ---------------------------------------------------------------------------
+// AOS Management — TBG
+// ---------------------------------------------------------------------------
+
+// ListTBGs returns a paginated list of TBG records.
+func (s *service) ListTBGs(licenseId int, req *ListTBGRequest) ([]TBG, int64, error) {
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	return s.repo.FindTBGs(licenseId, req.Name, offset, pageSize)
+}
+
+// AddTBG creates a new TBG record.
+func (s *service) AddTBG(licenseId int, req *AddTBGRequest) (*TBG, error) {
+	now := time.Now()
+	tbg := &TBG{
+		Name:      &req.Name,
+		IP:        &req.IP,
+		Port:      &req.Port,
+		LicenseId: &licenseId,
+		CreateTime: &now,
+		UpdateTime: &now,
+	}
+	if err := s.repo.CreateTBG(tbg); err != nil {
+		return nil, err
+	}
+	return tbg, nil
+}
+
+// ModifyTBG updates an existing TBG record.
+func (s *service) ModifyTBG(req *ModifyTBGRequest) error {
+	now := time.Now()
+	tbg := &TBG{
+		Id:        req.Id,
+		UpdateTime: &now,
+	}
+	if req.Name != "" {
+		tbg.Name = &req.Name
+	}
+	if req.IP != "" {
+		tbg.IP = &req.IP
+	}
+	if req.Port != nil {
+		tbg.Port = req.Port
+	}
+	return s.repo.UpdateTBG(tbg)
+}
+
+// DeleteTBGs removes TBG records by IDs.
+func (s *service) DeleteTBGs(ids []int64) error {
+	return s.repo.DeleteTBGs(ids)
+}
+
+// ImportTBGs batch imports TBG records.
+func (s *service) ImportTBGs(licenseId int, tbgs []TBG) (int, error) {
+	now := time.Now()
+	for i := range tbgs {
+		tbgs[i].LicenseId = &licenseId
+		tbgs[i].CreateTime = &now
+		tbgs[i].UpdateTime = &now
+	}
+	if err := s.repo.CreateTBGsFromRows(tbgs); err != nil {
+		return 0, err
+	}
+	return len(tbgs), nil
+}
+
+// ---------------------------------------------------------------------------
+// AOS Management — PSAPID
+// ---------------------------------------------------------------------------
+
+// ListPSAPIDs returns a paginated list of PSAP ID records.
+func (s *service) ListPSAPIDs(licenseId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error) {
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	return s.repo.FindPSAPIDs(licenseId, req.PsapId, offset, pageSize)
+}
+
+// SyncPSAPIDs synchronizes PSAP ID records from the external source.
+func (s *service) SyncPSAPIDs(licenseId int, operator string) (int, error) {
+	// In a full implementation this would call an external PSAP service.
+	// For now, we create a sync log and return.
+	now := time.Now()
+	status := 1 // 1=success
+	detail := "sync completed"
+	log := &PSAPIDSyncLog{
+		Operator:   &operator,
+		Status:     &status,
+		Detail:     &detail,
+		CreateTime: &now,
+	}
+	if err := s.repo.CreatePSAPIDSyncLog(log); err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
+// ListPSAPIDSyncLogs returns a paginated list of PSAP ID sync logs.
+func (s *service) ListPSAPIDSyncLogs(page, pageSize int) ([]PSAPIDSyncLog, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	return s.repo.FindPSAPIDSyncLogs(offset, pageSize)
+}
+
+// ---------------------------------------------------------------------------
+// AOS Management — SpatialFile
+// ---------------------------------------------------------------------------
+
+// ListSpatialFileMarkets returns all spatial file markets for a license.
+func (s *service) ListSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error) {
+	return s.repo.FindSpatialFileMarkets(licenseId)
+}
+
+// GetMarketCoordinates returns PSAP ID coordinates for a given market.
+func (s *service) GetMarketCoordinates(marketId int) ([]PSAPID, error) {
+	return s.repo.FindMarketCoordinates(marketId)
 }

@@ -34,6 +34,7 @@ import (
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/mml"
+	"nmsappsrv/internal/mnormalfile"
 	"nmsappsrv/internal/monitor"
 	"nmsappsrv/internal/mr"
 	"nmsappsrv/internal/nmsbackup"
@@ -318,6 +319,9 @@ func main() {
 	pmfileH := pmfile.NewHandler(db)
 	// Topology management module (initialized later after opSender is ready)
 	var topologyH *topology.Handler
+	// MNormal file management — opSender is created later, so handler is
+	// initialised after the tr069 OperationSender is available.
+	var mnormalfileH *mnormalfile.Handler
 
 	// ========== Lifecycle Manager ==========
 	// workerTask adapts the project's Start/Stop worker convention to lifecycle.Task.
@@ -437,6 +441,7 @@ func main() {
 			tcpdump.RegisterRoutes(auth, tcpdumpH)
 			pmfile.RegisterRoutes(auth, pmfileH)
 			topology.RegisterRoutes(auth, topologyH)
+			mnormalfile.RegisterRoutes(auth, mnormalfileH)
 		}
 	}
 
@@ -592,6 +597,7 @@ func main() {
 	// hook (mirrors Java MonitorValueTask + GetCpeStatisticMessageProcessor).
 	tr069.DefaultSender = tr069OpSender
 	topologyH = topology.NewHandler(db, tr069OpSender)
+	mnormalfileH = mnormalfile.NewHandler(db, cfg, tr069OpSender)
 	monitorCollector := monitor.NewCollector(db)
 	tr069.MonitorGPVCallback = monitorCollector.HandleGPVResponse
 

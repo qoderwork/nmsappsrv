@@ -54,6 +54,10 @@ type Service interface {
 	ViewUpgradeFile(id int) (*UpgradeFile, error)
 	UpdateUpgradeFile(f *UpgradeFile) error
 	UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenancyId int, user string) error
+
+	// View / manual confirmation
+	ViewRollbackTask(id int) (*ViewRollbackTaskVO, error)
+	ManualConfirmationUpgrade(logId string) error
 }
 
 // service is the concrete implementation of Service.
@@ -403,6 +407,112 @@ func (s *service) ListRollbackTasks(tenancyId int, page, pageSize int) ([]Rollba
 	}
 	offset := (page - 1) * pageSize
 	return s.repo.FindRollbackTasks(tenancyId, offset, pageSize)
+}
+
+// ViewRollbackTaskVO mirrors Java ViewRollbackTaskVO.
+type ViewRollbackTaskVO struct {
+	Name        *string                  `json:"name"`
+	ExecuteMode *int                     `json:"executeMode"`
+	TriggerTime *time.Time               `json:"triggerTime"`
+	Scope       *string                  `json:"scope"`
+	Elements    []DeviceNameAndSNVO      `json:"elements"`
+}
+
+// DeviceNameAndSNVO mirrors Java DeviceNameAndSNVO.
+type DeviceNameAndSNVO struct {
+	DeviceName   *string `json:"deviceName"`
+	SerialNumber *string `json:"serialNumber"`
+}
+
+// ViewRollbackTask returns detailed info for a rollback task including the
+// target devices' name and serial number. Mirrors Java
+// UpgradeManagementServiceImpl.viewRollbackTask().
+func (s *service) ViewRollbackTask(id int) (*ViewRollbackTaskVO, error) {
+	var task RollbackTask
+	if err := s.repo.RawDB().First(&task, id).Error; err != nil {
+		return nil, err
+	}
+
+	vo := &ViewRollbackTaskVO{
+		Name:        task.Name,
+		ExecuteMode: task.ExecuteMode,
+		TriggerTime: task.TriggerTime,
+		Scope:       task.Scope,
+	}
+
+	if task.ElementIds != nil && *task.ElementIds != "" {
+		var elementIds []int64
+		if err := json.Unmarshal([]byte(*task.ElementIds), &elementIds); err == nil && len(elementIds) > 0 {
+			// Fetch device name & SN for the target elementIds.
+			type devRow struct {
+				NeNeid       int64   `gorm:"column:ne_neid"`
+				DeviceName   *string `gorm:"column:device_name"`
+				SerialNumber *string `gorm:"column:serial_number"`
+			}
+			var rows []devRow
+			if err := s.repo.RawDB().Table("cpe_element").
+				Select("ne_neid, device_name, serial_number").
+				Where("ne_neid IN ?", elementIds).
+				Find(&rows).Error; err == nil {
+				elems := make([]DeviceNameAndSNVO, 0, len(rows))
+				for _, r := range rows {
+					elems = append(elems, DeviceNameAndSNVO{
+						DeviceName:   r.DeviceName,
+						SerialNumber: r.SerialNumber,
+					})
+				}
+				vo.Elements = elems
+			}
+		}
+	}
+
+	return vo, nil
+}
+
+// ManualConfirmationUpgrade marks the given upgrade log as success/done by
+// manual confirmation from the operator. Mirrors Java
+// UpgradeManagementServiceImpl.manualConfirmationUpgrade().
+//
+// Inputs: logId (string UUID from upgrade_log.id).
+// Behavior:
+//  1. Set upgrade_log.is_done=true, success=true, message="Manual confirmation successful"
+//  2. If CommandTrackId is set, find the matching manual_upgrade_log and mark
+//     it as success with "Manual confirmation successful" info.
+func (s *service) ManualConfirmationUpgrade(logId string) error {
+	var log UpgradeLog
+	if err := s.repo.RawDB().Where("id = ?", logId).First(&log).Error; err != nil {
+		return fmt.Errorf("upgrade log not found: %w", err)
+	}
+
+	now := time.Now()
+	updates := map[string]interface{}{
+		"is_done": true,
+		"success": true,
+		"message": "Manual confirmation successful",
+	}
+	if log.DoneTime == nil {
+		updates["done_time"] = now
+	}
+	if err := s.repo.RawDB().Model(&UpgradeLog{}).Where("id = ?", logId).Updates(updates).Error; err != nil {
+		return err
+	}
+
+	// Mirror the success on the parent manual upgrade log if any.
+	if log.CommandTrackId != nil && *log.CommandTrackId > 0 {
+		manualUpdates := map[string]interface{}{
+			"success": true,
+			"info":    "Manual confirmation successful",
+		}
+		s.repo.RawDB().Table("manual_upgrade_log").
+			Where("event_log_id = ?", *log.CommandTrackId).
+			Updates(manualUpdates)
+		s.repo.RawDB().Table("manual_upgrade_log").
+			Where("event_log_id = ?", *log.CommandTrackId).
+			Where("end_time IS NULL").
+			Update("end_time", now)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

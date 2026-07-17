@@ -64,4 +64,21 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/bs-backup/tasks", h.ListBSBackupTasks)
 	rg.POST("/bs-backup/tasks/results", h.ListDeviceBackupResult)
 	rg.POST("/bs-backup/download-config", h.DownloadConfigFile)
+
+	// AOS Management — TBG (Tunnel Border Gateway)
+	rg.POST("/tbg/list", h.ListTBG)
+	rg.POST("/tbg/add", h.AddTBG)
+	rg.POST("/tbg/modify", h.ModifyTBG)
+	rg.POST("/tbg/delete", h.DeleteTBG)
+	rg.POST("/tbg/import", h.ImportTBGFile)
+	rg.GET("/tbg/template", h.DownloadTBGTemplate)
+
+	// AOS Management — PSAPID
+	rg.POST("/psap-id/list", h.ListPSAPID)
+	rg.POST("/psap-id/sync", h.SyncPSAPID)
+	rg.POST("/psap-id/sync-logs", h.ListPSAPIDSyncLogs)
+
+	// AOS Management — SpatialFile
+	rg.GET("/spatial-file/markets", h.ListSpatialFileMarkets)
+	rg.POST("/spatial-file/market-coordinates", h.GetMarketCoordinates)
 }

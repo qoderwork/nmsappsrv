@@ -122,6 +122,15 @@ func (ep *EventProcessor) handleDiagnosticsComplete(ctx context.Context, sn stri
 // Java: runs valueChangeInformReceiveAfter + getParameterValuesAfter postprocessors.
 // Saves Inform parameters to DB and triggers parameter refresh.
 func (ep *EventProcessor) handleValueChange(ctx context.Context, sn string, params []soap.ParameterValueStruct) {
+	// Mirrors Java InformMessageProcessor.saveInformInfo:
+	//   1. updateGPSOrWifiInfo  - cache GPS/WiFi location to Redis
+	//   2. saveParameterValues  - persist Inform params to DB
+	//   3. updateStun           - cache STUN/UE/upgrade status to Redis
+	//   4. cacheBasicParameter  - cache hot path params (AMFPoolConfig, OpState) to Redis
+	ep.updateGPSOrWifiInfo(ctx, sn, params)
+	ep.updateStun(ctx, sn, params)
+	ep.cacheBasicParameter(ctx, sn, params)
+
 	// Save parameter values from the Inform to element_basic_info_parameter
 	if len(params) > 0 {
 		var cpe device.CpeElement

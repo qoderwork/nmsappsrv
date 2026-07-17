@@ -32,9 +32,13 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	// 回滚任务管理
 	rg.POST("/rollback-tasks", h.CreateRollbackTask)
 	rg.GET("/rollback-tasks", h.ListRollbackTasks)
+	rg.GET("/rollback-tasks/:id/view", h.ViewRollbackTask)
 	rg.POST("/rollback-tasks/:id/start", h.StartRollbackTask)
 	rg.POST("/rollback-tasks/:id/cancel", h.CancelRollbackTask)
 	rg.GET("/rollback-tasks/:id/results", h.ListRollbackResults)
+
+	// 升级结果管理
+	rg.POST("/upgrade/manual-confirmation", h.ManualConfirmationUpgrade)
 
 	// 自动升级任务管理
 	rg.GET("/auto-upgrade-tasks", h.AutoUpgradeTaskList)

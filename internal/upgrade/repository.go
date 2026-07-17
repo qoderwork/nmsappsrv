@@ -22,6 +22,7 @@ type Repository interface {
 	FindAll(query *gorm.DB) ([]UpgradeFile, error)
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[UpgradeFile], error)
+	RawDB() *gorm.DB
 
 	// Custom methods.
 	FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error)
@@ -77,6 +78,12 @@ func NewRepository(db *gorm.DB) Repository {
 		BaseRepository: baserepo.New[UpgradeFile, int](db, "id"),
 		db:             db,
 	}
+}
+
+// RawDB returns the underlying *gorm.DB for ad-hoc queries outside the
+// pre-defined repository contract.
+func (r *repository) RawDB() *gorm.DB {
+	return r.db
 }
 
 // ---------------------------------------------------------------------------

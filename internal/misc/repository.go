@@ -71,6 +71,23 @@ type Repository interface {
 	DeleteGnbIdUsedByElementId(elementId int64) error
 	GetDeviceSerialNumber(elementId int64) (string, error)
 	FindReadyForZTPAOS() ([]int64, error)
+
+	// AOS Management — TBG
+	FindTBGs(licenseId int, name string, offset, limit int) ([]TBG, int64, error)
+	CreateTBG(tbg *TBG) error
+	UpdateTBG(tbg *TBG) error
+	DeleteTBGs(ids []int64) error
+	CreateTBGsFromRows(tbgs []TBG) error
+
+	// AOS Management — PSAPID
+	FindPSAPIDs(licenseId int, psapId string, offset, limit int) ([]PSAPID, int64, error)
+	SyncPSAPIDs(licenseId int, records []PSAPID) (int, error)
+	CreatePSAPIDSyncLog(log *PSAPIDSyncLog) error
+	FindPSAPIDSyncLogs(offset, limit int) ([]PSAPIDSyncLog, int64, error)
+
+	// AOS Management — SpatialFile
+	FindSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error)
+	FindMarketCoordinates(marketId int) ([]PSAPID, error)
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -676,4 +693,144 @@ func (r *repository) FindReadyForZTPAOS() ([]int64, error) {
 		Where("aos_file_name IS NULL AND read_to_ztp = ? AND deleted = ?", true, false).
 		Pluck("ne_neid", &ids).Error
 	return ids, err
+}
+
+// ---------------------------------------------------------------------------
+// AOS Management — TBG
+// ---------------------------------------------------------------------------
+
+// FindTBGs returns a paginated list of TBG records filtered by license and name.
+func (r *repository) FindTBGs(licenseId int, name string, offset, limit int) ([]TBG, int64, error) {
+	var list []TBG
+	var total int64
+	query := r.db.Model(&TBG{}).Where("license_id = ?", licenseId)
+	if name != "" {
+		query = query.Where("name LIKE ?", "%"+name+"%")
+	}
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindTBGs count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
+		logger.Errorf("FindTBGs query error: %v", err)
+		return nil, 0, err
+	}
+	return list, total, nil
+}
+
+// CreateTBG inserts a new TBG record.
+func (r *repository) CreateTBG(tbg *TBG) error {
+	return r.db.Create(tbg).Error
+}
+
+// UpdateTBG saves changes to an existing TBG record.
+func (r *repository) UpdateTBG(tbg *TBG) error {
+	return r.db.Save(tbg).Error
+}
+
+// DeleteTBGs removes TBG records by IDs.
+func (r *repository) DeleteTBGs(ids []int64) error {
+	return r.db.Where("id IN (?)", ids).Delete(&TBG{}).Error
+}
+
+// CreateTBGsFromRows batch inserts TBG records (used by import).
+func (r *repository) CreateTBGsFromRows(tbgs []TBG) error {
+	return r.db.Create(&tbgs).Error
+}
+
+// ---------------------------------------------------------------------------
+// AOS Management — PSAPID
+// ---------------------------------------------------------------------------
+
+// FindPSAPIDs returns a paginated list of PSAP ID records.
+func (r *repository) FindPSAPIDs(licenseId int, psapId string, offset, limit int) ([]PSAPID, int64, error) {
+	var list []PSAPID
+	var total int64
+	query := r.db.Model(&PSAPID{}).Where("license_id = ?", licenseId)
+	if psapId != "" {
+		query = query.Where("psap_id LIKE ?", "%"+psapId+"%")
+	}
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindPSAPIDs count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
+		logger.Errorf("FindPSAPIDs query error: %v", err)
+		return nil, 0, err
+	}
+	return list, total, nil
+}
+
+// CreatePSAPIDSyncLog inserts a new PSAP ID sync log record.
+func (r *repository) CreatePSAPIDSyncLog(log *PSAPIDSyncLog) error {
+	return r.db.Create(log).Error
+}
+
+// SyncPSAPIDs replaces PSAP ID records for a given license and returns the count.
+func (r *repository) SyncPSAPIDs(licenseId int, records []PSAPID) (int, error) {
+	tx := r.db.Begin()
+	if err := tx.Where("license_id = ?", licenseId).Delete(&PSAPID{}).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+	for i := range records {
+		records[i].LicenseId = &licenseId
+		if err := tx.Create(&records[i]).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+	}
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return len(records), nil
+}
+
+// FindPSAPIDSyncLogs returns a paginated list of sync logs.
+func (r *repository) FindPSAPIDSyncLogs(offset, limit int) ([]PSAPIDSyncLog, int64, error) {
+	var list []PSAPIDSyncLog
+	var total int64
+	query := r.db.Model(&PSAPIDSyncLog{})
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindPSAPIDSyncLogs count error: %v", err)
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
+		logger.Errorf("FindPSAPIDSyncLogs query error: %v", err)
+		return nil, 0, err
+	}
+	return list, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// AOS Management — SpatialFile
+// ---------------------------------------------------------------------------
+
+// FindSpatialFileMarkets returns all spatial file markets for a license.
+func (r *repository) FindSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error) {
+	var list []SpatialFileMarket
+	if err := r.db.Where("license_id = ?", licenseId).Find(&list).Error; err != nil {
+		logger.Errorf("FindSpatialFileMarkets error: %v", err)
+		return nil, err
+	}
+	return list, nil
+}
+
+// FindMarketCoordinates returns PSAP IDs for a given market ID.
+// Maps market to license_id since spatial_file_market has license_id.
+func (r *repository) FindMarketCoordinates(marketId int) ([]PSAPID, error) {
+	var market SpatialFileMarket
+	if err := r.db.First(&market, marketId).Error; err != nil {
+		return nil, err
+	}
+	licenseId := 0
+	if market.LicenseId != nil {
+		licenseId = *market.LicenseId
+	}
+	var list []PSAPID
+	if err := r.db.Where("license_id = ?", licenseId).Find(&list).Error; err != nil {
+		logger.Errorf("FindMarketCoordinates error: %v", err)
+		return nil, err
+	}
+	return list, nil
 }

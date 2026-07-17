@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 
 	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/middleware"
@@ -535,4 +537,227 @@ func (h *Handler) CheckSFTPCredentials(username, password string) bool {
 		return false
 	}
 	return *setting.SFTPUsername == username && *setting.SFTPPassword == password
+}
+
+// ---------- AOS Management — TBG ----------
+
+func (h *Handler) ListTBG(c *gin.Context) {
+	var req ListTBGRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	licenseId := middleware.GetLicenseId(c)
+	data, total, err := h.svc.ListTBGs(licenseId, &req)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to list TBG")
+		return
+	}
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	utils.Paginated(c, data, total, page, pageSize)
+}
+
+func (h *Handler) AddTBG(c *gin.Context) {
+	var req AddTBGRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	licenseId := middleware.GetLicenseId(c)
+	tbg, err := h.svc.AddTBG(licenseId, &req)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to add TBG")
+		return
+	}
+	utils.Success(c, tbg)
+}
+
+func (h *Handler) ModifyTBG(c *gin.Context) {
+	var req ModifyTBGRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.ModifyTBG(&req); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to modify TBG")
+		return
+	}
+	utils.Success(c, nil)
+}
+
+func (h *Handler) DeleteTBG(c *gin.Context) {
+	var req DeleteTBGRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.DeleteTBGs(req.Ids); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to delete TBG")
+		return
+	}
+	utils.Success(c, nil)
+}
+
+func (h *Handler) ImportTBGFile(c *gin.Context) {
+	_, header, err := c.Request.FormFile("file")
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "file is required")
+		return
+	}
+	licenseId := middleware.GetLicenseId(c)
+
+	// Open the uploaded file
+	src, err := header.Open()
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to open uploaded file")
+		return
+	}
+	defer src.Close()
+
+	// Parse Excel file
+	f, err := excelize.OpenReader(src)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid Excel file")
+		return
+	}
+	defer f.Close()
+
+	sheetName := f.GetSheetName(0)
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "failed to read Excel rows")
+		return
+	}
+
+	var tbgs []TBG
+	now := time.Now()
+	for i, row := range rows {
+		if i == 0 { // skip header
+			continue
+		}
+		if len(row) < 3 {
+			continue
+		}
+		port, _ := strconv.Atoi(row[2])
+		name := row[0]
+		ip := row[1]
+		tbgs = append(tbgs, TBG{
+			Name:       &name,
+			IP:         &ip,
+			Port:       &port,
+			LicenseId:  &licenseId,
+			CreateTime: &now,
+			UpdateTime: &now,
+		})
+	}
+
+	count, err := h.svc.ImportTBGs(licenseId, tbgs)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to import TBG file")
+		return
+	}
+	utils.Success(c, map[string]interface{}{"count": count})
+}
+
+func (h *Handler) DownloadTBGTemplate(c *gin.Context) {
+	f := excelize.NewFile()
+	sheet := "TBG"
+	f.SetSheetName("Sheet1", sheet)
+	f.SetCellValue(sheet, "A1", "Name")
+	f.SetCellValue(sheet, "B1", "IP")
+	f.SetCellValue(sheet, "C1", "Port")
+
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to generate template")
+		return
+	}
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=tbg_template.xlsx")
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
+}
+
+// ---------- AOS Management — PSAPID ----------
+
+func (h *Handler) ListPSAPID(c *gin.Context) {
+	var req ListPSAPIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	licenseId := middleware.GetLicenseId(c)
+	data, total, err := h.svc.ListPSAPIDs(licenseId, &req)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to list PSAP ID")
+		return
+	}
+	page := req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	utils.Paginated(c, data, total, page, pageSize)
+}
+
+func (h *Handler) SyncPSAPID(c *gin.Context) {
+	var req SyncPSAPIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	username := middleware.GetUsername(c)
+	licenseId := middleware.GetLicenseId(c)
+	count, err := h.svc.SyncPSAPIDs(licenseId, username)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to sync PSAP ID")
+		return
+	}
+	utils.Success(c, map[string]interface{}{"count": count})
+}
+
+func (h *Handler) ListPSAPIDSyncLogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	data, total, err := h.svc.ListPSAPIDSyncLogs(page, pageSize)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to list PSAP ID sync logs")
+		return
+	}
+	utils.Paginated(c, data, total, page, pageSize)
+}
+
+// ---------- AOS Management — SpatialFile ----------
+
+func (h *Handler) ListSpatialFileMarkets(c *gin.Context) {
+	licenseId := middleware.GetLicenseId(c)
+	data, err := h.svc.ListSpatialFileMarkets(licenseId)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to list spatial file markets")
+		return
+	}
+	utils.Success(c, data)
+}
+
+func (h *Handler) GetMarketCoordinates(c *gin.Context) {
+	var req MarketCoordinateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	data, err := h.svc.GetMarketCoordinates(req.MarketId)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to get market coordinates")
+		return
+	}
+	utils.Success(c, data)
 }

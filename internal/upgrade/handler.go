@@ -388,6 +388,40 @@ func (h *Handler) ListRollbackResults(c *gin.Context) {
 	utils.Paginated(c, data, total, page, pageSize)
 }
 
+// ViewRollbackTask handles GET /rollback-tasks/:id/view
+// Mirrors Java UpgradeManagementController.viewRollbackTask.
+func (h *Handler) ViewRollbackTask(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid task id")
+		return
+	}
+	data, err := h.svc.ViewRollbackTask(id)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to view rollback task")
+		return
+	}
+	utils.Success(c, data)
+}
+
+// ManualConfirmationUpgrade handles POST /upgrade/manual-confirmation
+// body: {"logId": "..."}
+// Mirrors Java UpgradeManagementController.manualConfirmationUpgrade.
+func (h *Handler) ManualConfirmationUpgrade(c *gin.Context) {
+	var req struct {
+		LogId string `json:"logId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "logId is required")
+		return
+	}
+	if err := h.svc.ManualConfirmationUpgrade(req.LogId); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
+}
+
 // ---------------------------------------------------------------------------
 // Statistics
 // ---------------------------------------------------------------------------

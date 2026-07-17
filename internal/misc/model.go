@@ -706,3 +706,99 @@ type RPCMethod struct {
 }
 
 func (RPCMethod) TableName() string { return "rpc_method" }
+
+// --- AOS Management tables ---
+
+// TBG 对应 tbg 表 (Tunnel Border Gateway)
+type TBG struct {
+	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name       *string    `gorm:"column:name;type:varchar(255)" json:"name"`
+	IP         *string    `gorm:"column:ip;type:varchar(255)" json:"ip"`
+	Port       *int       `gorm:"column:port" json:"port"`
+	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
+	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
+}
+
+func (TBG) TableName() string { return "tbg" }
+
+// PSAPID 对应 psap_id 表
+type PSAPID struct {
+	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	PsapId     *string    `gorm:"column:psap_id;type:varchar(255)" json:"psap_id"`
+	Name       *string    `gorm:"column:name;type:varchar(255)" json:"name"`
+	Address    *string    `gorm:"column:address;type:varchar(255)" json:"address"`
+	Latitude   *float64   `gorm:"column:latitude" json:"latitude"`
+	Longitude  *float64   `gorm:"column:longitude" json:"longitude"`
+	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
+}
+
+func (PSAPID) TableName() string { return "psap_id" }
+
+// PSAPIDSyncLog 对应 psap_id_sync_log 表
+type PSAPIDSyncLog struct {
+	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Operator   *string    `gorm:"column:operator;type:varchar(255)" json:"operator"`
+	Status     *int       `gorm:"column:status" json:"status"`
+	Detail     *string    `gorm:"column:detail;type:text" json:"detail"`
+	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
+}
+
+func (PSAPIDSyncLog) TableName() string { return "psap_id_sync_log" }
+
+// SpatialFileMarket 对应 spatial_file_market 表
+type SpatialFileMarket struct {
+	Id        int     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      *string `gorm:"column:name;type:varchar(255)" json:"name"`
+	Code      *string `gorm:"column:code;type:varchar(255)" json:"code"`
+	LicenseId *int    `gorm:"column:license_id" json:"license_id"`
+}
+
+func (SpatialFileMarket) TableName() string { return "spatial_file_market" }
+
+// ---------- AOS Management DTOs ----------
+
+// ListTBGRequest is the JSON body for POST /tbg/list.
+type ListTBGRequest struct {
+	Name      string `json:"name"`
+	Page      int    `json:"page"`
+	PageSize  int    `json:"pageSize"`
+}
+
+// AddTBGRequest is the JSON body for POST /tbg/add.
+type AddTBGRequest struct {
+	Name string `json:"name" binding:"required"`
+	IP   string `json:"ip" binding:"required"`
+	Port int    `json:"port" binding:"required"`
+}
+
+// ModifyTBGRequest is the JSON body for POST /tbg/modify.
+type ModifyTBGRequest struct {
+	Id   int64  `json:"id" binding:"required"`
+	Name string `json:"name"`
+	IP   string `json:"ip"`
+	Port *int   `json:"port"`
+}
+
+// DeleteTBGRequest is the JSON body for POST /tbg/delete.
+type DeleteTBGRequest struct {
+	Ids []int64 `json:"ids" binding:"required"`
+}
+
+// ListPSAPIDRequest is the JSON body for POST /psap-id/list.
+type ListPSAPIDRequest struct {
+	PsapId   string `json:"psapId"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"pageSize"`
+}
+
+// SyncPSAPIDRequest is the JSON body for POST /psap-id/sync.
+type SyncPSAPIDRequest struct {
+	LicenseId int `json:"licenseId"`
+}
+
+// MarketCoordinateRequest is the JSON body for POST /spatial-file/market-coordinates.
+type MarketCoordinateRequest struct {
+	MarketId int `json:"marketId" binding:"required"`
+}

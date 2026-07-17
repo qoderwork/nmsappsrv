@@ -60,6 +60,22 @@ type Service interface {
 	GetConfigFilePath(logId string) (string, error)
 
 	GetDeviceSerialNumber(elementId int64) (string, error)
+
+	// AOS Management — TBG
+	ListTBGs(licenseId int, req *ListTBGRequest) ([]TBG, int64, error)
+	AddTBG(licenseId int, req *AddTBGRequest) (*TBG, error)
+	ModifyTBG(req *ModifyTBGRequest) error
+	DeleteTBGs(ids []int64) error
+	ImportTBGs(licenseId int, tbgs []TBG) (int, error)
+
+	// AOS Management — PSAPID
+	ListPSAPIDs(licenseId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error)
+	SyncPSAPIDs(licenseId int, operator string) (int, error)
+	ListPSAPIDSyncLogs(page, pageSize int) ([]PSAPIDSyncLog, int64, error)
+
+	// AOS Management — SpatialFile
+	ListSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error)
+	GetMarketCoordinates(marketId int) ([]PSAPID, error)
 }
 
 // service is the concrete implementation of Service.
