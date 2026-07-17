@@ -117,7 +117,8 @@ func (t *NorthInterfaceAlarmExport) exportForDevice(licenseId int, elementId int
 	}
 
 	// 生成文件名: FM_{timestamp}_{sn}.csv
-	timestamp := time.Now().Format("yyyyMMddHHmmss")
+	// Go 时间格式使用参考时间 2006-01-02 15:04:05
+	timestamp := time.Now().Format("20060102150405")
 	fileName := fmt.Sprintf("FM_%s_%s.csv", timestamp, serialNumber)
 	filePath := filepath.Join(exportDir, fileName)
 

@@ -158,7 +158,7 @@ func (t *ZTPFailedTask) exportFailedNotification(log ztpLogRow, elementId int64)
 	}
 
 	// 生成文件名: ZTP_failed_{timestamp}_{sn}.csv
-	timestamp := time.Now().Format("yyyyMMddHHmmss")
+	timestamp := time.Now().Format("20060102150405")
 	fileName := fmt.Sprintf("ZTP_failed_%s_%s.csv", timestamp, deviceInfo.SerialNumber)
 	filePath := filepath.Join(exportDir, fileName)
 

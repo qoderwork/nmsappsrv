@@ -49,6 +49,23 @@ type MNormalFileDownloadLog struct {
 
 func (MNormalFileDownloadLog) TableName() string { return "mnormal_file_download_log" }
 
+// DeviceMNormalFile 对应 device_m_normal_file 表 (Java: DeviceMNormalFile entity)
+type DeviceMNormalFile struct {
+	Id             int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FileName       *string    `gorm:"column:file_name;type:varchar(255)" json:"fileName"`
+	OriginalFileName *string `gorm:"column:original_file_name;type:varchar(255)" json:"originalFileName"`
+	FilePath       *string    `gorm:"column:file_path;type:varchar(255)" json:"filePath"`
+	FileSize       *int64     `gorm:"column:file_size" json:"fileSize"`
+	FileMd5        *string    `gorm:"column:file_md5;type:varchar(64)" json:"fileMd5"`
+	FileType       *string    `gorm:"column:file_type;type:varchar(50)" json:"fileType"`
+	TenancyId      *int       `gorm:"column:tenancy_id" json:"tenancyId"`
+	UploadTime     *time.Time `gorm:"column:upload_time" json:"uploadTime"`
+	UploadUser     *string    `gorm:"column:upload_user;type:varchar(255)" json:"uploadUser"`
+	Deleted        bool       `gorm:"column:deleted;default:false" json:"deleted"`
+}
+
+func (DeviceMNormalFile) TableName() string { return "device_m_normal_file" }
+
 // ---------- DTOs ----------
 
 // InitUploadRequest is the JSON body for POST /mnormal-file/init-upload.

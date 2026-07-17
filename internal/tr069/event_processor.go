@@ -368,8 +368,23 @@ func (ep *EventProcessor) ProcessResult(soapXml string, sn string, deviceType st
 	case soap.MsgDownloadResponse:
 		ep.processDownloadResponse(ctx, soapXml, sn, &eventLog)
 
+	case soap.MsgUploadResponse:
+		ep.processUploadResponse(ctx, soapXml, sn, &eventLog)
+
 	case soap.MsgRebootResponse:
 		ep.processRebootResponse(ctx, sn, &eventLog)
+
+	case soap.MsgFactoryResetResponse:
+		ep.processFactoryResetResponse(ctx, soapXml, sn, &eventLog)
+
+	case soap.MsgCaptureResponse:
+		ep.processCaptureResponse(ctx, soapXml, sn, &eventLog)
+
+	case soap.MsgCancelFutureUpgradeResponse:
+		ep.processCancelFutureUpgradeResponse(ctx, soapXml, sn, &eventLog)
+
+	case soap.MsgHttpRequestProxyResponse:
+		ep.processHttpRequestProxyResponse(ctx, soapXml, sn, &eventLog)
 
 	case soap.MsgReportTransmissionProgress:
 		ep.processReportTransmissionProgress(ctx, soapXml, sn, &eventLog)

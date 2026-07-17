@@ -13,6 +13,7 @@ import (
 	"nmsappsrv/internal/misc"
 	"nmsappsrv/internal/mml"
 	"nmsappsrv/internal/monitor"
+	"nmsappsrv/internal/mnormalfile"
 	"nmsappsrv/internal/nmsbackup"
 	"nmsappsrv/internal/parameter"
 	"nmsappsrv/internal/paramcompare"
@@ -77,7 +78,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&parameter.ParameterTemplate{},
 		&parameter.ParameterTemplateHasParameter{},
 
-		// upgrade (9)
+		// upgrade (10)
 		&upgrade.UpgradeTask{},
 		&upgrade.UpgradeFile{},
 		&upgrade.UpgradeLog{},
@@ -87,6 +88,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&upgrade.ShutdownLog{},
 		&upgrade.EUAndRUBatchUpgradeLog{},
 		&upgrade.AutoUpgradeTask{},
+		&upgrade.ManualUpgradeLog{},
 
 		// eventlog (2)
 		&eventlog.EventLog{},
@@ -169,6 +171,12 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&misc.CallTraceFileLog{},
 		&misc.MACPMFileLog{},
 		&misc.RPCMethod{},
+
+		// mnormalfile (4)
+		&mnormalfile.MNormalFile{},
+		&mnormalfile.MNormalFileChunk{},
+		&mnormalfile.MNormalFileDownloadLog{},
+		&mnormalfile.DeviceMNormalFile{},
 
 		// ssh (1)
 		&sshmod.SSHAccessTimerTask{},

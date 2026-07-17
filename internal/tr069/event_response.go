@@ -219,6 +219,15 @@ func (ep *EventProcessor) processGetParameterValuesResponse(ctx context.Context,
 	// Update event log status
 	eventLog.EventType = stringPtr("GET_PARAMETER_VALUES_RESPONSE")
 	eventLog.Status = intPtr(0) // success
+
+	// Java: WebMessageProcessor.dealWebGetParamValues → VALUE_GET callback
+	// (cpe already declared above in this function)
+	ep.sendWebCallback(ctx, 0, map[string]interface{}{
+		"sn":         sn,
+		"element_id": cpe.NeNeid,
+		"callback":   "VALUE_GET",
+		"event_log":  eventLog,
+	})
 }
 
 // processSetParameterValuesResponse updates parameter log status and parameter_attributes on success.
@@ -280,6 +289,33 @@ func (ep *EventProcessor) processSetParameterValuesResponse(ctx context.Context,
 	}
 
 	logger.Infof("SPV success for SN=%s, parameter attributes updated", sn)
+
+	// Java: WebMessageProcessor.dealWebSetParamValues → VALUE_SET callback
+	var cpe device.CpeElement
+	if eventLog.ElementId != nil {
+		if ep.db.Where("ne_neid = ?", *eventLog.ElementId).First(&cpe).Error == nil {
+			ep.sendWebCallback(ctx, 0, map[string]interface{}{
+				"sn":         sn,
+				"element_id": cpe.NeNeid,
+				"callback":   "VALUE_SET",
+				"event_log":  eventLog,
+			})
+		}
+	}
+
+	// Java: WebMessageProcessor.dealWebSetParamValues → clean up PresetParametersTask
+	if eventLog.CommandTrackData != nil {
+		var trackData map[string]interface{}
+		if json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData) == nil {
+			if cti, ok := trackData["command_track_id"].(float64); ok {
+				ep.db.Table("preset_parameters_task").
+					Where("event_log_id = ?", int64(cti)).
+					Updates(map[string]interface{}{
+						"status": 2,
+					})
+			}
+		}
+	}
 
 	// Task 5.5: Publish parameter change notification to Redis pub/sub
 	if eventLog.CommandTrackData != nil {
@@ -369,6 +405,18 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 						"success":         &success,
 					})
 
+				// Java: transferUncompleted - TYPE_UPGRADE failure updates manual_upgrade_log
+				if !success {
+					faultString := fmt.Sprintf("Fault Code:%d, Fault Info:%s", tc.FaultCode, tc.FaultString)
+					ep.db.Table("manual_upgrade_log").
+						Where("event_log_id = ?", originEvent.Id).
+						Updates(map[string]interface{}{
+							"success":  false,
+							"end_time": &now,
+							"info":     faultString,
+						})
+				}
+
 				// Java: License download success triggers auto SOFT_REBOOT
 				// (PositiveMessageProcessor.downloadLicenseFileAfter).
 				if success && originEvent.CommandTrackData != nil {
@@ -381,6 +429,18 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 								opSender := NewOperationSender(ep.db, msgMgr)
 								opSender.SendSoftReboot(sn, "license_auto_reboot_"+strconv.FormatInt(now.Unix(), 10), "", 0)
 							})
+						}
+					}
+				}
+
+				// Java: transferUncompleted - faultCode 9003/9001 → changeFileVersion
+				if !success && (tc.FaultCode == 9003 || tc.FaultCode == 9001) {
+					if originEvent.CommandTrackData != nil {
+						var trackData map[string]interface{}
+						if json.Unmarshal([]byte(*originEvent.CommandTrackData), &trackData) == nil {
+							if fileType, ok := trackData["file_type"].(string); ok {
+								ep.changeFileVersion(ctx, sn, fileType)
+							}
 						}
 					}
 				}
@@ -476,51 +536,166 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 					}
 				}
 
-				if isConfigOp && success && cpeOK {
-					if isUpload {
-						// Java: uploadConfigSuccessfully
-						licenseId := 0
-						if cpe.LicenseId != nil {
-							licenseId = *cpe.LicenseId
-						}
-						redisKey := fmt.Sprintf("ConfigFileName_%d_%d", licenseId, cpe.NeNeid)
-						fileName, _ := redis.Get(ctx, redisKey)
-						if fileName != "" {
-							ep.db.Model(&device.CpeElement{}).
-								Where("ne_neid = ?", cpe.NeNeid).
-								Updates(map[string]interface{}{
-									"config_file":             fileName,
-									"config_file_upload_time": &now,
-								})
-							redis.Del(ctx, redisKey)
-						}
+				if isConfigOp {
+					if success && cpeOK {
+						if isUpload {
+							licenseId := 0
+							if cpe.LicenseId != nil {
+								licenseId = *cpe.LicenseId
+							}
+							redisKey := fmt.Sprintf("ConfigFileName_%d_%d", licenseId, cpe.NeNeid)
+							fileName, _ := redis.Get(ctx, redisKey)
+							if fileName != "" {
+								ep.db.Model(&device.CpeElement{}).
+									Where("ne_neid = ?", cpe.NeNeid).
+									Updates(map[string]interface{}{
+										"config_file":             fileName,
+										"config_file_upload_time": &now,
+									})
+								redis.Del(ctx, redisKey)
+							}
 
-						// OpenStation config success
-						if openStation, _ := trackData["open_station_config"].(bool); openStation {
-							ep.db.Model(&device.CpeElement{}).
-								Where("ne_neid = ?", cpe.NeNeid).
-								Update("open_station_config_status", "success")
-						}
+							if openStation, _ := trackData["open_station_config"].(bool); openStation {
+								ep.db.Model(&device.CpeElement{}).
+									Where("ne_neid = ?", cpe.NeNeid).
+									Update("open_station_config_status", "success")
+							}
 
-						// Web callback RECEIVE_CONFIG (fire-and-forget).
-						ep.sendWebCallback(ctx, 0, map[string]interface{}{
-							"sn":          sn,
-							"element_id":  cpe.NeNeid,
-							"callback":    "RECEIVE_CONFIG",
-							"event_log":   originEvent,
-						})
+							ep.sendWebCallback(ctx, 0, map[string]interface{}{
+								"sn":          sn,
+								"element_id":  cpe.NeNeid,
+								"callback":    "RECEIVE_CONFIG",
+								"event_log":   originEvent,
+							})
+						} else {
+							ep.sendWebCallback(ctx, 0, map[string]interface{}{
+								"sn":          sn,
+								"element_id":  cpe.NeNeid,
+								"callback":    "CONFIG_DOWNLOADED",
+								"event_log":   originEvent,
+							})
+							if openStation, _ := trackData["open_station_config"].(bool); openStation {
+								ep.db.Model(&device.CpeElement{}).
+									Where("ne_neid = ?", cpe.NeNeid).
+									Update("open_station_config_status", "success")
+							}
+						}
 					} else {
-						// Java: downloadConfigSuccessfully
-						ep.sendWebCallback(ctx, 0, map[string]interface{}{
-							"sn":          sn,
-							"element_id":  cpe.NeNeid,
-							"callback":    "CONFIG_DOWNLOADED",
-							"event_log":   originEvent,
-						})
-						if openStation, _ := trackData["open_station_config"].(bool); openStation {
-							ep.db.Model(&device.CpeElement{}).
-								Where("ne_neid = ?", cpe.NeNeid).
-								Update("open_station_config_status", "success")
+						// Java: transferUncompleted - CONFIG failure
+						if isUpload {
+							ep.sendWebCallback(ctx, 0, map[string]interface{}{
+								"sn":          sn,
+								"element_id":  cpe.NeNeid,
+								"callback":    "UPLOAD_CONFIG_FAILED",
+								"event_log":   originEvent,
+							})
+						} else {
+							ep.sendWebCallback(ctx, 0, map[string]interface{}{
+								"sn":          sn,
+								"element_id":  cpe.NeNeid,
+								"callback":    "DOWNLOAD_CONFIG_FAILED",
+								"event_log":   originEvent,
+							})
+							if openStation, _ := trackData["open_station_config"].(bool); openStation {
+								ep.db.Model(&device.CpeElement{}).
+									Where("ne_neid = ?", cpe.NeNeid).
+									Update("open_station_config_status", "failed")
+							}
+						}
+					}
+				}
+
+				// Java: PositiveMessageProcessor.transferComplete - additional file types
+				if fileType, ok := trackData["file_type"].(string); ok {
+					if success {
+						switch fileType {
+						case "CERT_FILE":
+							ep.db.Table("device_send_ca_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Update("result", 1)
+						case "ZTP_FILE":
+							ep.db.Table("ztp_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Update("progress", 2)
+						case "BATCH_UPGRADE_FILE":
+							ep.db.Table("eu_and_ru_batch_upgrade_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Update("downloaded_time", &now)
+						case "BATCH_PROCESS_FILE":
+							ep.db.Table("batch_process_file_send_log").
+								Where("command_track_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"download_time": &now,
+									"status":        1,
+								})
+						case "RRU_SOFTWARE":
+							if cpeOK {
+								ep.sendWebCallback(ctx, 0, map[string]interface{}{
+									"sn":          sn,
+									"element_id":  cpe.NeNeid,
+									"callback":    "RRU_SOFTWARE_DOWNLOADED",
+									"event_log":   originEvent,
+								})
+							}
+						case "CBSD_CERT_FILE":
+							ep.db.Table("send_cbsd_cert_file_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"status":    1,
+									"end_time":  &now,
+								})
+						}
+					} else {
+						// Failure branches for each file type
+						faultString := fmt.Sprintf("Fault Code:%d, Fault Info:%s", tc.FaultCode, tc.FaultString)
+						switch fileType {
+						case "CERT_FILE":
+							ep.db.Table("device_send_ca_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"result": 2,
+									"info":   faultString,
+								})
+						case "ZTP_FILE":
+							// Java: ZTP failure (non-9004) → retry log + cleanup
+							if tc.FaultCode != 9004 && cpeOK {
+								ep.db.Table("ztp_retry_log").Create(map[string]interface{}{
+									"element_id": cpe.NeNeid,
+									"retry_time": &now,
+									"info":       "Failed to download",
+								})
+								utils.SafeGo("ZTPFailedCleanup-"+sn, func() {
+									ep.ztpFailedCleanup(ctx, sn, cpe.NeNeid)
+								})
+							}
+						case "BATCH_UPGRADE_FILE":
+							ep.db.Table("eu_and_ru_batch_upgrade_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"result":     2,
+									"fault_info": faultString,
+								})
+						case "BATCH_PROCESS_FILE":
+							ep.db.Table("batch_process_file_send_log").
+								Where("command_track_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"status":   3,
+									"fault_info": faultString,
+								})
+						case "CBSD_CERT_FILE":
+							ep.db.Table("send_cbsd_cert_file_log").
+								Where("event_log_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"status":   2,
+									"fault_info": faultString,
+								})
+						case "M_NORMAL_FILE":
+							ep.db.Table("m_normal_file_send_log").
+								Where("command_track_id = ?", originEvent.Id).
+								Updates(map[string]interface{}{
+									"status":   2,
+									"fault_info": faultString,
+								})
 						}
 					}
 				}
@@ -531,12 +706,511 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 	}
 }
 
-// processDownloadResponse updates download task status.
+// processDownloadResponse handles DownloadResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealDownload:
+//   - status 0: download accepted → CONFIG_DOWNLOAD or UPGRADE_DOWNLOAD callback
+//   - status 1: download in progress → CONFIG_DOWNLOADING or UPGRADE_DOWNLOADING callback
+//   - other: download failed → CONFIG_DOWNLOAD_EXPIRE or UPGRADE_DOWNLOAD_EXPIRE callback
+//     + ZTP_FILE failure triggers retry log and cleanup
 func (ep *EventProcessor) processDownloadResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
 	logger.Infof("processing DownloadResponse for SN=%s", sn)
 
 	eventLog.EventType = stringPtr("DOWNLOAD_RESPONSE")
-	eventLog.Status = intPtr(0) // success
+
+	resp, err := soap.ParseDownloadResponse(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse DownloadResponse for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		eventLog.FaultInfo = stringPtr(err.Error())
+		return
+	}
+
+	eventLog.Status = intPtr(resp.Status)
+
+	// Look up device and track data to determine callback type
+	var trackData map[string]interface{}
+	if eventLog.CommandTrackData != nil {
+		_ = json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData)
+	}
+
+	var cpe device.CpeElement
+	cpeOK := false
+	if eventLog.ElementId != nil {
+		cpeOK = ep.db.Where("ne_neid = ?", *eventLog.ElementId).First(&cpe).Error == nil
+	}
+
+	// Determine file type from track data
+	fileType := ""
+	if trackData != nil {
+		if ft, ok := trackData["file_type"].(string); ok {
+			fileType = ft
+		}
+	}
+
+	// Determine if this is a config or upgrade download
+	isConfig := strings.Contains(strings.ToLower(fileType), "config")
+	isUpgrade := strings.Contains(strings.ToLower(fileType), "upgrade") || (!isConfig && fileType != "")
+	isZTP := fileType == "ZTP_FILE"
+
+	var callbackType string
+	switch resp.Status {
+	case 0: // accepted / not started yet
+		if isConfig {
+			callbackType = "CONFIG_DOWNLOAD"
+		} else if isUpgrade {
+			callbackType = "UPGRADE_DOWNLOAD"
+		}
+	case 1: // in progress
+		if isConfig {
+			callbackType = "CONFIG_DOWNLOADING"
+		} else if isUpgrade {
+			callbackType = "UPGRADE_DOWNLOADING"
+		}
+	default: // failed
+		if isConfig {
+			callbackType = "CONFIG_DOWNLOAD_EXPIRE"
+		} else if isUpgrade {
+			callbackType = "UPGRADE_DOWNLOAD_EXPIRE"
+		}
+		// Java: ZTP_FILE download failure → add retry log + delete ZTP file
+		if isZTP && cpeOK {
+			now := time.Now()
+			ep.db.Table("ztp_retry_log").Create(map[string]interface{}{
+				"element_id": cpe.NeNeid,
+				"retry_time": &now,
+				"info":       "Failed to download",
+			})
+			// Trigger ZTP failed cleanup (delete AOS file, geo cache, ZTP log)
+			utils.SafeGo("ZTPFailedCleanup-"+sn, func() {
+				ep.ztpFailedCleanup(ctx, sn, cpe.NeNeid)
+			})
+		}
+	}
+
+	if callbackType != "" && cpeOK {
+		ep.sendWebCallback(ctx, 0, map[string]interface{}{
+			"sn":          sn,
+			"element_id":  cpe.NeNeid,
+			"callback":    callbackType,
+			"status":      resp.Status,
+			"event_log":   eventLog,
+		})
+	}
+}
+
+// processUploadResponse handles UploadResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealWebUpload:
+//   - TYPE_LOG → UPLOAD_LOG_SENT callback + CaptureLog.status=1
+//   - TYPE_CONFIG → UPLOAD_CONFIG_SENT callback + CaptureLog.status=1
+func (ep *EventProcessor) processUploadResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing UploadResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("UPLOAD_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	resp, err := soap.ParseUploadResponse(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse UploadResponse for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		eventLog.FaultInfo = stringPtr(err.Error())
+		return
+	}
+
+	eventLog.Status = intPtr(resp.Status)
+
+	// Look up device and track data to determine callback type
+	var trackData map[string]interface{}
+	if eventLog.CommandTrackData != nil {
+		_ = json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData)
+	}
+
+	var cpe device.CpeElement
+	cpeOK := false
+	if eventLog.ElementId != nil {
+		cpeOK = ep.db.Where("ne_neid = ?", *eventLog.ElementId).First(&cpe).Error == nil
+	}
+
+	// Determine upload type from track data
+	var callbackType string
+	if trackData != nil {
+		uploadType := ""
+		if ut, ok := trackData["upload_type"].(string); ok {
+			uploadType = ut
+		}
+		fileType := ""
+		if ft, ok := trackData["file_type"].(string); ok {
+			fileType = ft
+		}
+
+		switch {
+		case uploadType == "log" || strings.Contains(strings.ToLower(fileType), "log"):
+			callbackType = "UPLOAD_LOG_SENT"
+		case uploadType == "config" || strings.Contains(strings.ToLower(fileType), "config"):
+			callbackType = "UPLOAD_CONFIG_SENT"
+		}
+	}
+
+	if callbackType != "" && cpeOK {
+		ep.sendWebCallback(ctx, 0, map[string]interface{}{
+			"sn":         sn,
+			"element_id": cpe.NeNeid,
+			"callback":   callbackType,
+			"event_log":  eventLog,
+		})
+	}
+
+	// Java: dealWebUpload also updates CaptureLog.status=1 if found by event_log_id
+	if eventLog.Id != 0 {
+		result := ep.db.Table("capture_log").
+			Where("event_log_id = ?", eventLog.Id).
+			Update("status", 1)
+		if result.RowsAffected > 0 {
+			logger.Infof("UploadResponse: updated capture_log status for event_log_id=%d", eventLog.Id)
+		}
+	}
+}
+
+// processBatchUpgradeResponse handles BatchUpgradeResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealBatchUpgrade:
+//   - On failure (status != 0), updates eu_and_ru_batch_upgrade_log.result=2 and fault_info
+func (ep *EventProcessor) processBatchUpgradeResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing BatchUpgradeResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("BATCH_UPGRADE_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	resp, err := soap.ParseBatchUpgradeResponse(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse BatchUpgradeResponse for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		return
+	}
+
+	if resp.Status != 0 {
+		eventLog.Status = intPtr(resp.Status)
+		eventLog.FaultInfo = stringPtr(resp.FailCase)
+
+		// Update batch upgrade log with failure info
+		var trackData map[string]interface{}
+		if eventLog.CommandTrackData != nil {
+			_ = json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData)
+		}
+		cti := int64(0)
+		if trackData != nil {
+			if c, ok := trackData["command_track_id"].(float64); ok {
+				cti = int64(c)
+			}
+		}
+		if cti == 0 {
+			cti = int64(eventLog.Id)
+		}
+		ep.db.Table("eu_and_ru_batch_upgrade_log").
+			Where("event_log_id = ?", cti).
+			Updates(map[string]interface{}{
+				"result":    2,
+				"fault_info": resp.FailCase,
+			})
+		// Also update event_log fault string
+		ep.db.Table("event_log").
+			Where("id = ?", eventLog.Id).
+			Update("fault_info", resp.FailCase)
+	}
+}
+
+// processCancelFutureUpgradeResponse handles CancelFutureUpgradeResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealUpgradeCancel:
+//   - Parses CommandKey (format: "{taskId}_{eventLogId}")
+//   - Updates the corresponding upgrade_log to cancelled state
+func (ep *EventProcessor) processCancelFutureUpgradeResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing CancelFutureUpgradeResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("CANCEL_FUTURE_UPGRADE_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	resp, err := soap.ParseCancelFutureUpgradeResponse(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse CancelFutureUpgradeResponse for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		return
+	}
+
+	if resp.CommandKey == "" {
+		return
+	}
+
+	// CommandKey format: "{taskId}_{eventLogId}" — parse the event_log_id part
+	parts := strings.SplitN(resp.CommandKey, "_", 2)
+	if len(parts) != 2 {
+		logger.Warnf("CancelFutureUpgradeResponse: unexpected CommandKey format %q", resp.CommandKey)
+		return
+	}
+	originEventLogId, parseErr := strconv.ParseInt(parts[1], 10, 64)
+	if parseErr != nil {
+		logger.Warnf("CancelFutureUpgradeResponse: failed to parse eventLogId from %q: %v", resp.CommandKey, parseErr)
+		return
+	}
+
+	// Update upgrade_log to cancelled state
+	now := time.Now()
+	done := true
+	success := false
+	ep.db.Table("upgrade_log").
+		Where("command_track_id = ?", originEventLogId).
+		Updates(map[string]interface{}{
+			"is_done":   &done,
+			"done_time": &now,
+			"success":   &success,
+			"message":   "Upgrade canceled",
+		})
+
+	logger.Infof("CancelFutureUpgradeResponse: cancelled upgrade_log for command_track_id=%d", originEventLogId)
+}
+
+// processCaptureResponse handles CaptureResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealCapture:
+//   - Updates capture_log.status=1 if found by event_log_id
+func (ep *EventProcessor) processCaptureResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing CaptureResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("CAPTURE_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	// Look up the originating event_log_id from track data
+	var trackData map[string]interface{}
+	if eventLog.CommandTrackData != nil {
+		_ = json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData)
+	}
+	cti := int64(0)
+	if trackData != nil {
+		if c, ok := trackData["command_track_id"].(float64); ok {
+			cti = int64(c)
+		}
+	}
+	if cti == 0 {
+		cti = int64(eventLog.Id)
+	}
+
+	ep.db.Table("capture_log").
+		Where("event_log_id = ?", cti).
+		Update("status", 1)
+}
+
+// processFactoryResetResponse handles FactoryResetResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealWebFactoryReset → DEVICE_RESET callback.
+func (ep *EventProcessor) processFactoryResetResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing FactoryResetResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("FACTORY_RESET_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	var cpe device.CpeElement
+	if eventLog.ElementId != nil {
+		if ep.db.Where("ne_neid = ?", *eventLog.ElementId).First(&cpe).Error == nil {
+			ep.sendWebCallback(ctx, 0, map[string]interface{}{
+				"sn":         sn,
+				"element_id": cpe.NeNeid,
+				"callback":   "DEVICE_RESET",
+				"event_log":  eventLog,
+			})
+		}
+	}
+}
+
+// ztpFailedCleanup performs ZTP failure cleanup: delete AOS file, geo cache, ZTP log.
+// Mirrors Java ZTPFailedPostProcessor.deleteZTPFile.
+func (ep *EventProcessor) ztpFailedCleanup(ctx context.Context, sn string, neId int64) {
+	logger.Infof("ZTP failed cleanup for SN=%s neId=%d", sn, neId)
+	// Clear ZTP-related Redis keys
+	redis.Del(ctx, fmt.Sprintf("ztp_status_%d", neId))
+	redis.Del(ctx, fmt.Sprintf("ztp_progress_%d", neId))
+	// Update ztp_log to failed
+	ep.db.Table("ztp_log").
+		Where("element_id = ? AND done = ?", neId, false).
+		Updates(map[string]interface{}{
+			"done":      true,
+			"has_fault": true,
+			"info":      "Failed to download",
+		})
+}
+
+// processHttpRequestProxyResponse handles HttpRequestProxyResponse from CPE.
+// Mirrors Java WebMessageProcessor.dealHttpRequestProxyResonse:
+//   - Parses HTTP responses from CPE proxy
+//   - Updates core_network_data fields based on requestId prefix and type
+//   - Updates core_network_operation_log result and response_time
+func (ep *EventProcessor) processHttpRequestProxyResponse(ctx context.Context, soapXml string, sn string, eventLog *eventlog.EventLog) {
+	logger.Infof("processing HttpRequestProxyResponse for SN=%s", sn)
+
+	eventLog.EventType = stringPtr("HTTP_REQUEST_PROXY_RESPONSE")
+	eventLog.Status = intPtr(0)
+
+	resp, err := soap.ParseHttpRequestProxyResponse(soapXml)
+	if err != nil {
+		logger.Warnf("failed to parse HttpRequestProxyResponse for SN=%s: %v", sn, err)
+		eventLog.Status = intPtr(-1)
+		return
+	}
+
+	// Look up device and CoreNetwork data
+	var cpe device.CpeElement
+	if eventLog.ElementId == nil {
+		return
+	}
+	if ep.db.Where("ne_neid = ?", *eventLog.ElementId).First(&cpe).Error != nil {
+		logger.Warnf("HttpRequestProxyResponse: device not found for SN=%s", sn)
+		return
+	}
+
+	// Find CoreNetwork entry for this device
+	var coreNet struct {
+		Id int `gorm:"column:id"`
+	}
+	if ep.db.Table("core_network").
+		Where("element_id = ? AND deleted = ?", cpe.NeNeid, false).
+		Take(&coreNet).Error != nil {
+		logger.Debugf("HttpRequestProxyResponse: no CoreNetwork for element_id=%d", cpe.NeNeid)
+		return
+	}
+
+	// Find CoreNetworkData
+	var cnd struct {
+		Id int `gorm:"column:id"`
+	}
+	if ep.db.Table("core_network_data").
+		Where("core_network_id = ?", coreNet.Id).
+		Take(&cnd).Error != nil {
+		logger.Debugf("HttpRequestProxyResponse: no CoreNetworkData for core_network_id=%d", coreNet.Id)
+		return
+	}
+
+	// Process each HTTP response
+	hasFaultInWholeMessage := false
+	updates := map[string]interface{}{}
+	now := time.Now()
+
+	for _, httpResp := range resp.Responses {
+		hasFault := httpResp.Status == 1 || !strings.HasPrefix(httpResp.ResponseCode, "2")
+		if hasFault {
+			hasFaultInWholeMessage = true
+		}
+
+		requestId := httpResp.RequestId
+		if strings.HasPrefix(requestId, "query:") {
+			// Format: "query:{TYPE}" — map type to core_network_data column
+			parts := strings.SplitN(requestId, ":", 2)
+			if len(parts) == 2 {
+				colName := coreNetworkDataTypeToColumn(parts[1])
+				if colName != "" {
+					updates[colName] = httpResp.Body
+				}
+			}
+		}
+
+		// Update core_network_operation_log
+		result := 1
+		if hasFault {
+			result = 2
+		}
+		ep.db.Table("core_network_operation_log").
+			Where("event_log_id = ? AND request_id = ?", eventLog.Id, requestId).
+			Updates(map[string]interface{}{
+				"result":        result,
+				"response_time": &now,
+			})
+	}
+
+	// Apply updates to core_network_data
+	if len(updates) > 0 {
+		ep.db.Table("core_network_data").
+			Where("id = ?", cnd.Id).
+			Updates(updates)
+	}
+
+	// Check for PCF UE operations and update core_network_operation_log result
+	var opLog struct {
+		Id      int64  `gorm:"column:id"`
+		LogType string `gorm:"column:log_type"`
+	}
+	ep.db.Table("core_network_operation_log").
+		Where("event_log_id = ?", eventLog.Id).
+		Take(&opLog)
+	if opLog.Id != 0 {
+		switch opLog.LogType {
+		case "Add PCF UE", "Modify PCF UE", "Delete PCF UE":
+			result := 1
+			if hasFaultInWholeMessage {
+				result = 2
+			}
+			ep.db.Table("core_network_operation_log").
+				Where("id = ?", opLog.Id).
+				Updates(map[string]interface{}{
+					"result":        result,
+					"response_time": &now,
+				})
+		}
+	}
+
+	if hasFaultInWholeMessage {
+		eventLog.Status = intPtr(3)
+	}
+}
+
+// changeFileVersion mirrors Java PositiveMessageProcessor.changeFileVersion:
+// toggles the device's new_version flag and sends a CHANGE_FILE_VERSION callback.
+func (ep *EventProcessor) changeFileVersion(ctx context.Context, sn string, fileType string) {
+	var cpe device.CpeElement
+	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error; err != nil {
+		logger.Warnf("changeFileVersion: device not found for SN=%s: %v", sn, err)
+		return
+	}
+
+	newVersion := !cpe.IsNewVersion
+
+	ep.db.Model(&device.CpeElement{}).
+		Where("ne_neid = ?", cpe.NeNeid).
+		Update("is_new_version", newVersion)
+
+	logger.Infof("changeFileVersion: toggled new_version to %v for SN=%s", newVersion, sn)
+
+	ep.sendWebCallback(ctx, 0, map[string]interface{}{
+		"sn":          sn,
+		"element_id":  cpe.NeNeid,
+		"callback":    "CHANGE_FILE_VERSION",
+		"file_type":   fileType,
+	})
+}
+
+// coreNetworkDataTypeToColumn maps Java CoreNetworkRequestDataType enum values
+// to Go core_network_data table column names.
+func coreNetworkDataTypeToColumn(dataType string) string {
+	mapping := map[string]string{
+		"AMF_INFO":              "amf_info",
+		"IMS_INFO":              "ims_info",
+		"PCF_INFO":              "pcf_info",
+		"SMF_INFO":              "smf_info",
+		"UDM_INFO":              "udm_info",
+		"UPF_INFO":              "upf_info",
+		"AUSF_INFO":             "ausf_info",
+		"SMF_ALARM":             "smf_alarm",
+		"UDM_ALARM":             "udm_alarm",
+		"IMS_UE_INFO":           "ims_ue_info",
+		"PCF_UE_INFO":           "pcf_ue_info",
+		"SMF_UE_INFO":           "smf_ue_info",
+		"IMS_UE_NUMBER":         "ims_ue_number",
+		"SMF_UE_NUMBER":         "smf_ue_number",
+		"CONFIG_AMF_TAI":        "config_amf_tai",
+		"CONFIG_AMF_SYSTEM":     "config_amf_system",
+		"CONFIG_IMS_SYSTEM":     "config_ims_system",
+		"CONFIG_AMF_SLICE":      "config_amf_slice",
+		"CONFIG_UDM_SYSTEM":     "config_udm_system",
+		"CONFIG_AUSF_SYSTEM":    "config_ausf_system",
+		"CONFIG_PCF_SYSTEM":     "config_pcf_system",
+		"AMF_BASE_STATION_INFO": "amf_base_station_info",
+	}
+	if col, ok := mapping[dataType]; ok {
+		return col
+	}
+	return ""
 }
 
 // processRebootResponse updates reboot task status.
@@ -551,6 +1225,33 @@ func (ep *EventProcessor) processRebootResponse(ctx context.Context, sn string, 
 		rebootKey := fmt.Sprintf("rebooting_%d", *eventLog.ElementId)
 		if err := redis.Del(ctx, rebootKey); err != nil {
 			logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
+		}
+
+		// Java: WebMessageProcessor.dealWebReboot → REBOOT callback
+		var cpe device.CpeElement
+		if ep.db.Where("ne_neid = ?", *eventLog.ElementId).First(&cpe).Error == nil {
+			ep.sendWebCallback(ctx, 0, map[string]interface{}{
+				"sn":         sn,
+				"element_id": cpe.NeNeid,
+				"callback":   "REBOOT",
+				"event_log":  eventLog,
+			})
+		}
+
+		// Java: after license update + soft reboot → check and send DEVICE_UPDATE_LICENSE callback
+		// if trackData contains "license_update" flag
+		if eventLog.CommandTrackData != nil {
+			var trackData map[string]interface{}
+			if json.Unmarshal([]byte(*eventLog.CommandTrackData), &trackData) == nil {
+				if licenseUpdate, _ := trackData["license_update"].(bool); licenseUpdate {
+					ep.sendWebCallback(ctx, 0, map[string]interface{}{
+						"sn":         sn,
+						"element_id": cpe.NeNeid,
+						"callback":   "DEVICE_UPDATE_LICENSE",
+						"event_log":  eventLog,
+					})
+				}
+			}
 		}
 	}
 }
@@ -775,6 +1476,50 @@ func (ep *EventProcessor) processFault(ctx context.Context, soapXml string, sn s
 	eventLog.EventType = stringPtr("FAULT")
 	eventLog.Status = intPtr(3) // failed
 	eventLog.FaultInfo = stringPtr(fmt.Sprintf("[%s] %s", operationType, faultDesc))
+
+	// Java: MessageTrackPostProcessor.faultMessageReceivedAfterPostProcessor
+	// Save ParameterLog for SPV failures and send MESSAGE_RECEIVED callback
+	if operationType == "SET_PARAMETER_VALUES" && trackData != nil {
+		if paramsJson, ok := trackData["parameters"].(string); ok && paramsJson != "" {
+			var paramList []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			}
+			if err := json.Unmarshal([]byte(paramsJson), &paramList); err == nil {
+				var cpe device.CpeElement
+				if ep.db.Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error == nil {
+					for _, p := range paramList {
+						ep.db.Table("parameter_log").Create(map[string]interface{}{
+							"parameter_name": p.Name,
+							"element_id":     cpe.NeNeid,
+							"new_value":      p.Value,
+							"change_time":    time.Now(),
+							"has_fault":      true,
+							"fault_msg":      faultDesc,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Send MESSAGE_RECEIVED callback for fault
+	var cpe device.CpeElement
+	if ep.db.Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error == nil {
+		callbackData := map[string]interface{}{
+			"sn":         sn,
+			"element_id": cpe.NeNeid,
+			"callback":   "MESSAGE_RECEIVED",
+			"has_fault":  true,
+			"fault_code": resp.FaultCode,
+			"message":    faultDesc,
+			"event_log":  eventLog,
+		}
+		if operationType != "" {
+			callbackData["operation_type"] = operationType
+		}
+		ep.sendWebCallback(ctx, 0, callbackData)
+	}
 
 	// Update Redis track data to mark as failed
 	if trackErr == nil && trackJson != "" {

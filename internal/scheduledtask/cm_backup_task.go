@@ -97,7 +97,7 @@ func (t *CMBackupTask) exportForTenancy(licenseId int) {
 	}
 
 	// 创建导出目录: {exportPath}/{licenseId}/CM/{date}/
-	date := time.Now().Format("yyyyMMdd")
+	date := time.Now().Format("20060102")
 	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", licenseId), "CM", date)
 	if err := os.MkdirAll(exportDir, 0755); err != nil {
 		logger.Errorf("CMBackupTask: failed to create export directory %s: %v", exportDir, err)
@@ -117,7 +117,7 @@ func (t *CMBackupTask) exportForDevice(licenseId int, elementId int64, serialNum
 	paramValues := t.getParamValues(elementId)
 
 	// 生成文件名: CM_{timestamp}_{sn}.csv
-	timestamp := time.Now().Format("yyyyMMddHHmmss")
+	timestamp := time.Now().Format("20060102150405")
 	fileName := fmt.Sprintf("CM_%s_%s.csv", timestamp, serialNumber)
 	filePath := filepath.Join(exportDir, fileName)
 

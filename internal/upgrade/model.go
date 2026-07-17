@@ -283,3 +283,18 @@ type PiecemealUploadRequest struct {
 	Version        string `json:"version"`
 	ProductType    string `json:"product_type"`
 }
+
+// ManualUpgradeLog 对应 manual_upgrade_log 表 (Java: ManualUpgradeLog entity)
+type ManualUpgradeLog struct {
+	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ElementId  *int64     `gorm:"column:element_id" json:"element_id"`
+	EventLogId *int64     `gorm:"column:event_log_id" json:"event_log_id"`
+	Success    *bool      `gorm:"column:success" json:"success"`
+	EndTime    *time.Time `gorm:"column:end_time" json:"end_time"`
+	TaskId     *int       `gorm:"column:task_id" json:"task_id"`
+	Info       *string    `gorm:"column:info;type:varchar(255)" json:"info"`
+	StartTime  *time.Time `gorm:"column:start_time" json:"start_time"`
+	Progress   *string    `gorm:"column:progress;type:varchar(255)" json:"progress"`
+}
+
+func (ManualUpgradeLog) TableName() string { return "manual_upgrade_log" }
