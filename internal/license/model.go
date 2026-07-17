@@ -56,14 +56,16 @@ type BaseStationLicense struct {
 
 func (BaseStationLicense) TableName() string { return "base_station_license" }
 
-// SASConfig 对应 sasconfig 表
+// SASConfig 对应 sas_config 表 (Java: SASConfig entity, JPA default naming).
+// Java entity has only id/licenseId/autoRegister — CBSD connection params
+// (sasUrl/certPath/etc) live in a separate Go table (cbsd_sas_config).
 type SASConfig struct {
 	Id           int   `gorm:"primaryKey;autoIncrement" json:"id"`
 	LicenseId    *int  `gorm:"column:license_id;uniqueIndex" json:"license_id"`
 	AutoRegister *bool `gorm:"column:auto_register" json:"auto_register"`
 }
 
-func (SASConfig) TableName() string { return "sasconfig" }
+func (SASConfig) TableName() string { return "sas_config" }
 
 // EntraEndpoint 对应 entra_endpoint 表 (UUID主键)
 type EntraEndpoint struct {

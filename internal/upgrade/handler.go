@@ -467,7 +467,7 @@ func (h *Handler) ModifyAutoUpgradeTask(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	t.Id = id
+	t.Id = int(id)
 
 	if err := h.svc.ModifyAutoUpgradeTask(&t); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to modify auto upgrade task")

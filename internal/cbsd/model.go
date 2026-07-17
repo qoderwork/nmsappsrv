@@ -92,7 +92,9 @@ type CbrsLog struct {
 
 func (CbrsLog) TableName() string { return "cbrs_log" }
 
-// SasConfig 对应 sas_config 表
+// SasConfig 对应 cbsd_sas_config 表 (Go-specific; Java stores SAS connection
+// params in CbrsDTO.Google DTO, not in DB). Renamed from "sas_config" to
+// avoid collision with license.SASConfig which maps to Java SASConfig entity.
 type SasConfig struct {
 	Id          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	SasName     string    `gorm:"column:sas_name;type:varchar(255)" json:"sas_name"`
@@ -105,7 +107,7 @@ type SasConfig struct {
 	UpdateTime  time.Time `gorm:"column:update_time" json:"update_time"`
 }
 
-func (SasConfig) TableName() string { return "sas_config" }
+func (SasConfig) TableName() string { return "cbsd_sas_config" }
 
 // SpectrumInquiryRequest represents a SAS spectrum inquiry request.
 type SpectrumInquiryRequest struct {

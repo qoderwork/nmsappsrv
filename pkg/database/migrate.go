@@ -77,7 +77,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&parameter.ParameterTemplate{},
 		&parameter.ParameterTemplateHasParameter{},
 
-		// upgrade (8)
+		// upgrade (9)
 		&upgrade.UpgradeTask{},
 		&upgrade.UpgradeFile{},
 		&upgrade.UpgradeLog{},
@@ -86,6 +86,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&upgrade.ShutdownMyTask{},
 		&upgrade.ShutdownLog{},
 		&upgrade.EUAndRUBatchUpgradeLog{},
+		&upgrade.AutoUpgradeTask{},
 
 		// eventlog (2)
 		&eventlog.EventLog{},
@@ -129,11 +130,12 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&mml.MmlSet{},
 		&mml.MmlExecuteResult{},
 
-		// cbsd (4)
+		// cbsd (5)
 		&cbsd.CbsdInfo{},
 		&cbsd.CBSDCertFileSendTask{},
 		&cbsd.SendCBSDCertFileLog{},
 		&cbsd.CbrsLog{},
+		&cbsd.SasConfig{},
 
 		// misc (31)
 		&misc.BatchAddObjectTask{},

@@ -761,19 +761,20 @@ func (s *service) ListAutoUpgradeTasks(page, pageSize int) ([]AutoUpgradeTask, i
 // AddAutoUpgradeTask persists a new auto-upgrade task.
 func (s *service) AddAutoUpgradeTask(t *AutoUpgradeTask) error {
 	now := time.Now()
-	t.CreateTime = now
-	t.UpdateTime = now
+	t.CreateTime = &now
+	t.UpdateTime = &now
 	return s.repo.CreateAutoUpgradeTask(t)
 }
 
 // ModifyAutoUpgradeTask updates an existing auto-upgrade task.
 func (s *service) ModifyAutoUpgradeTask(t *AutoUpgradeTask) error {
-	existing, err := s.repo.FindAutoUpgradeTaskByID(t.Id)
+	existing, err := s.repo.FindAutoUpgradeTaskByID(int64(t.Id))
 	if err != nil {
 		return err
 	}
 	t.CreateTime = existing.CreateTime
-	t.UpdateTime = time.Now()
+	now := time.Now()
+	t.UpdateTime = &now
 	return s.repo.UpdateAutoUpgradeTask(t)
 }
 

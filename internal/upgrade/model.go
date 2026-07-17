@@ -194,19 +194,44 @@ type EUAndRUBatchUpgradeLog struct {
 
 func (EUAndRUBatchUpgradeLog) TableName() string { return "eu_and_ru_batch_upgrade_log" }
 
-// AutoUpgradeTask 对应 auto_upgrade_task 表
+// AutoUpgradeTask 对应 upgrade_auto_task 表 (Java: AutoUpgradeTask entity).
+// Java entity has 22 fields; Go retains 4 additional scheduler fields
+// (upgrade_file_id/device_type/cron_expression/enabled) used by the existing
+// cron-based scheduler — Java uses a different scheduling model
+// (upgradeBeginTime/upgradeEndTime/upgradeInterval/maxOccurs).
 type AutoUpgradeTask struct {
-	Id             int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name           string    `gorm:"column:name;type:varchar(255)" json:"name"`
-	UpgradeFileId  int64     `gorm:"column:upgrade_file_id" json:"upgrade_file_id"`
-	DeviceType     string    `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
-	CronExpression string    `gorm:"column:cron_expression;type:varchar(100)" json:"cron_expression"`
-	Enabled        bool      `gorm:"column:enabled" json:"enabled"`
-	CreateTime     time.Time `gorm:"column:create_time" json:"create_time"`
-	UpdateTime     time.Time `gorm:"column:update_time" json:"update_time"`
+	// --- Java entity fields (22) ---
+	Id                     int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	UpdateTime             *time.Time `gorm:"column:update_time" json:"update_time"`
+	IsInitiated            *int       `gorm:"column:is_initiated" json:"is_initiated"`
+	UpgradeBeginTime       *time.Time `gorm:"column:upgrade_begin_time" json:"upgrade_begin_time"`
+	UpgradeEndTime         *time.Time `gorm:"column:upgrade_end_time" json:"upgrade_end_time"`
+	UpgradeInterval        *int       `gorm:"column:upgrade_interval" json:"upgrade_interval"`
+	SoftwareVersionId      *int       `gorm:"column:software_version_id" json:"software_version_id"`
+	HardwareVersionId      *int       `gorm:"column:hardware_version_id" json:"hardware_version_id"`
+	SoftwareVersionList    *string    `gorm:"column:software_version_list;type:varchar(255)" json:"software_version_list"`
+	HardwareVersionList    *string    `gorm:"column:hardware_version_list;type:varchar(255)" json:"hardware_version_list"`
+	CreateTime             *time.Time `gorm:"column:create_time" json:"create_time"`
+	CreateUserName         *string    `gorm:"column:create_user_name;type:varchar(255)" json:"create_user_name"`
+	TaskName               *string    `gorm:"column:task_name;type:varchar(255)" json:"task_name"`
+	TaskType               *int       `gorm:"column:task_type" json:"task_type"`
+	TenancyId              *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	DeviceIds              *string    `gorm:"column:device_ids;type:text" json:"device_ids"`
+	MaxOccurs              *int       `gorm:"column:max_occurs" json:"max_occurs"`
+	DeviceGroupIds         *string    `gorm:"column:device_group_ids;type:longtext" json:"device_group_ids"`
+	Scope                  *string    `gorm:"column:scope;type:varchar(255)" json:"scope"`
+	UpgradeFirmwareFirst   *bool      `gorm:"column:upgrade_firmware_first" json:"upgrade_firmware_first"`
+	RunImmediatelyIfMissed *bool      `gorm:"column:run_immediately_if_missed" json:"run_immediately_if_missed"`
+	DurationTime           *int       `gorm:"column:duration_time" json:"duration_time"`
+	Version                *int       `gorm:"column:version" json:"version"`
+	// --- Go-specific fields (4, retained for existing cron scheduler) ---
+	UpgradeFileId          *int64     `gorm:"column:upgrade_file_id" json:"upgrade_file_id"`
+	DeviceType             *string    `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
+	CronExpression         *string    `gorm:"column:cron_expression;type:varchar(100)" json:"cron_expression"`
+	Enabled                *bool      `gorm:"column:enabled" json:"enabled"`
 }
 
-func (AutoUpgradeTask) TableName() string { return "auto_upgrade_task" }
+func (AutoUpgradeTask) TableName() string { return "upgrade_auto_task" }
 
 // UpgradeResultVo is the API response VO for upgrade result queries.
 type UpgradeResultVo struct {
