@@ -24,8 +24,8 @@ type MRData struct {
 	NRScPHR        string     `gorm:"column:nr_sc_phr" json:"NRScPHR"`
 	HAOA           string     `gorm:"column:h_aoa" json:"hAOA"`
 	VAOA           string     `gorm:"column:v_aoa" json:"vAOA"`
-	NRUEPlrUL      string     `gorm:"column:nr_ue_plr_ul" json:"NRUEPlrUL"`
-	NRUEPlrDL      string     `gorm:"column:nr_ue_plr_dl" json:"NRUEPlrDL"`
+	NRUEPlrUL      string     `gorm:"column:nrue_plr_ul" json:"NRUEPlrUL"`
+	NRUEPlrDL      string     `gorm:"column:nrue_plr_dl" json:"NRUEPlrDL"`
 	NRNcArfcn      string     `gorm:"column:nr_nc_arfcn" json:"NRNcArfcn"`
 	NRNcPci        string     `gorm:"column:nr_nc_pci" json:"NRNcPci"`
 	NRNcSSRSRP     string     `gorm:"column:nr_nc_ssrsrp" json:"NRNcSSRSRP"`

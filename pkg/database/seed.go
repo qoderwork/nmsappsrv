@@ -80,7 +80,7 @@ func ensureDefaultLicense(db *gorm.DB) (*license.License, error) {
 func ensureAdminRole(db *gorm.DB, licenseId int) (*user.Role, error) {
 	roleName := "Admin"
 	var role user.Role
-	err := db.Where("role_name = ? AND license_id = ?", roleName, licenseId).First(&role).Error
+	err := db.Where("name = ? AND tenancy_id = ?", roleName, licenseId).First(&role).Error
 	if err == nil {
 		return &role, nil
 	}

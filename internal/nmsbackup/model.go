@@ -34,7 +34,7 @@ type NMSBackupAndRevert struct {
 	XlogInterval     *int       `gorm:"column:xlog_interval" json:"xlog_interval"`         // xlog files retention days
 	BackupBeginTime  *time.Time `gorm:"column:backup_begin_time" json:"backup_begin_time"` // first scheduled execution time
 	BackupStatus     *int       `gorm:"column:backup_status" json:"backup_status"`         // 0=ready, 1=running, 2=completed, 3=failed
-	BackupTimeCost   *int       `gorm:"column:backup_time_cost" json:"backup_time_cost"`   // duration in seconds
+	BackupTimeCost   *int       `gorm:"column:backup_time_consuming" json:"backup_time_cost"`   // duration in seconds
 	RevertBeginTime  *time.Time `gorm:"column:revert_begin_time" json:"revert_begin_time"`
 	RevertEndTime    *time.Time `gorm:"column:revert_end_time" json:"revert_end_time"`
 	RevertStatus     *int       `gorm:"column:revert_status" json:"revert_status"`

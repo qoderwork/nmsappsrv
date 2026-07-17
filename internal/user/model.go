@@ -93,11 +93,13 @@ func ToUserDTOs(users []SysUser) []UserDTO {
 }
 
 // Role 对应 role 表 (Java: String id, not auto-increment)
+// Column names name/tenancy_id align with Java Role entity (JPA default naming
+// from name/tenancyId fields). Go field names retained for code stability.
 type Role struct {
 	Id          string     `gorm:"primaryKey;type:varchar(32)" json:"id"`
-	RoleName    *string    `gorm:"column:role_name;type:varchar(255)" json:"role_name"`
+	RoleName    *string    `gorm:"column:name;type:varchar(255)" json:"role_name"`
 	Description *string    `gorm:"column:description;type:varchar(255)" json:"description"`
-	LicenseId   *int       `gorm:"column:license_id" json:"license_id"`
+	LicenseId   *int       `gorm:"column:tenancy_id" json:"license_id"`
 	UseToSSO    *bool      `gorm:"column:use_to_sso" json:"use_to_sso"`
 	DefaultRole *bool      `gorm:"column:default_role" json:"default_role"`
 	User        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
@@ -133,11 +135,13 @@ type UserHasRole struct {
 func (UserHasRole) TableName() string { return "user_has_role" }
 
 // LoginLog 对应 login_log 表
+// Column names ip/operation_time align with Java LoginLog entity (JPA default
+// naming from ip/operationTime fields). Go field names retained for code stability.
 type LoginLog struct {
 	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Username   *string    `gorm:"column:username;type:varchar(255)" json:"username"`
-	IpAddress  *string    `gorm:"column:ip_address;type:varchar(255)" json:"ip_address"`
-	LoginTime  *time.Time `gorm:"column:login_time" json:"login_time"`
+	IpAddress  *string    `gorm:"column:ip;type:varchar(255)" json:"ip_address"`
+	LoginTime  *time.Time `gorm:"column:operation_time" json:"login_time"`
 	Result     *int       `gorm:"column:result" json:"result"`
 	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
 	Type       *int       `gorm:"column:type" json:"type"`

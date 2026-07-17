@@ -59,10 +59,12 @@ type LogConfig struct {
 }
 
 // SysParameter represents a row from sys_parameter table (key-value system params).
+// Column names par_keyname/par_keyvalue align with Java SysParameter entity (JPA
+// default naming from parKeyname/parKeyvalue fields).
 type SysParameter struct {
 	Id    int     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Key   *string `gorm:"column:config_key;type:varchar(255);uniqueIndex" json:"key"`
-	Value *string `gorm:"column:config_value;type:longtext" json:"value"`
+	Key   *string `gorm:"column:par_keyname;type:varchar(255);uniqueIndex" json:"key"`
+	Value *string `gorm:"column:par_keyvalue;type:longtext" json:"value"`
 }
 
 func (SysParameter) TableName() string { return "sys_parameter" }

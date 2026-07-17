@@ -3,12 +3,14 @@ package parammonitor
 import "time"
 
 // ParameterMonitorConfig 对应 parameter_monitor_config 表
+// Column names config_name/enabled align with Java ParameterMonitorConfig entity
+// (JPA default naming from configName/enabled fields).
 type ParameterMonitorConfig struct {
 	Id         int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name       *string    `gorm:"column:name;type:varchar(255)" json:"name"`
+	Name       *string    `gorm:"column:config_name;type:varchar(255)" json:"name"`
 	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
-	Enable     *bool      `gorm:"column:enable" json:"enable"`
-	Scope      *int       `gorm:"column:scope" json:"scope"` // 1=all devices, 2=selected
+	Enable     *bool      `gorm:"column:enabled" json:"enable"`
+	Scope      *int       `gorm:"column:scope" json:"scope"`                           // 1=all devices, 2=selected
 	ScopeData  *string    `gorm:"column:scope_data;type:longtext" json:"scope_data"` // JSON array of elementIds or groupIds
 	Interval   *int       `gorm:"column:interval_seconds" json:"interval_seconds"`   // polling interval
 	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`

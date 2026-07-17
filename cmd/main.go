@@ -643,7 +643,7 @@ func main() {
 	// Closes the "log cleanup" part of P1 cluster 9 (Java FileAndMysqlLogDeleteTask).
 	if err := mainScheduler.AddJob("login-log-retention", "0 10 4 * * *", func() {
 		cutoff := time.Now().AddDate(0, 0, -90)
-		if err := db.Where("login_time < ?", cutoff).Delete("login_log").Error; err != nil {
+		if err := db.Where("operation_time < ?", cutoff).Delete("login_log").Error; err != nil {
 			logger.Errorf("login-log retention failed: %v", err)
 		}
 	}); err != nil {

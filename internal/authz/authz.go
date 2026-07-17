@@ -95,7 +95,7 @@ var (
 // import cycle with the user package (which imports this package).
 type roleRow struct {
 	Id          string  `gorm:"primaryKey;column:id;type:varchar(32)"`
-	RoleName    *string `gorm:"column:role_name;type:varchar(255)"`
+	RoleName    *string `gorm:"column:name;type:varchar(255)"`
 	DefaultRole *bool   `gorm:"column:default_role"`
 }
 
