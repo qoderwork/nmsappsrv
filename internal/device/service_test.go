@@ -185,6 +185,14 @@ func (m *mockRepository) GetLocationEncryptionKey() (string, error) {
 	return "", nil
 }
 
+func (m *mockRepository) SetLicenseIdNullByLicenseId(licenseId int) error {
+	return nil
+}
+
+func (m *mockRepository) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+	return nil
+}
+
 // newTestService creates a service with the given mock repository.
 // The db field is nil because the tested methods only use repo.
 func newTestService(repo Repository) Service {

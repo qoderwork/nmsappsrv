@@ -1,6 +1,7 @@
 package tenancy
 
 import (
+	"nmsappsrv/internal/device"
 	"nmsappsrv/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,8 @@ type Handler struct {
 
 // NewHandler creates a new Handler
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(NewRepository(db))}
+	deviceSvc := device.NewService(db)
+	return &Handler{svc: NewService(NewRepository(db), deviceSvc)}
 }
 
 // AddTenancy handles POST /api/v1/addTenancy

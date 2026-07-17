@@ -100,6 +100,18 @@ func (m *mockService) ImportDevices(rows []ImportDeviceRow, deviceType string, d
 	return nil, nil
 }
 
+func (m *mockService) SetLicenseIdNullByLicenseId(licenseId int) error {
+	return nil
+}
+
+func (m *mockService) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+	return nil
+}
+
+func (m *mockService) CreateDefaultGroup(licenseId int) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------

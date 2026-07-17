@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"nmsappsrv/internal/device"
 	"nmsappsrv/pkg/apperror"
+	"nmsappsrv/pkg/logger"
 )
 
 // Service defines the business-logic contract for tenancy management.
@@ -18,12 +20,13 @@ type Service interface {
 
 // service is the concrete implementation of Service.
 type service struct {
-	repo Repository
+	repo        Repository
+	deviceSvc   device.Service
 }
 
 // NewService creates a new Service
-func NewService(repo Repository) Service {
-	return &service{repo: repo}
+func NewService(repo Repository, deviceSvc device.Service) Service {
+	return &service{repo: repo, deviceSvc: deviceSvc}
 }
 
 // AddTenancy creates a new tenancy
@@ -77,6 +80,11 @@ func (s *service) AddTenancy(req *AddTenancyRequest) (int, error) {
 	t.LicenseId = &idStr
 	if err := s.repo.Save(t); err != nil {
 		return 0, err
+	}
+
+	// Post-processing: create default device group
+	if err := s.deviceSvc.CreateDefaultGroup(t.Id); err != nil {
+		logger.Warnf("Failed to create default device group for tenancy %d: %v", t.Id, err)
 	}
 
 	return t.Id, nil
@@ -179,7 +187,21 @@ func (s *service) DeleteTenancy(id int) error {
 	if id == 0 {
 		return apperror.ErrInvalidInput.WithMessage("default tenancy cannot be deleted")
 	}
-	return s.repo.DeleteByID(id)
+	if err := s.repo.DeleteByID(id); err != nil {
+		return err
+	}
+
+	// Post-processing: set device license_id to null
+	if err := s.deviceSvc.SetLicenseIdNullByLicenseId(id); err != nil {
+		logger.Warnf("Failed to set license_id null for devices of tenancy %d: %v", id, err)
+	}
+
+	// Post-processing: delete default device groups
+	if err := s.deviceSvc.DeleteDefaultGroupsByLicenseId(id); err != nil {
+		logger.Warnf("Failed to delete default device groups for tenancy %d: %v", id, err)
+	}
+
+	return nil
 }
 
 // ViewTenancy returns a tenancy by ID
@@ -210,6 +232,6 @@ func (s *service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
 }
 
 // newService creates a Service backed by the given Repository (test/mock helper).
-func newService(repo Repository) Service {
-	return &service{repo: repo}
+func newService(repo Repository, deviceSvc device.Service) Service {
+	return &service{repo: repo, deviceSvc: deviceSvc}
 }

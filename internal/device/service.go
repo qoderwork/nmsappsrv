@@ -34,6 +34,9 @@ type Service interface {
 	UpdateGroup(g *DeviceGroup) error
 	DeleteGroup(id string) error
 	ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error)
+	SetLicenseIdNullByLicenseId(licenseId int) error
+	DeleteDefaultGroupsByLicenseId(licenseId int) error
+	CreateDefaultGroup(licenseId int) error
 }
 
 // service contains the business logic for device management.
@@ -165,6 +168,27 @@ func (s *service) DeleteGroup(id string) error {
 		return apperror.ErrDefaultGroupProtected
 	}
 	return s.repo.DeleteGroup(id)
+}
+
+// SetLicenseIdNullByLicenseId sets license_id to NULL for all devices with the given license_id.
+func (s *service) SetLicenseIdNullByLicenseId(licenseId int) error {
+	return s.repo.SetLicenseIdNullByLicenseId(licenseId)
+}
+
+// DeleteDefaultGroupsByLicenseId deletes all default device groups for the given license.
+func (s *service) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+	return s.repo.DeleteDefaultGroupsByLicenseId(licenseId)
+}
+
+// CreateDefaultGroup creates a default "Default" device group for the given license.
+func (s *service) CreateDefaultGroup(licenseId int) error {
+	now := time.Now()
+	g := &DeviceGroup{
+		GroupName:    strPtr("Default"),
+		DefaultGroup: true,
+		CreationTime: &now,
+	}
+	return s.CreateGroup(g, licenseId)
 }
 
 // ---------------------------------------------------------------------------

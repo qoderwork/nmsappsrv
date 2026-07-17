@@ -32,6 +32,8 @@ type Repository interface {
 	GetLicenseQuota(licenseId int, deviceType string) (int, error)
 	CountNonDeleted(licenseId int, deviceType string) (int64, error)
 	GetLocationEncryptionKey() (string, error)
+	SetLicenseIdNullByLicenseId(licenseId int) error
+	DeleteDefaultGroupsByLicenseId(licenseId int) error
 }
 
 // repository handles database operations for device entities.
@@ -287,6 +289,30 @@ func (r *repository) CountNonDeleted(licenseId int, deviceType string) (int64, e
 		return 0, err
 	}
 	return existing, nil
+}
+
+// SetLicenseIdNullByLicenseId sets license_id to NULL for all devices with the given license_id.
+func (r *repository) SetLicenseIdNullByLicenseId(licenseId int) error {
+	return r.db.Model(&CpeElement{}).Where("license_id = ?", licenseId).Update("license_id", nil).Error
+}
+
+// DeleteDefaultGroupsByLicenseId deletes all default device groups for the given license.
+func (r *repository) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var groups []DeviceGroup
+		if err := tx.Where("license_id = ? AND default_group = ?", licenseId, true).Find(&groups).Error; err != nil {
+			return err
+		}
+		for _, g := range groups {
+			if err := tx.Where("group_id = ?", g.Id).Delete(&GroupHasElement{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id = ?", g.Id).Delete(&DeviceGroup{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // GetLocationEncryptionKey reads the AES key string from system_config.
