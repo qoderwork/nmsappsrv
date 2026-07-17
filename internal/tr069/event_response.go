@@ -439,6 +439,92 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 					}
 				}
 			}
+
+			// Check if this is a CONFIG upload/download operation.
+			// Mirrors Java PositiveMessageProcessor.transferComplete.TYPE_CONFIG:
+			//   - Download success: fire web callback CONFIG_DOWNLOADED
+			//   - Upload success:  save file name to element.config_file,
+			//                     delete Redis key ConfigFileName_{licenseId}_{neId},
+			//                     fire web callback RECEIVE_CONFIG
+			//   - OpenStation config success: mark element.open_station_config_status="success"
+			if originEvent.EventType != nil {
+				var trackData map[string]interface{}
+				if originEvent.CommandTrackData != nil {
+					_ = json.Unmarshal([]byte(*originEvent.CommandTrackData), &trackData)
+				}
+
+				isConfigOp := false
+				isUpload := false
+				var cpe device.CpeElement
+				cpeOK := false
+				if originEvent.ElementId != nil {
+					cpeOK = ep.db.Where("ne_neid = ?", *originEvent.ElementId).First(&cpe).Error == nil
+				}
+
+				if originEvent.EventType != nil && *originEvent.EventType == "UPLOAD" {
+					if v, ok := trackData["upload_type"].(string); ok && v == "config" {
+						isConfigOp = true
+						isUpload = true
+					}
+					if v, ok := trackData["file_type"].(string); ok && strings.Contains(strings.ToLower(v), "config") {
+						isConfigOp = true
+						isUpload = true
+					}
+				} else if originEvent.EventType != nil && *originEvent.EventType == "DOWNLOAD" {
+					if v, ok := trackData["file_type"].(string); ok && strings.Contains(strings.ToLower(v), "config") {
+						isConfigOp = true
+					}
+				}
+
+				if isConfigOp && success && cpeOK {
+					if isUpload {
+						// Java: uploadConfigSuccessfully
+						licenseId := 0
+						if cpe.LicenseId != nil {
+							licenseId = *cpe.LicenseId
+						}
+						redisKey := fmt.Sprintf("ConfigFileName_%d_%d", licenseId, cpe.NeNeid)
+						fileName, _ := redis.Get(ctx, redisKey)
+						if fileName != "" {
+							ep.db.Model(&device.CpeElement{}).
+								Where("ne_neid = ?", cpe.NeNeid).
+								Updates(map[string]interface{}{
+									"config_file":             fileName,
+									"config_file_upload_time": &now,
+								})
+							redis.Del(ctx, redisKey)
+						}
+
+						// OpenStation config success
+						if openStation, _ := trackData["open_station_config"].(bool); openStation {
+							ep.db.Model(&device.CpeElement{}).
+								Where("ne_neid = ?", cpe.NeNeid).
+								Update("open_station_config_status", "success")
+						}
+
+						// Web callback RECEIVE_CONFIG (fire-and-forget).
+						ep.sendWebCallback(ctx, 0, map[string]interface{}{
+							"sn":          sn,
+							"element_id":  cpe.NeNeid,
+							"callback":    "RECEIVE_CONFIG",
+							"event_log":   originEvent,
+						})
+					} else {
+						// Java: downloadConfigSuccessfully
+						ep.sendWebCallback(ctx, 0, map[string]interface{}{
+							"sn":          sn,
+							"element_id":  cpe.NeNeid,
+							"callback":    "CONFIG_DOWNLOADED",
+							"event_log":   originEvent,
+						})
+						if openStation, _ := trackData["open_station_config"].(bool); openStation {
+							ep.db.Model(&device.CpeElement{}).
+								Where("ne_neid = ?", cpe.NeNeid).
+								Update("open_station_config_status", "success")
+						}
+					}
+				}
+			}
 		} else {
 			logger.Debugf("TransferComplete CommandKey=%s: no matching origin event_log for SN=%s", tc.CommandKey, sn)
 		}
