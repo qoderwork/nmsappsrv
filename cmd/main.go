@@ -377,6 +377,9 @@ func main() {
 	tr069EventProc := tr069.NewEventProcessor(db)
 	tr069ACS := tr069.NewACSHandler(db, tr069MsgMgr, tr069EventProc, cfg.TR069)
 
+	// Inject command-queue clearer into device handler (avoids import cycle).
+	deviceH.SetClearCommandFunc(tr069MsgMgr.ClearMessages)
+
 	// ========== RBAC 授权层 (casbin) ==========
 	if err := authz.InitEnforcer(db); err != nil {
 		logger.Fatalf("failed to init RBAC enforcer: %v", err)

@@ -11,6 +11,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.PUT("/devices/:id", h.UpdateDevice)
 	rg.DELETE("/devices/:id", h.DeleteDevice)
 	rg.POST("/devices/import", h.ImportDevices)
+	rg.POST("/devices/:id/empty-commands", h.EmptyCommands)
 
 	// 设备组
 	rg.GET("/device-groups", h.ListGroups)

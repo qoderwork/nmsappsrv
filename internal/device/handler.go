@@ -14,7 +14,8 @@ import (
 
 // Handler exposes HTTP handlers for device and device-group endpoints.
 type Handler struct {
-	svc Service
+	svc              Service
+	clearCommandFunc func(serialNumber string) int64
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
@@ -22,6 +23,12 @@ type Handler struct {
 // import with pkg/database.
 func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{svc: NewService(db)}
+}
+
+// SetClearCommandFunc injects the function that clears a device's command queue.
+// Used to avoid an import cycle with internal/tr069.
+func (h *Handler) SetClearCommandFunc(fn func(string) int64) {
+	h.clearCommandFunc = fn
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +173,30 @@ func (h *Handler) DeleteDevice(c *gin.Context) {
 		return
 	}
 	utils.Success(c, nil)
+}
+
+// EmptyCommands empties the TR-069 command queue for a device.
+// Mirrors Java GNBMonitorManagementController.emptyTR069DeviceCommand.
+func (h *Handler) EmptyCommands(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "invalid device id")
+		return
+	}
+
+	elem, err := h.svc.GetDevice(id)
+	if err != nil {
+		utils.HandleError(c, err)
+		return
+	}
+
+	if h.clearCommandFunc == nil || elem.SerialNumber == nil {
+		utils.Success(c, gin.H{"cleared": 0})
+		return
+	}
+
+	cleared := h.clearCommandFunc(*elem.SerialNumber)
+	utils.Success(c, gin.H{"cleared": cleared})
 }
 
 // ---------------------------------------------------------------------------

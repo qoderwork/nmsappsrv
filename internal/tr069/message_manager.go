@@ -113,3 +113,19 @@ func (m *MessageManager) PutMessageWithPriority(sn string, soapXml string, prior
 	logger.Infof("enqueued message for device %s, priority=%d, queue length: %d", sn, priority, redis.LLen(ctx, key))
 	return nil
 }
+
+func (m *MessageManager) ClearMessages(sn string) int64 {
+	ctx := context.Background()
+	keys := []string{
+		queueKey(QueuePrior, sn),
+		queueKey(QueueCBSD, sn),
+		queueKey(QueueNormal, sn),
+	}
+	var total int64
+	for _, key := range keys {
+		total += redis.LLen(ctx, key)
+		redis.Del(ctx, key)
+	}
+	logger.Infof("cleared %d pending messages for device %s", total, sn)
+	return total
+}
