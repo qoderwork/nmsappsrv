@@ -56,6 +56,8 @@ import (
 	"nmsappsrv/internal/snmp"
 	sshmod "nmsappsrv/internal/ssh"
 	"nmsappsrv/internal/logcleanup"
+	"nmsappsrv/internal/pmstatistic"
+	"nmsappsrv/internal/scheduledtask"
 	"nmsappsrv/internal/systemsettings"
 	"nmsappsrv/internal/tcpdump"
 	"nmsappsrv/internal/tenancy"
@@ -663,6 +665,168 @@ func main() {
 		logCleanupSvc.PlatformLogDeletion()
 	}); err != nil {
 		logger.Errorf("failed to register platform-log-deletion cron job: %v", err)
+	}
+
+	// PMDataStatisticTask (hourly): extracts KPI data from PM files, calculates statistics,
+	// and exports multiple CSV files. Mirrors Java PMDataStatisticTask.
+	pmStatSvc := pmstatistic.NewService(db)
+	if err := mainScheduler.AddJob("pm-data-statistic", "0 0 * * * *", func() {
+		pmStatSvc.ExportPM()
+	}); err != nil {
+		logger.Errorf("failed to register pm-data-statistic cron job: %v", err)
+	}
+
+	// ---- P0 scheduled tasks (mirroring Java nms-serv) ----
+
+	// FemtoLicenseTask (every 10 min): checks online devices with ZTP completed
+	// and License.Status=="0", downloads License file. Mirrors Java FemtoLicenseTask.
+	femtoLicenseTask := scheduledtask.NewFemtoLicenseTask(db, tr069OpSender, cfg.FileServer.Root)
+	if err := mainScheduler.AddJob("femto-license-check", "0 */10 * * * *", func() {
+		femtoLicenseTask.CheckLicense()
+	}); err != nil {
+		logger.Errorf("failed to register femto-license-check cron job: %v", err)
+	}
+
+	// EventLogTimeoutTask (every 1 min): marks timed-out operation logs (send
+	// timeout 6 min, response timeout configurable) as status=3. Mirrors Java
+	// EventLogTimeoutTask.
+	eventLogTimeoutTask := scheduledtask.NewEventLogTimeoutTask(db, 24)
+	if err := mainScheduler.AddJob("event-log-timeout", "0 */1 * * * *", func() {
+		eventLogTimeoutTask.UpdateTimeoutStatus()
+	}); err != nil {
+		logger.Errorf("failed to register event-log-timeout cron job: %v", err)
+	}
+
+	// ParameterDeploymentTask (every 10 min): scans parameter_deployment_template,
+	// compares current vs desired values on online devices, and deploys differences
+	// via SPV. Mirrors Java ParameterDeploymentTask.
+	paramDeployTask := scheduledtask.NewParameterDeploymentTask(db, tr069OpSender)
+	if err := mainScheduler.AddJob("parameter-deployment", "0 */10 * * * *", func() {
+		paramDeployTask.DeployParameters()
+	}); err != nil {
+		logger.Errorf("failed to register parameter-deployment cron job: %v", err)
+	}
+
+	// SyncNetworkInfoTask (every 10 min): sends HttpRequestProxy to online core
+	// network devices to sync elementInfo/config/UE/alarm/IMSI data.
+	// Mirrors Java SyncNetworkInfoTask.
+	syncNetInfoTask := scheduledtask.NewSyncNetworkInfoTask(db, tr069OpSender)
+	if err := mainScheduler.AddJob("sync-network-info", "0 */10 * * * *", func() {
+		syncNetInfoTask.SyncInfo()
+	}); err != nil {
+		logger.Errorf("failed to register sync-network-info cron job: %v", err)
+	}
+
+	// ---- P1 scheduled tasks (mirroring Java nms-serv) ----
+
+	// AutoUpgradeTaskJob (every 10 min): scans auto_upgrade_task for due tasks
+	// and triggers upgrade on matching devices. Mirrors Java AutoUpgradeTaskJob.
+	autoUpgradeTaskJob := scheduledtask.NewAutoUpgradeTaskJob(db, tr069OpSender)
+	if err := mainScheduler.AddJob("auto-upgrade-trigger", "0 */10 * * * *", func() {
+		autoUpgradeTaskJob.TriggerDueTasks()
+	}); err != nil {
+		logger.Errorf("failed to register auto-upgrade-trigger cron job: %v", err)
+	}
+
+	// AlarmSyncTask (configurable period): syncs alarms from online enb devices
+	// via SPV. Mirrors Java AlarmSyncTaskJob.
+	alarmSyncTask := scheduledtask.NewAlarmSyncTask(db, tr069OpSender)
+	if err := mainScheduler.AddJob("alarm-sync", "0 */5 * * * *", func() {
+		alarmSyncTask.SyncAlarms()
+	}); err != nil {
+		logger.Errorf("failed to register alarm-sync cron job: %v", err)
+	}
+
+	// BackupScheduleTask (daily 00:00): auto-backups online devices via SPV.
+	// Mirrors Java BackupScheduleJob.
+	backupScheduleTask := scheduledtask.NewBackupScheduleTask(db, tr069OpSender)
+	if err := mainScheduler.AddJob("device-auto-backup", "0 0 0 * * *", func() {
+		backupScheduleTask.RunBackup()
+	}); err != nil {
+		logger.Errorf("failed to register device-auto-backup cron job: %v", err)
+	}
+
+	// ---- P2 scheduled tasks (mirroring Java nms-serv) ----
+
+	// ExpiredBackupCleanupTask (hourly): deletes NMS backup files older than
+	// retention days and cleans up nms_backup_and_revert_log. Mirrors Java ExpiredBackupCleanupTask.
+	expiredBackupCleanupTask := scheduledtask.NewExpiredBackupCleanupTask(db, "/data/nms-backup", 7)
+	if err := mainScheduler.AddJob("expired-backup-cleanup", "0 0 * * * *", func() {
+		expiredBackupCleanupTask.Cleanup()
+	}); err != nil {
+		logger.Errorf("failed to register expired-backup-cleanup cron job: %v", err)
+	}
+
+	// StunConfigDetectionTask (hourly): detects STUN config differences between
+	// system settings and device parameters, fixes via SPV. Mirrors Java StunConfigDetectionTask.
+	stunConfigTask := scheduledtask.NewStunConfigDetectionTask(db, tr069OpSender)
+	if err := mainScheduler.AddJob("stun-config-detection", "0 0 * * * *", func() {
+		stunConfigTask.DetectAndFix()
+	}); err != nil {
+		logger.Errorf("failed to register stun-config-detection cron job: %v", err)
+	}
+
+	// CertificateAlarmTask (hourly): checks HTTPS certificate expiry and triggers
+	// alarm if expiring within 20 days. Mirrors Java NMSCertificateAlarmTriggerTask.
+	certAlarmTask := scheduledtask.NewCertificateAlarmTask(db, "/ssl/web/server.pem")
+	if err := mainScheduler.AddJob("certificate-alarm-check", "0 0 * * * *", func() {
+		certAlarmTask.CheckCertificate()
+	}); err != nil {
+		logger.Errorf("failed to register certificate-alarm-check cron job: %v", err)
+	}
+
+	// NorthInterfaceAlarmExport (every 30 min): exports active alarms to CSV for
+	// north-bound interface. Mirrors Java NorthInterfaceAlarmExport.
+	northAlarmExportTask := scheduledtask.NewNorthInterfaceAlarmExport(db, cfg.FileServer.Root)
+	if err := mainScheduler.AddJob("north-alarm-export", "0 */30 * * * *", func() {
+		northAlarmExportTask.Export()
+	}); err != nil {
+		logger.Errorf("failed to register north-alarm-export cron job: %v", err)
+	}
+
+	// NMSPMExportTask (every 1 min): appends NMS CPU/RAM usage to CSV.
+	// Mirrors Java NMSPMExportTask.
+	nmsPmExportTask := scheduledtask.NewNMSPMExportTask(db, cfg.FileServer.Root)
+	if err := mainScheduler.AddJob("nms-pm-export", "0 */1 * * * *", func() {
+		nmsPmExportTask.Export()
+	}); err != nil {
+		logger.Errorf("failed to register nms-pm-export cron job: %v", err)
+	}
+
+	// NMSHeartbeatTask (every 2 min): sends SNMP trap heartbeat to north-bound
+	// alarm_trap servers. Mirrors Java NMSHeartbeatTask.
+	nmsHeartbeatTask := scheduledtask.NewNMSHeartbeatTask(db)
+	if err := mainScheduler.AddJob("nms-heartbeat", "0 */2 * * * *", func() {
+		nmsHeartbeatTask.SendHeartbeat()
+	}); err != nil {
+		logger.Errorf("failed to register nms-heartbeat cron job: %v", err)
+	}
+
+	// PresetParametersTask (every 2 min): triggers pending preset parameter tasks
+	// (set/get) on online devices. Mirrors Java PresetParametersTaskScheduler.
+	presetParamsTask := scheduledtask.NewPresetParametersTask(db, tr069OpSender)
+	if err := mainScheduler.AddJob("preset-params-trigger", "0 */2 * * * *", func() {
+		presetParamsTask.TriggerTasks()
+	}); err != nil {
+		logger.Errorf("failed to register preset-params-trigger cron job: %v", err)
+	}
+
+	// ZTPFailedTask (every 1 min): cleans up failed ZTP logs after timeout,
+	// removes AOS file references and geo cache. Mirrors Java ZTPTask.deleteFailedTask.
+	ztpFailedTask := scheduledtask.NewZTPFailedTask(db, cfg.FileServer.Root, 30)
+	if err := mainScheduler.AddJob("ztp-failed-cleanup", "0 */1 * * * *", func() {
+		ztpFailedTask.CleanupFailed()
+	}); err != nil {
+		logger.Errorf("failed to register ztp-failed-cleanup cron job: %v", err)
+	}
+
+	// CMBackupTask (daily 00:00): exports enb device CM configuration to CSV.
+	// Mirrors Java CMBackupTask.
+	cmBackupTask := scheduledtask.NewCMBackupTask(db, cfg.FileServer.Root)
+	if err := mainScheduler.AddJob("cm-backup", "0 0 0 * * *", func() {
+		cmBackupTask.ExportCM()
+	}); err != nil {
+		logger.Errorf("failed to register cm-backup cron job: %v", err)
 	}
 
 	// CBSD SAS operation-state maintainer (every 60s; Java runs every 90s).
