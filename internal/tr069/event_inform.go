@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -426,6 +428,23 @@ func (ep *EventProcessor) handleMMLReport(ctx context.Context, sn string, paramM
 		Where("uid = ?", uid).
 		Updates(&result).Error; err != nil {
 		logger.Warnf("device %s: failed to update MML result for uid=%s: %v", sn, uid, err)
+	}
+
+	// UE number extraction: Java MMLResultPostprocessor extracts
+	// "Number of results = (\d+)" and updates DeviceUeNumberRecord.
+	var mmlRec struct {
+		UeTaskId *int64 `gorm:"column:ue_task_id"`
+	}
+	ep.db.Table("mml_execute_result").Select("ue_task_id").Where("uid = ?", uid).Scan(&mmlRec)
+	if mmlRec.UeTaskId != nil {
+		re := regexp.MustCompile(`Number of results\s*=\s*(\d+)`)
+		if m := re.FindStringSubmatch(reportValue); len(m) >= 2 {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				ep.db.Table("device_ue_number_record").
+					Where("id = ?", *mmlRec.UeTaskId).
+					Update("ue_number", n)
+			}
+		}
 	}
 
 	// Send web callback for MML result

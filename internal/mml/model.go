@@ -56,6 +56,7 @@ type MmlExecuteResult struct {
 	HasFault          bool       `gorm:"column:has_fault" json:"has_fault"`
 	FaultString       *string    `gorm:"column:fault_string;type:text" json:"fault_string"`
 	User              *string    `gorm:"column:user;type:varchar(255)" json:"user"`
+	UeTaskId          *int64     `gorm:"column:ue_task_id" json:"ue_task_id"`
 	EventLogId        *int64     `gorm:"column:event_log_id" json:"event_log_id"`
 	OperationTime     *time.Time `gorm:"column:operation_time" json:"operation_time"`
 	SendTime          *time.Time `gorm:"column:send_time" json:"send_time"`
