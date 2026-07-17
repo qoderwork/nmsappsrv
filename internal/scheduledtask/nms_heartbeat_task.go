@@ -82,8 +82,9 @@ func (t *NMSHeartbeatTask) sendHeartbeatForLicense(licenseId int, omcName *strin
 		nmsName = *omcName
 	}
 
-	// 当前时间字符串
-	eventTime := time.Now().UTC().Format("2006-01-02 15:04:05")
+	// 当前时间字符串 (ISO 8601 with timezone, matches Java NMSHeartbeatTask:
+	// DateFormatUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ssXXX"))
+	eventTime := time.Now().Format("2006-01-02T15:04:05Z07:00")
 
 	// 递增序号
 	seqNum := atomic.AddInt64(&t.sequenceNumber, 1)

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"nmsappsrv/internal/config"
-	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/deviceauth"
 	"nmsappsrv/internal/tr069/auth"
 	"nmsappsrv/internal/tr069/soap"
@@ -75,8 +74,17 @@ func (h *ACSHandler) HandleACS(c *gin.Context) {
 
 // ACSAuthMiddleware returns a Gin middleware that performs device authentication
 // for TR-069 CPE connections. It supports multiple auth strategies (Basic, Digest, Null)
-// configured per-tenant via Redis, aligned with Java's AuthenticationHandler.
-// Falls back to legacy per-device Basic auth when no tenant config exists.
+// configured per-tenant via Redis, aligned with Java's AuthenticateInterceptor.
+//
+// Java behavior (AuthenticateInterceptor.preHandle):
+//   - Read ACSAuthenticationDTO from Redis "device_authentication_{tenancyId}".
+//   - If config missing, disabled, or algorithm=="Null" → allow through.
+//   - Otherwise use acsUsername/acsPassword (ACS-level credentials) to validate
+//     the CPE's Authorization header.
+//
+// The Go port loads the same config via deviceauth.Service (which reads Redis
+// "device_authentication_{licenseId}" with a DB fallback). ACS-level credentials
+// are used — NOT per-device connection_request_username/password — matching Java.
 func (h *ACSHandler) ACSAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Extract SN from cookie (for established sessions)
@@ -91,54 +99,33 @@ func (h *ACSHandler) ACSAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Look up device credentials from DB
-		var cpe device.CpeElement
-		err := h.db.Select("connection_request_username, connection_request_password").
-			Where("serial_number = ? AND deleted = ?", sn, false).First(&cpe).Error
-		if err != nil {
-			// Device not found — allow through
-			c.Next()
-			return
-		}
-
-		deviceUser := ""
-		devicePass := ""
-		if cpe.ConnectionRequestUsername != nil {
-			deviceUser = *cpe.ConnectionRequestUsername
-		}
-		if cpe.ConnectionRequestPassword != nil {
-			devicePass = *cpe.ConnectionRequestPassword
-		}
-
-		// If device has no username, skip auth
-		if deviceUser == "" {
-			c.Next()
-			return
-		}
-
-		// Try loading tenant-level auth config from Redis
+		// Load tenant-level auth config (mirrors Java AuthenticateInterceptor).
 		licenseId, _ := c.Get("license_id")
 		lid, _ := licenseId.(string)
-
-		var strategy auth.Strategy
-
-		if lid != "" {
-			authCfg, cfgErr := h.authService.GetConfig(lid)
-			if cfgErr != nil {
-				logger.Warnf("failed to load auth config for tenant %s: %v", lid, cfgErr)
-			}
-			if authCfg != nil && authCfg.Enable {
-				strategy = auth.Get(authCfg.Algorithm)
-				logger.Debugf("using %s auth strategy for tenant %s", strategy.Name(), lid)
-			}
+		if lid == "" {
+			// No tenant context — allow through (backward compatible)
+			c.Next()
+			return
 		}
 
-		// Fallback: legacy per-device Basic auth (backward compatible)
-		if strategy == nil {
-			strategy = &auth.BasicStrategy{Realm: "TR-069 ACS"}
+		authCfg, cfgErr := h.authService.GetConfig(lid)
+		if cfgErr != nil {
+			logger.Warnf("failed to load auth config for tenant %s: %v", lid, cfgErr)
 		}
 
-		if !strategy.Authenticate(c, deviceUser, devicePass) {
+		// Java: if config missing, disabled, or algorithm is Null → allow through.
+		if authCfg == nil || !authCfg.Enable || strings.EqualFold(authCfg.Algorithm, "Null") {
+			c.Next()
+			return
+		}
+
+		strategy := auth.Get(authCfg.Algorithm)
+		logger.Debugf("using %s auth strategy for tenant %s", strategy.Name(), lid)
+
+		// Use ACS-level credentials (acsUsername/acsPassword), NOT per-device
+		// connection_request_username/password — mirrors Java BasicAuthentication
+		// which compares against acsAuthenticationDTO.getUsername()/getPassword().
+		if !strategy.Authenticate(c, authCfg.Username, authCfg.Password) {
 			logger.Warnf("ACS auth failed for device %s (strategy=%s)", sn, strategy.Name())
 			strategy.Challenge(c)
 			return

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 
 	"gorm.io/gorm"
 	"nmsappsrv/pkg/apperror"
@@ -112,6 +113,51 @@ func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRe
 
 	if err := s.repo.SaveSystemConfig(key, string(data)); err != nil {
 		return err
+	}
+
+	// Sync to Redis — mirrors Java SystemSettingsManagementServiceImpl.updateDeviceSettings:
+	// 1) nms_allow_auto_registration_{tenancyId} gates auto-registration in the ACS.
+	// 2) device_authentication_{tenancyId} carries the ACS-level credentials
+	//    (acsUsername/acsPassword) that the ACS AuthenticateInterceptor uses to
+	//    validate CPE ConnectionRequest Authorization headers.
+	ctx := context.Background()
+	autoReg := false
+	if existing.AutoRegistrationEnable != nil {
+		autoReg = *existing.AutoRegistrationEnable
+	}
+	if err := redis.Set(ctx, fmt.Sprintf("nms_allow_auto_registration_%d", tenancyId), strconv.FormatBool(autoReg), 0); err != nil {
+		logger.Errorf("Failed to sync nms_allow_auto_registration_%d to Redis: %v", tenancyId, err)
+	}
+
+	username := ""
+	if existing.AcsUsername != nil {
+		username = *existing.AcsUsername
+	}
+	password := ""
+	if existing.AcsPassword != nil {
+		password = *existing.AcsPassword
+	}
+	algorithm := "Null"
+	if existing.AuthenticationAlgorithm != nil {
+		algorithm = *existing.AuthenticationAlgorithm
+	}
+	enable := false
+	if existing.DeviceAuthentication != nil {
+		enable = *existing.DeviceAuthentication
+	}
+	authDTO := map[string]interface{}{
+		"enable":    enable,
+		"algorithm": algorithm,
+		"username":  username,
+		"password":  password,
+	}
+	authJSON, err := json.Marshal(authDTO)
+	if err != nil {
+		logger.Errorf("Failed to marshal ACS auth config for tenant %d: %v", tenancyId, err)
+	} else {
+		if err := redis.Set(ctx, fmt.Sprintf("device_authentication_%d", tenancyId), string(authJSON), 0); err != nil {
+			logger.Errorf("Failed to sync device_authentication_%d to Redis: %v", tenancyId, err)
+		}
 	}
 
 	return nil
