@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"nmsappsrv/internal/device"
+	"nmsappsrv/internal/tr069"
+	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/internal/upgrade"
 	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
@@ -17,12 +19,13 @@ import (
 
 // Service contains the business logic for topology management.
 type Service struct {
-	repo *Repository
+	repo      *Repository
+	opSender  *tr069.OperationSender
 }
 
 // NewService creates a new Service.
-func NewService(db *gorm.DB) Service {
-	return Service{repo: NewRepository(db)}
+func NewService(db *gorm.DB, opSender *tr069.OperationSender) Service {
+	return Service{repo: NewRepository(db), opSender: opSender}
 }
 
 // LteTopology builds the LTE topology tree for a given BBU element.
@@ -414,6 +417,8 @@ func (s *Service) doRU(eid int64, parentRoute string, addChild func(TopologyDevi
 }
 
 // BatchUpgradeEUAndRU creates a batch upgrade task for EU and RU devices.
+// It saves a local log and sends the BatchUpgrade SOAP to the BBU device,
+// mirroring Java BatchUpgradeEUAndRU (which also persists and dispatches).
 func (s *Service) BatchUpgradeEUAndRU(req *BatchUpgradeRequest, tenancyId int, username string) error {
 	if req.ElementId == 0 || len(req.Devices) == 0 {
 		return apperror.ErrInvalidInput
@@ -486,6 +491,46 @@ func (s *Service) BatchUpgradeEUAndRU(req *BatchUpgradeRequest, tenancyId int, u
 		logger.Errorf("failed to save batch upgrade log: %v", err)
 		return apperror.Wrap(err, "SAVE_FAILED", 500, "failed to save batch upgrade log")
 	}
+
+	if s.opSender == nil {
+		logger.Warnf("BatchUpgradeEUAndRU: opSender not configured, cannot dispatch SOAP")
+		return nil
+	}
+
+	upgradeDevices := make([]soap.UpgradeDeviceStruct, 0, len(req.Devices))
+	for _, d := range req.Devices {
+		var uf upgrade.UpgradeFile
+		if err := s.repo.db.Table("upgrade_file").
+			Where("id = ? AND deleted = ?", d.UpgradeFileId, false).
+			First(&uf).Error; err != nil {
+			logger.Warnf("BatchUpgradeEUAndRU: upgrade file %d not found", d.UpgradeFileId)
+			continue
+		}
+		upgradeDevices = append(upgradeDevices, soap.UpgradeDeviceStruct{
+			DeviceRouteList: []string{d.Route},
+			URL:             strVal(uf.FilePath),
+			FileSize:        int64(strValP(uf.FileSize, 0)),
+			TargetFileName:  strVal(uf.FileName),
+		})
+	}
+
+	if len(upgradeDevices) == 0 {
+		logger.Warnf("BatchUpgradeEUAndRU: no valid upgrade files found")
+		return nil
+	}
+
+	commandKey := fmt.Sprintf("X_%d", log.Id)
+	batch := &soap.BatchUpgrade{
+		CommandKey:        commandKey,
+		UpgradeDeviceList: upgradeDevices,
+	}
+
+	operationId := fmt.Sprintf("batch_upgrade_%d", log.Id)
+	if err := s.opSender.SendBatchUpgrade(strVal(elem.SerialNumber), batch, operationId); err != nil {
+		logger.Errorf("BatchUpgradeEUAndRU: failed to send SOAP to %s: %v", strVal(elem.SerialNumber), err)
+		return apperror.Wrap(err, "SEND_FAILED", 500, "failed to send batch upgrade command")
+	}
+
 	return nil
 }
 
@@ -607,6 +652,13 @@ func strVal(p *string) string {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func strValP(p *int64, def int64) int64 {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 // paramPrefix returns param_name up to the last ".".

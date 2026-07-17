@@ -1,16 +1,15 @@
 package corenet
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"time"
 
+	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
-	"nmsappsrv/pkg/redis"
 
 	"gorm.io/gorm"
 )
@@ -99,13 +98,17 @@ type Service interface {
 
 // service is the concrete implementation of Service.
 type service struct {
-	repo Repository
-	db   *gorm.DB
+	repo     Repository
+	db       *gorm.DB
+	opSender *tr069.OperationSender
+	msgMgr   *tr069.MessageManager
 }
 
 // NewService creates a Service backed by a fresh Repository.
 func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db), db: db}
+	msgMgr := tr069.NewMessageManager()
+	opSender := tr069.NewOperationSender(db, msgMgr)
+	return &service{repo: NewRepository(db), db: db, opSender: opSender, msgMgr: msgMgr}
 }
 
 // newService creates a Service backed by the given Repository (test helper).
@@ -294,26 +297,16 @@ func (s *service) ChangeCoreNetworkSwitch(coreNetworkId int, enable bool, userna
 	if enable {
 		value = "1"
 	}
-	headerId := soap.GenerateHeaderID()
 	params := []soap.ParameterValueStruct{
 		{Name: "Device.FAP.NGC.NGCSwitch", Value: value, Type: "xsd:string"},
 	}
-	soapXml := soap.BuildSetParameterValues(headerId, params, "")
 
-	if eventLogId, lerr := s.insertCoreNetEventLog(*cn.ElementId, username, headerId); lerr == nil && eventLogId != 0 {
-		trackKey := fmt.Sprintf("tr069:track:%s", headerId)
-		trackJson, _ := json.Marshal(map[string]interface{}{
-			"header_id":      headerId,
-			"sn":             serial,
-			"operation_type": "SET_PARAMETER_VALUES",
-			"event_log_id":   eventLogId,
-		})
-		redis.Set(context.Background(), trackKey, string(trackJson), 24*time.Hour)
-	}
-
-	queueKey := fmt.Sprintf("tr069:queue:%s", serial)
-	if err := redis.LPush(context.Background(), queueKey, soapXml); err != nil {
-		logger.Errorf("ChangeCoreNetworkSwitch: failed to push SPV to %s: %v", serial, err)
+	operationId := fmt.Sprintf("corenet_switch_%d_%t", coreNetworkId, enable)
+	if s.opSender != nil {
+		if err := s.opSender.SendSetParameterValues(serial, params, "", operationId); err != nil {
+			logger.Errorf("ChangeCoreNetworkSwitch: failed to send SPV to %s: %v", serial, err)
+			return err
+		}
 	}
 	return nil
 }
@@ -500,36 +493,91 @@ func (s *service) GetCoreNetworkParameters(query GetCoreNetworkParametersQuery) 
 	return vo, nil
 }
 
-// SetCoreNetworkParameters pushes config values to the element's 33030 API
-// (PUT) and logs the operation. Mirrors Java setCoreNetworkParameters.
+// SetCoreNetworkParameters pushes config values to the element via CPE proxy
+// (HttpRequestProxy SOAP) and logs the operation. Mirrors Java setCoreNetworkParameters.
 func (s *service) SetCoreNetworkParameters(dto SetCoreNetworkParametersDTO, user string) (int64, error) {
 	if dto.CoreNetworkId == 0 || dto.Name == "" {
 		return 0, fmt.Errorf("coreNetworkId and name are required")
 	}
 	body, _ := json.Marshal(dto.Data)
 	requestID := fmt.Sprintf("set:%s", dto.Name)
-	if _, err := callElementConfig(dto.ElementType, dto.Name, dto.Index, "PUT", dto.Data); err != nil {
+	info := dto.Name + ":" + string(body)
+
+	sn, err := s.resolveDeviceSN(dto.CoreNetworkId)
+	if err != nil {
 		return 0, err
 	}
-	info := dto.Name + ":" + string(body)
+
+	ip := getElementIp(dto.ElementType)
+	baseURL := fmt.Sprintf("http://%s:33030/api/rest/systemManagement/v1/elementType/%s/objectType/config/%s",
+		ip, dto.ElementType, dto.Name)
+
+	requests := make([]soap.HttpRequest, 0, 2)
+
+	setURL := baseURL
+	if dto.Index != nil {
+		setURL += fmt.Sprintf("?loc=%d", *dto.Index)
+	}
+	requests = append(requests, soap.HttpRequest{
+		URL:        setURL,
+		HttpMethod: "PUT",
+		Body:       string(body),
+		RequestId:  requestID,
+	})
+
+	requests = append(requests, soap.HttpRequest{
+		URL:        baseURL,
+		HttpMethod: "GET",
+		RequestId:  fmt.Sprintf("query:%s", dto.Name),
+	})
+
+	operationId := fmt.Sprintf("corenet_set_%d_%s", dto.CoreNetworkId, dto.Name)
+	proxy := &soap.HttpRequestProxy{Requests: requests}
+	if err := s.opSender.SendHttpRequestProxy(sn, proxy, operationId); err != nil {
+		logger.Errorf("SetCoreNetworkParameters: failed to send HttpRequestProxy to %s: %v", sn, err)
+		return 0, err
+	}
+
 	return s.logCoreNetOp(dto.CoreNetworkId, "Set Parameter", user, info, requestID), nil
 }
 
-// QueryCoreNetworkParameters reads config values from the element's 33030
-// API (GET) and logs the operation. Mirrors Java queryCoreNetworkParameters.
+// QueryCoreNetworkParameters reads config values from the element via CPE proxy
+// (HttpRequestProxy SOAP) and logs the operation. Mirrors Java queryCoreNetworkParameters.
 func (s *service) QueryCoreNetworkParameters(dto QueryCoreNetworkParametersDTO, user string) (int64, error) {
 	if dto.CoreNetworkId == 0 || dto.Name == "" {
 		return 0, fmt.Errorf("coreNetworkId and name are required")
 	}
 	requestID := fmt.Sprintf("query:%s", dto.Name)
-	if _, err := callElementConfig(dto.ElementType, dto.Name, nil, "GET", nil); err != nil {
+
+	sn, err := s.resolveDeviceSN(dto.CoreNetworkId)
+	if err != nil {
 		return 0, err
 	}
+
+	ip := getElementIp(dto.ElementType)
+	url := fmt.Sprintf("http://%s:33030/api/rest/systemManagement/v1/elementType/%s/objectType/config/%s",
+		ip, dto.ElementType, dto.Name)
+
+	requests := []soap.HttpRequest{
+		{
+			URL:        url,
+			HttpMethod: "GET",
+			RequestId:  requestID,
+		},
+	}
+
+	operationId := fmt.Sprintf("corenet_query_%d_%s", dto.CoreNetworkId, dto.Name)
+	proxy := &soap.HttpRequestProxy{Requests: requests}
+	if err := s.opSender.SendHttpRequestProxy(sn, proxy, operationId); err != nil {
+		logger.Errorf("QueryCoreNetworkParameters: failed to send HttpRequestProxy to %s: %v", sn, err)
+		return 0, err
+	}
+
 	return s.logCoreNetOp(dto.CoreNetworkId, "Query Parameter", user, dto.Name, requestID), nil
 }
 
-// DeleteCoreNetworkParameter removes a config array element on the element's
-// 33030 API (DELETE) and logs the operation. Mirrors Java
+// DeleteCoreNetworkParameter removes a config array element on the element via
+// CPE proxy (HttpRequestProxy SOAP) and logs the operation. Mirrors Java
 // deleteCoreNetworkParameter.
 func (s *service) DeleteCoreNetworkParameter(dto DeleteCoreNetworkParameterDTO, user string) (int64, error) {
 	if dto.Name == "" || dto.Index == 0 {
@@ -537,26 +585,111 @@ func (s *service) DeleteCoreNetworkParameter(dto DeleteCoreNetworkParameterDTO, 
 	}
 	idx := dto.Index
 	requestID := fmt.Sprintf("delete:%s", dto.Name)
-	if _, err := callElementConfig(dto.ElementType, dto.Name, &idx, "DELETE", nil); err != nil {
+	info := fmt.Sprintf("%s:%d", dto.Name, dto.Index)
+
+	sn, err := s.resolveDeviceSN(dto.CoreNetworkId)
+	if err != nil {
 		return 0, err
 	}
-	info := fmt.Sprintf("%s:%d", dto.Name, dto.Index)
+
+	ip := getElementIp(dto.ElementType)
+	url := fmt.Sprintf("http://%s:33030/api/rest/systemManagement/v1/elementType/%s/objectType/config/%s?loc=%d",
+		ip, dto.ElementType, dto.Name, idx)
+
+	requests := []soap.HttpRequest{
+		{
+			URL:        url,
+			HttpMethod: "DELETE",
+			RequestId:  requestID,
+		},
+	}
+
+	operationId := fmt.Sprintf("corenet_delete_%d_%s", dto.CoreNetworkId, dto.Name)
+	proxy := &soap.HttpRequestProxy{Requests: requests}
+	if err := s.opSender.SendHttpRequestProxy(sn, proxy, operationId); err != nil {
+		logger.Errorf("DeleteCoreNetworkParameter: failed to send HttpRequestProxy to %s: %v", sn, err)
+		return 0, err
+	}
+
 	return s.logCoreNetOp(dto.CoreNetworkId, "Delete Parameter", user, info, requestID), nil
 }
 
-// AddCoreNetworkParameter adds a config array element on the element's 33030
-// API (POST) and logs the operation. Mirrors Java addCoreNetworkParameter.
+// AddCoreNetworkParameter adds a config array element on the element via CPE
+// proxy (HttpRequestProxy SOAP) and logs the operation. Mirrors Java addCoreNetworkParameter.
 func (s *service) AddCoreNetworkParameter(dto SetCoreNetworkParametersDTO, user string) (int64, error) {
 	if dto.Name == "" || dto.Index == nil {
 		return 0, fmt.Errorf("name and index are required")
 	}
 	body, _ := json.Marshal(dto.Data)
 	requestID := fmt.Sprintf("add:%s", dto.Name)
-	if _, err := callElementConfig(dto.ElementType, dto.Name, dto.Index, "POST", dto.Data); err != nil {
+	info := dto.Name + ":" + string(body)
+
+	sn, err := s.resolveDeviceSN(dto.CoreNetworkId)
+	if err != nil {
 		return 0, err
 	}
-	info := dto.Name + ":" + string(body)
+
+	ip := getElementIp(dto.ElementType)
+	url := fmt.Sprintf("http://%s:33030/api/rest/systemManagement/v1/elementType/%s/objectType/config/%s?loc=%d",
+		ip, dto.ElementType, dto.Name, *dto.Index)
+
+	requests := []soap.HttpRequest{
+		{
+			URL:        url,
+			HttpMethod: "POST",
+			Body:       string(body),
+			RequestId:  requestID,
+		},
+	}
+
+	operationId := fmt.Sprintf("corenet_add_%d_%s", dto.CoreNetworkId, dto.Name)
+	proxy := &soap.HttpRequestProxy{Requests: requests}
+	if err := s.opSender.SendHttpRequestProxy(sn, proxy, operationId); err != nil {
+		logger.Errorf("AddCoreNetworkParameter: failed to send HttpRequestProxy to %s: %v", sn, err)
+		return 0, err
+	}
+
 	return s.logCoreNetOp(dto.CoreNetworkId, "Add Parameter", user, info, requestID), nil
+}
+
+// resolveDeviceSN resolves the device serial number linked to a core network
+// via core_network.element_id -> cpe_element.ne_neid.
+func (s *service) resolveDeviceSN(coreNetworkId int) (string, error) {
+	cn, err := s.repo.FindByID(coreNetworkId)
+	if err != nil || cn == nil || cn.ElementId == nil {
+		return "", fmt.Errorf("core network %d not found or no linked device", coreNetworkId)
+	}
+	var sn string
+	if err := s.db.Table("cpe_element").
+		Select("serial_number").
+		Where("ne_neid = ? AND deleted = ?", *cn.ElementId, false).
+		Scan(&sn).Error; err != nil || sn == "" {
+		return "", fmt.Errorf("no device serial for core network %d", coreNetworkId)
+	}
+	return sn, nil
+}
+
+// getElementIp maps a core-network element type to its loopback management IP.
+// Mirrors Java CoreNetworkManagementServiceImpl.getElementIp.
+func getElementIp(elementType string) string {
+	switch elementType {
+	case "ims":
+		return "127.0.0.110"
+	case "amf":
+		return "127.0.0.120"
+	case "ausf":
+		return "127.0.0.130"
+	case "udm":
+		return "127.0.0.140"
+	case "smf":
+		return "127.0.0.150"
+	case "pcf":
+		return "127.0.0.160"
+	case "upf":
+		return "127.0.0.190"
+	default:
+		return ""
+	}
 }
 
 // GetCoreNetworkElementSystemState reads core_network_data and parses each

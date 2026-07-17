@@ -61,6 +61,47 @@ type tr069UploadDTO struct {
 	CommandKey   string `json:"commandKey"`
 }
 
+// mapDownloadFileType maps the Java TR069DownloadType enum string to the
+// TR-069 standard FileType string, mirroring Java Tr069MessageBuilder.downloadFile().
+// If the type is already a standard TR-069 FileType string (e.g. "1 Firmware
+// Upgrade Image" from the upgrade worker), it is returned as-is.
+func mapDownloadFileType(javaType string) string {
+	switch javaType {
+	case "UPGRADE_FILE":
+		return "1 Firmware Upgrade Image"
+	case "RRU_UPGRADE_FILE":
+		return "4 RRU Software Version File"
+	case "CONFIG_FILE", "CBSD_CERT_FILE":
+		return "3 Vendor Configuration File"
+	case "M_NORMAL_FILE":
+		return "M Normal File"
+	case "CHECK_PROCESS_FILE", "BATCH_PROCESS_FILE":
+		return "101 Script File"
+	case "ZTP_FILE":
+		return "103 Base Station Startup File"
+	case "CA_FILE":
+		return "4 Vendor Certificate File"
+	case "LICENSE":
+		return "102 License File"
+	default:
+		// Already a standard TR-069 FileType string or unknown — pass through.
+		return javaType
+	}
+}
+
+// mapUploadFileType maps the Java TR069UploadType enum string to the
+// TR-069 standard FileType string, mirroring Java Tr069MessageBuilder.upload().
+func mapUploadFileType(javaType string) string {
+	switch javaType {
+	case "CONFIG_FILE":
+		return "3 Vendor Configuration File 1"
+	case "LOG_FILE":
+		return "2 Vendor Log File"
+	default:
+		return javaType
+	}
+}
+
 // Dispatch routes the message to the matching `Send*` primitive. Returns the
 // dispatch error (nil on success); the Worker logs and continues on error.
 func (d *Dispatcher) Dispatch(ctx context.Context, msg *opmsg.Message) error {
@@ -164,7 +205,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, msg *opmsg.Message) error {
 		}
 		return d.opSender.SendDownload(sn, &soap.Download{
 			CommandKey:     dl.CommandKey,
-			FileType:       dl.Type,
+			FileType:       mapDownloadFileType(dl.Type),
 			URL:            dl.URL,
 			Username:       dl.Username,
 			Password:       dl.Password,
@@ -182,7 +223,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, msg *opmsg.Message) error {
 		}
 		return d.opSender.SendUpload(sn, &soap.Upload{
 			CommandKey: up.CommandKey,
-			FileType:   up.Type,
+			FileType:   mapUploadFileType(up.Type),
 			URL:        up.URL,
 			Username:   up.Username,
 			Password:   up.Password,

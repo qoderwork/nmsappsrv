@@ -13,6 +13,7 @@ import (
 	"nmsappsrv/internal/tr069/soap"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
+	"nmsappsrv/pkg/utils"
 )
 
 // processGetParameterNamesResponse handles GetParameterNamesResponse from CPE.
@@ -367,12 +368,28 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 						"done_time":       &now,
 						"success":         &success,
 					})
+
+				// Java: License download success triggers auto SOFT_REBOOT
+				// (PositiveMessageProcessor.downloadLicenseFileAfter).
+				if success && originEvent.CommandTrackData != nil {
+					var trackData map[string]interface{}
+					if json.Unmarshal([]byte(*originEvent.CommandTrackData), &trackData) == nil {
+						if ft, ok := trackData["file_type"].(string); ok && ft == "102 License File" {
+							logger.Infof("License download success for SN=%s, triggering auto SOFT_REBOOT", sn)
+							utils.SafeGo("LicenseReboot-"+sn, func() {
+								msgMgr := NewMessageManager()
+								opSender := NewOperationSender(ep.db, msgMgr)
+								opSender.SendSoftReboot(sn, "license_auto_reboot_"+strconv.FormatInt(now.Unix(), 10), "", 0)
+							})
+						}
+					}
+				}
 			}
 
 			// Check if this is a reboot operation
-			if originEvent.EventType != nil && *originEvent.EventType == "REBOOT" {
+			if originEvent.EventType != nil && *originEvent.EventType == "REBOOT" && originEvent.ElementId != nil {
 				// Clear rebooting flag
-				rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
+				rebootKey := fmt.Sprintf("rebooting_%d", *originEvent.ElementId)
 				redis.Del(ctx, rebootKey)
 			}
 
@@ -444,9 +461,11 @@ func (ep *EventProcessor) processRebootResponse(ctx context.Context, sn string, 
 	eventLog.Status = intPtr(0) // success
 
 	// Clear rebooting flag in Redis
-	rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
-	if err := redis.Del(ctx, rebootKey); err != nil {
-		logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
+	if eventLog.ElementId != nil {
+		rebootKey := fmt.Sprintf("rebooting_%d", *eventLog.ElementId)
+		if err := redis.Del(ctx, rebootKey); err != nil {
+			logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
+		}
 	}
 }
 

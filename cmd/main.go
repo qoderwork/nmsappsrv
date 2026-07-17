@@ -310,8 +310,8 @@ func main() {
 	// tcpdump and PM file modules
 	tcpdumpH := tcpdump.NewHandler(db)
 	pmfileH := pmfile.NewHandler(db)
-	// Topology management module
-	topologyH := topology.NewHandler(db)
+	// Topology management module (initialized later after opSender is ready)
+	var topologyH *topology.Handler
 
 	// ========== Lifecycle Manager ==========
 	// workerTask adapts the project's Start/Stop worker convention to lifecycle.Task.
@@ -585,6 +585,7 @@ func main() {
 	// monitor task and persists samples into monitor_data via the tr069 GPV response
 	// hook (mirrors Java MonitorValueTask + GetCpeStatisticMessageProcessor).
 	tr069.DefaultSender = tr069OpSender
+	topologyH = topology.NewHandler(db, tr069OpSender)
 	monitorCollector := monitor.NewCollector(db)
 	tr069.MonitorGPVCallback = monitorCollector.HandleGPVResponse
 

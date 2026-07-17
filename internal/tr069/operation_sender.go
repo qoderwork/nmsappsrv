@@ -1,7 +1,10 @@
 package tr069
 
 import (
+	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -9,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +26,8 @@ import (
 
 	"gorm.io/gorm"
 )
+
+const defaultPasswordSecret = "waveoss1waveoss1waveoss1password"
 
 // OperationSender builds SOAP XML from API commands and pushes to Redis per-device queues.
 type OperationSender struct {
@@ -137,8 +143,11 @@ func (o *OperationSender) SendDownload(sn string, dl *soap.Download, operationId
 	headerId := soap.GenerateHeaderID()
 	soapXml := soap.BuildDownload(headerId, dl)
 
-	// Save tracking data with CommandKey for TransferComplete correlation
-	o.saveTrackData(operationId, headerId, sn, "DOWNLOAD", dl.CommandKey, "", 0)
+	// Save tracking data with CommandKey for TransferComplete correlation.
+	// Store file_type so TransferComplete can distinguish download types
+	// (e.g. License download triggers auto SOFT_REBOOT in Java).
+	o.saveTrackData(operationId, headerId, sn, "DOWNLOAD", dl.CommandKey, "", 0,
+		map[string]interface{}{"file_type": dl.FileType})
 
 	// Push to device queue
 	return o.msgManager.PutMessage(sn, soapXml)
@@ -181,7 +190,7 @@ func (o *OperationSender) SendReboot(sn string, operationId string, operationUse
 	o.saveTrackData(operationId, headerId, sn, "REBOOT", commandKey, operationUser, expiredAtMillis)
 
 	// Push to device queue
-	return o.msgManager.PutMessage(sn, soapXml)
+	return o.msgManager.PutMessageWithPriority(sn, soapXml, QueueNormal, expiredAtMillis)
 }
 
 // SendUpload sends an Upload request to the device.
@@ -292,7 +301,7 @@ func (o *OperationSender) SendSoftReboot(sn string, operationId string, operatio
 	}
 
 	o.saveTrackData(operationId, headerId, sn, "SOFT_REBOOT", commandKey, operationUser, expiredAtMillis)
-	return o.msgManager.PutMessage(sn, soapXml)
+	return o.msgManager.PutMessageWithPriority(sn, soapXml, QueueNormal, expiredAtMillis)
 }
 
 // SendBatchUpgrade sends a BatchUpgrade request to the device (vendor extension).
@@ -390,7 +399,7 @@ func (o *OperationSender) SendConnectionRequest(sn string) error {
 // Matches Java GetConnectionServiceImpl.getConnection() for NAT-detected devices.
 func (o *OperationSender) sendUDPConnectionRequest(sn string, addr string, udpConn *net.UDPConn, creds *deviceCreds) error {
 	// Build URL with HMAC-SHA256 authentication
-	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
+	ts := fmt.Sprintf("%d", time.Now().Unix())
 	id := fmt.Sprintf("%d", atomic.AddInt64(&connReqCounter, 1))
 	un := ""
 	if creds.ConnectionRequestUsername != nil {
@@ -402,7 +411,12 @@ func (o *OperationSender) sendUDPConnectionRequest(sn string, addr string, udpCo
 	data := ts + id + un + cn
 	password := "password" // Java default when password is empty
 	if creds.ConnectionRequestPassword != nil && *creds.ConnectionRequestPassword != "" {
-		password = *creds.ConnectionRequestPassword
+		decrypted, err := aesGCMDecrypt(*creds.ConnectionRequestPassword, defaultPasswordSecret)
+		if err != nil {
+			logger.Warnf("failed to decrypt connection request password for device %s: %v", sn, err)
+		} else {
+			password = decrypted
+		}
 	}
 	sig := hmacSHA256(data, password)
 
@@ -446,8 +460,14 @@ func (o *OperationSender) sendTCPConnectionRequest(sn string, addr string, creds
 	if creds.ConnectionRequestUsername != nil && *creds.ConnectionRequestUsername != "" {
 		username := *creds.ConnectionRequestUsername
 		password := ""
-		if creds.ConnectionRequestPassword != nil {
-			password = *creds.ConnectionRequestPassword
+		if creds.ConnectionRequestPassword != nil && *creds.ConnectionRequestPassword != "" {
+			decrypted, err := aesGCMDecrypt(*creds.ConnectionRequestPassword, defaultPasswordSecret)
+			if err != nil {
+				logger.Warnf("failed to decrypt connection request password for device %s: %v", sn, err)
+				password = *creds.ConnectionRequestPassword
+			} else {
+				password = decrypted
+			}
 		}
 		encoded := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 		httpReq += fmt.Sprintf("Authorization: Basic %s\r\n", encoded)
@@ -468,14 +488,65 @@ func (o *OperationSender) sendTCPConnectionRequest(sn string, addr string, creds
 func hmacSHA256(data, key string) string {
 	mac := hmac.New(sha256.New, []byte(key))
 	mac.Write([]byte(data))
-	return hex.EncodeToString(mac.Sum(nil))
+	return strings.ToUpper(hex.EncodeToString(mac.Sum(nil)))
+}
+
+// aesGCMDecrypt decrypts AES-GCM encrypted data (Base64 encoded, IV prepended).
+// Matches Java AESGCMUtil.decrypt(encryptedData, key).
+func aesGCMDecrypt(encryptedData string, secret string) (string, error) {
+	// Fix key to 32 bytes (AES-256), matching Java AESGCMUtil.fixTo32
+	key := []byte(fixTo32(secret))
+
+	decodedBytes, err := base64.StdEncoding.DecodeString(encryptedData)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode: %w", err)
+	}
+
+	gcmIVLength := 12
+	if len(decodedBytes) < gcmIVLength {
+		return "", fmt.Errorf("encrypted data too short")
+	}
+
+	iv := decodedBytes[:gcmIVLength]
+	ciphertext := decodedBytes[gcmIVLength:]
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("aes new cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("new gcm: %w", err)
+	}
+
+	plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("gcm open: %w", err)
+	}
+
+	return string(plaintext), nil
+}
+
+// fixTo32 pads or truncates a string to exactly 32 bytes.
+// Matches Java AESGCMUtil.fixTo32.
+func fixTo32(input string) string {
+	if len(input) >= 32 {
+		return input[:32]
+	}
+	var buf bytes.Buffer
+	buf.WriteString(input)
+	for buf.Len() < 32 {
+		buf.WriteByte('0')
+	}
+	return buf.String()
 }
 
 // saveTrackData saves command tracking data to the event_log table.
 // commandKey is the TR-069 CommandKey used to correlate TransferComplete back to the originating operation.
 // operationUser is recorded on the event_log row; expiredAtMillis (when > 0)
 // overrides the default operationTime+5min expiration for the SOAP message.
-func (o *OperationSender) saveTrackData(operationId string, headerId string, sn string, operationType string, commandKey string, operationUser string, expiredAtMillis int64) {
+func (o *OperationSender) saveTrackData(operationId string, headerId string, sn string, operationType string, commandKey string, operationUser string, expiredAtMillis int64, extraFields ...map[string]interface{}) {
 	ctx := context.Background()
 	now := time.Now()
 
@@ -520,6 +591,11 @@ func (o *OperationSender) saveTrackData(operationId string, headerId string, sn 
 	}
 	if expiredAtMillis > 0 {
 		trackData["expired_at"] = expiredAtMillis
+	}
+	for _, extra := range extraFields {
+		for k, v := range extra {
+			trackData[k] = v
+		}
 	}
 
 	if jsonData, err := json.Marshal(trackData); err == nil {

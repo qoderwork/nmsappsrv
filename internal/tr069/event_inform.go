@@ -86,7 +86,7 @@ func (ep *EventProcessor) handleBoot(ctx context.Context, sn string, paramMap ma
 	}
 
 	// Clear rebooting flag
-	rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
+	rebootKey := fmt.Sprintf("rebooting_%d", cpe.NeNeid)
 	redis.Del(ctx, rebootKey)
 }
 
@@ -222,23 +222,16 @@ func (ep *EventProcessor) handleStartupResult(ctx context.Context, sn string, pa
 		logger.Infof("device %s: ZTP startup success", sn)
 	} else {
 		// Failure
-		if ztpLog.Progress != nil && *ztpLog.Progress == 5 {
-			ep.db.Model(&ztpLog).Updates(map[string]interface{}{
-				"done":      true,
-				"end_time":  &now,
-				"info":      info,
-				"has_fault": true,
-			})
-		} else {
-			ep.db.Model(&ztpLog).Updates(map[string]interface{}{
-				"done":      true,
-				"end_time":  &now,
-				"info":      info,
-				"has_fault": true,
-			})
-		}
+		isHardFault := ztpLog.Progress == nil || *ztpLog.Progress != 5
 
-		// Create fault retry log (atomic with the update above)
+		ep.db.Model(&ztpLog).Updates(map[string]interface{}{
+			"done":      true,
+			"end_time":  &now,
+			"info":      info,
+			"has_fault": true,
+		})
+
+		// Create fault retry log
 		ep.db.Transaction(func(tx *gorm.DB) error {
 			return tx.Create(&misc.ZTPRetryLog{
 				ElementId: &cpe.NeNeid,
@@ -246,6 +239,41 @@ func (ep *EventProcessor) handleStartupResult(ctx context.Context, sn string, pa
 				Info:      stringPtr(fmt.Sprintf("ZTP failed: %s", info)),
 			}).Error
 		})
+
+		// Java finishWithFault: when progress != 5, the device failed before
+		// reaching the final startup stage. Clean up ZTP artifacts so the
+		// device can retry from scratch (mirrors ZTPFailedConsumer.ztpFailedNotify).
+		if isHardFault {
+			logger.Infof("device %s: ZTP hard fault (progress=%v), cleaning up ZTP artifacts",
+				sn, ztpLog.Progress)
+
+			// Clear AOS file name and ready_to_ztp flag
+			ep.db.Model(&device.CpeElement{}).
+				Where("ne_neid = ?", cpe.NeNeid).
+				Updates(map[string]interface{}{
+					"aos_file_name": nil,
+					"ready_to_ztp":  false,
+				})
+
+			// Clear geo data from Redis
+			geoKey := fmt.Sprintf("device_geo_%d", cpe.NeNeid)
+			redis.Del(ctx, geoKey)
+
+			// Delete ZTP log records for this element
+			ep.db.Where("element_id = ?", cpe.NeNeid).Delete(&misc.ZTPLog{})
+
+			// Publish ZTP failed notification via Redis pub/sub
+			notification := map[string]interface{}{
+				"type":       "ztp_failed",
+				"element_id": cpe.NeNeid,
+				"sn":         sn,
+				"info":       info,
+				"timestamp":  now.Unix(),
+			}
+			if notifyJson, err := json.Marshal(notification); err == nil {
+				redis.LPush(ctx, mq.WebCallbackQueue, string(notifyJson))
+			}
+		}
 
 		logger.Warnf("device %s: ZTP startup failed: %s", sn, info)
 	}

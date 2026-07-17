@@ -2,6 +2,7 @@ package tr069
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,46 +10,106 @@ import (
 	"nmsappsrv/pkg/redis"
 )
 
-// MessageManager manages pending SOAP messages for CPE devices.
-// It queues outbound ACS commands and delivers them when CPE polls.
+const (
+	QueuePrior  = 1
+	QueueCBSD   = 2
+	QueueNormal = 0
+)
+
+const (
+	queuePriorPrefix  = "station_prior_event_queue_"
+	queueCbsdPrefix   = "station_cbsd_event_queue_"
+	queueNormalPrefix = "station_event_queue_"
+)
+
+type QueueMessage struct {
+	SoapXml   string `json:"soapXml"`
+	ExpiredAt int64  `json:"expiredAt"`
+}
+
 type MessageManager struct{}
 
-// NewMessageManager creates a new MessageManager.
 func NewMessageManager() *MessageManager {
 	return &MessageManager{}
 }
 
-// GetMessage retrieves the next pending SOAP message for the given device SN.
-// Returns an empty string if no messages are pending.
-func (m *MessageManager) GetMessage(sn string) string {
-	ctx := context.Background()
-	queueKey := fmt.Sprintf("tr069:queue:%s", sn)
-
-	// Pop from the right side of the list (FIFO)
-	msg, err := redis.RPop(ctx, queueKey)
-	if err != nil {
-		// No messages or error
-		return ""
+func queueKey(priority int, sn string) string {
+	switch priority {
+	case QueuePrior:
+		return queuePriorPrefix + sn
+	case QueueCBSD:
+		return queueCbsdPrefix + sn
+	default:
+		return queueNormalPrefix + sn
 	}
-
-	logger.Infof("retrieved pending message for device %s from queue", sn)
-	return msg
 }
 
-// PutMessage enqueues a SOAP message to be sent to the device identified by SN.
-func (m *MessageManager) PutMessage(sn string, soapXml string) error {
+func (m *MessageManager) GetMessage(sn string) string {
 	ctx := context.Background()
-	queueKey := fmt.Sprintf("tr069:queue:%s", sn)
 
-	// Push to the left side of the list
-	if err := redis.LPush(ctx, queueKey, soapXml); err != nil {
-		logger.Errorf("failed to enqueue message for device %s: %v", sn, err)
+	keys := []string{
+		queueKey(QueuePrior, sn),
+		queueKey(QueueCBSD, sn),
+		queueKey(QueueNormal, sn),
+	}
+
+	now := time.Now().UnixMilli()
+
+	for _, key := range keys {
+		for {
+			msgStr, err := redis.RPop(ctx, key)
+			if err != nil || msgStr == "" {
+				break
+			}
+
+			var qm QueueMessage
+			if err := json.Unmarshal([]byte(msgStr), &qm); err != nil {
+				logger.Warnf("failed to unmarshal queue message from key %s: %v", key, err)
+				continue
+			}
+
+			if qm.ExpiredAt == -1 || now < qm.ExpiredAt {
+				logger.Infof("retrieved pending message for device %s from queue %s", sn, key)
+				return qm.SoapXml
+			}
+			logger.Debugf("dropped expired command for device %s from queue %s", sn, key)
+		}
+	}
+
+	return ""
+}
+
+func (m *MessageManager) PutMessage(sn string, soapXml string) error {
+	return m.PutMessageWithPriority(sn, soapXml, QueueNormal, 0)
+}
+
+func (m *MessageManager) PutMessageWithPriority(sn string, soapXml string, priority int, expiredAtMillis int64) error {
+	ctx := context.Background()
+
+	expiredAt := int64(-1)
+	if expiredAtMillis > 0 {
+		expiredAt = expiredAtMillis
+	}
+
+	qm := QueueMessage{
+		SoapXml:   soapXml,
+		ExpiredAt: expiredAt,
+	}
+
+	data, err := json.Marshal(qm)
+	if err != nil {
+		return fmt.Errorf("marshal queue message: %w", err)
+	}
+
+	key := queueKey(priority, sn)
+
+	if err := redis.LPush(ctx, key, string(data)); err != nil {
+		logger.Errorf("failed to enqueue message for device %s (priority=%d): %v", sn, priority, err)
 		return err
 	}
 
-	// Set expiry on the queue key to prevent accumulation (24 hours)
-	redis.Expire(ctx, queueKey, 24*time.Hour)
+	redis.Expire(ctx, key, 24*time.Hour)
 
-	logger.Infof("enqueued message for device %s, queue length: %d", sn, redis.LLen(ctx, queueKey))
+	logger.Infof("enqueued message for device %s, priority=%d, queue length: %d", sn, priority, redis.LLen(ctx, key))
 	return nil
 }

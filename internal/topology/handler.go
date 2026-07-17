@@ -2,6 +2,7 @@ package topology
 
 import (
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/internal/tr069"
 	"nmsappsrv/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -14,8 +15,8 @@ type Handler struct {
 }
 
 // NewHandler creates a new Handler.
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(db)}
+func NewHandler(db *gorm.DB, opSender *tr069.OperationSender) *Handler {
+	return &Handler{svc: NewService(db, opSender)}
 }
 
 // LteTopology handles GET /topology/lte?id=123

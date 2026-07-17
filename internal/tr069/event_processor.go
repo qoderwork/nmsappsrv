@@ -281,9 +281,12 @@ func (ep *EventProcessor) processEventCode(ctx context.Context, evt soap.EventSt
 
 	case "M Reboot":
 		logger.Infof("device %s: M Reboot event", sn)
-		rebootKey := fmt.Sprintf("device:rebooting:%s", sn)
-		if err := redis.Del(ctx, rebootKey); err != nil {
-			logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
+		var cpe device.CpeElement
+		if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err == nil && cpe.NeNeid != 0 {
+			rebootKey := fmt.Sprintf("rebooting_%d", cpe.NeNeid)
+			if err := redis.Del(ctx, rebootKey); err != nil {
+				logger.Warnf("failed to clear rebooting flag for %s: %v", sn, err)
+			}
 		}
 
 	case "M PCI CHANGE":
