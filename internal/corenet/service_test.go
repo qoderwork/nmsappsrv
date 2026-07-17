@@ -58,6 +58,12 @@ func (m *mockRepository) FindCoreNetworkKpis(id int, start, end time.Time) ([]Co
 func (m *mockRepository) FindCoreNetworkStatisticData(int, time.Time, time.Time) ([]CoreNetworkStatisticData, error) {
 	return nil, nil
 }
+func (m *mockRepository) FindAllCoreNetworkData() ([]CoreNetworkData, error) {
+	return nil, nil
+}
+func (m *mockRepository) BatchSaveCoreNetworkStatisticData([]CoreNetworkStatisticData) error {
+	return nil
+}
 func (m *mockRepository) CreateOperationLog(*CoreNetworkOperationLog) error { return nil }
 func (m *mockRepository) FindOperationLogs(id, offset, limit int) ([]CoreNetworkOperationLog, int64, error) {
 	m.logsCalledWith = struct {

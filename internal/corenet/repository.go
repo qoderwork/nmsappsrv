@@ -27,6 +27,8 @@ type Repository interface {
 	DeleteCoreNetworkData(coreNetworkId int) error
 	FindCoreNetworkKpis(coreNetworkId int, startTime, endTime time.Time) ([]CoreNetworkKpi, error)
 	FindCoreNetworkStatisticData(coreNetworkId int, startTime, endTime time.Time) ([]CoreNetworkStatisticData, error)
+	FindAllCoreNetworkData() ([]CoreNetworkData, error)
+	BatchSaveCoreNetworkStatisticData(dataList []CoreNetworkStatisticData) error
 	CreateOperationLog(log *CoreNetworkOperationLog) error
 	FindOperationLogs(coreNetworkId int, offset, limit int) ([]CoreNetworkOperationLog, int64, error)
 	UpdateCoreNetworkSwitch(id int, enable bool) error
@@ -111,6 +113,24 @@ func (r *repository) FindCoreNetworkStatisticData(coreNetworkId int, startTime, 
 		return nil, err
 	}
 	return stats, nil
+}
+
+// FindAllCoreNetworkData returns all CoreNetworkData records.
+func (r *repository) FindAllCoreNetworkData() ([]CoreNetworkData, error) {
+	var dataList []CoreNetworkData
+	if err := r.db.Find(&dataList).Error; err != nil {
+		logger.Errorf("FindAllCoreNetworkData error: %v", err)
+		return nil, err
+	}
+	return dataList, nil
+}
+
+// BatchSaveCoreNetworkStatisticData saves multiple statistic data records.
+func (r *repository) BatchSaveCoreNetworkStatisticData(dataList []CoreNetworkStatisticData) error {
+	if len(dataList) == 0 {
+		return nil
+	}
+	return r.db.Create(&dataList).Error
 }
 
 // CreateOperationLog inserts a new operation log record.

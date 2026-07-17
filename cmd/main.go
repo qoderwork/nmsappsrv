@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -673,6 +674,58 @@ func main() {
 		notifyCbsdStatusToDevices(db, tr069OpSender)
 	}); err != nil {
 		logger.Errorf("failed to register cbsd-notice-device cron job: %v", err)
+	}
+
+	// CoreNetwork UE number statistic task (every 10 minutes).
+	// Mirrors Java CoreNetworkUeNumberStatisticTask.statistic().
+	// Reads IMS/SMF UE counts from CoreNetworkData and persists to core_network_statistic_data.
+	if err := mainScheduler.AddJob("corenet-ue-statistic", "0 */10 * * *", func() {
+		corenetRepo := corenet.NewRepository(db)
+		dataList, err := corenetRepo.FindAllCoreNetworkData()
+		if err != nil {
+			logger.Errorf("corenet-ue-statistic: failed to get core network data: %v", err)
+			return
+		}
+		if len(dataList) == 0 {
+			return
+		}
+		now := time.Now()
+		var stats []corenet.CoreNetworkStatisticData
+		for _, data := range dataList {
+			hasData := false
+			var imsNum, smfNum *int
+			if data.ImsUeNumber != nil && *data.ImsUeNumber != "" {
+				var ueNum struct{ Data struct{ UeNum int } `json:"data"` }
+				if json.Unmarshal([]byte(*data.ImsUeNumber), &ueNum) == nil {
+					imsNum = &ueNum.Data.UeNum
+					hasData = true
+				}
+			}
+			if data.SmfUeNumber != nil && *data.SmfUeNumber != "" {
+				var ueNum struct{ Data struct{ UeNum int } `json:"data"` }
+				if json.Unmarshal([]byte(*data.SmfUeNumber), &ueNum) == nil {
+					smfNum = &ueNum.Data.UeNum
+					hasData = true
+				}
+			}
+			if hasData {
+				stats = append(stats, corenet.CoreNetworkStatisticData{
+					CoreNetworkId: data.CoreNetworkId,
+					ImsUeNumber:   imsNum,
+					SmfUeNumber:   smfNum,
+					StatisticTime: &now,
+				})
+			}
+		}
+		if len(stats) > 0 {
+			if err := corenetRepo.BatchSaveCoreNetworkStatisticData(stats); err != nil {
+				logger.Errorf("corenet-ue-statistic: failed to save statistic data: %v", err)
+			} else {
+				logger.Infof("corenet-ue-statistic: saved %d statistic records", len(stats))
+			}
+		}
+	}); err != nil {
+		logger.Errorf("failed to register corenet-ue-statistic cron job: %v", err)
 	}
 
 	// ZTP AOS-file generation scan (Java ZTPTask, every 10s). Picks up devices
