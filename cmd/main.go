@@ -55,6 +55,7 @@ import (
 	"nmsappsrv/internal/site"
 	"nmsappsrv/internal/snmp"
 	sshmod "nmsappsrv/internal/ssh"
+	"nmsappsrv/internal/logcleanup"
 	"nmsappsrv/internal/systemsettings"
 	"nmsappsrv/internal/tcpdump"
 	"nmsappsrv/internal/tenancy"
@@ -643,15 +644,25 @@ func main() {
 		logger.Infof("device-statistic backfill complete (last 24h seeded)")
 	}()
 
-	// Login-log retention (daily at 04:10): prune login_log older than 90 days.
-	// Closes the "log cleanup" part of P1 cluster 9 (Java FileAndMysqlLogDeleteTask).
-	if err := mainScheduler.AddJob("login-log-retention", "0 10 4 * * *", func() {
-		cutoff := time.Now().AddDate(0, 0, -90)
-		if err := db.Where("operation_time < ?", cutoff).Delete("login_log").Error; err != nil {
-			logger.Errorf("login-log retention failed: %v", err)
-		}
+	// Log cleanup services.
+	settingsSvc := systemsettings.NewSystemSettingsService(db, cfg.Mail.AESKey)
+	logCleanupSvc := logcleanup.NewService(db, settingsSvc)
+
+	// FileAndMysqlLogDeleteTask (daily at 00:00): deletes expired northbound files,
+	// PM/MR/log/capture files, and MySQL records per nms_log_config settings.
+	// Mirrors Java FileAndMysqlLogDeleteTask.
+	if err := mainScheduler.AddJob("file-and-mysql-log-delete", "0 0 0 * * *", func() {
+		logCleanupSvc.FileAndMysqlLogDelete()
 	}); err != nil {
-		logger.Errorf("failed to register login-log retention cron job: %v", err)
+		logger.Errorf("failed to register file-and-mysql-log-delete cron job: %v", err)
+	}
+
+	// PlatformLogDeletetionTask (hourly): deletes platform log files older than 7 days.
+	// Mirrors Java PlatformLogDeletetionTask.
+	if err := mainScheduler.AddJob("platform-log-deletion", "0 0 * * * *", func() {
+		logCleanupSvc.PlatformLogDeletion()
+	}); err != nil {
+		logger.Errorf("failed to register platform-log-deletion cron job: %v", err)
 	}
 
 	// CBSD SAS operation-state maintainer (every 60s; Java runs every 90s).
