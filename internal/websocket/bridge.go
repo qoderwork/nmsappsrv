@@ -156,8 +156,13 @@ func (b *Bridge) consumeWebCallbackQueue(ctx context.Context) {
 		// (e.g. the operator who initiated the action), deliver only to that
 		// user's connections — mirroring Java's /websocket/{username} directed
 		// delivery. Otherwise broadcast to all (operator-wide device events).
+		// For per-user delivery, skip if the user is offline (no recent
+		// heartbeat) — mirrors Java WebCallbackConsumer.notifyAllUser which
+		// checks lastHeartbeatTime < 60s before sending.
 		if target := webCallbackTargetUser(payload); target != "" {
-			b.hub.SendToUser(target, data)
+			if b.hub.IsUserOnline(target) {
+				b.hub.SendToUser(target, data)
+			}
 		} else {
 			b.hub.BroadcastMessage(data)
 		}

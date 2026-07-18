@@ -16,18 +16,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// OnlineChecker checks whether a user is currently online via WebSocket
+// heartbeat. Implemented by websocket.Hub to avoid a circular dependency.
+type OnlineChecker interface {
+	IsUserOnline(username string) bool
+}
+
 // Handler exposes HTTP handlers for user-related endpoints.
 type Handler struct {
-	svc        Service
-	db         *gorm.DB
-	captchaMgr *captcha.Manager
+	svc            Service
+	db             *gorm.DB
+	captchaMgr     *captcha.Manager
+	onlineChecker  OnlineChecker
 }
 
 // NewHandler creates a Handler backed by a fresh Service. captchaMgr may be nil
 // (e.g. when captcha is not configured); in that case the login captcha gate is
-// skipped entirely.
-func NewHandler(db *gorm.DB, captchaMgr *captcha.Manager) *Handler {
-	return &Handler{svc: NewService(db), db: db, captchaMgr: captchaMgr}
+// skipped entirely. onlineChecker may be nil (e.g. in tests); in that case
+// LoginState is always false.
+func NewHandler(db *gorm.DB, captchaMgr *captcha.Manager, onlineChecker OnlineChecker) *Handler {
+	return &Handler{svc: NewService(db), db: db, captchaMgr: captchaMgr, onlineChecker: onlineChecker}
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +166,15 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	}
 	// Convert to DTOs to exclude sensitive fields (password, salt)
 	dtos := ToUserDTOs(data)
+	// Fill LoginState from WebSocket heartbeat (mirrors Java's
+	// lastHeartbeatTime check in SystemUserManagementServiceImpl).
+	if h.onlineChecker != nil {
+		for i := range dtos {
+			if dtos[i].Username != nil {
+				dtos[i].LoginState = h.onlineChecker.IsUserOnline(*dtos[i].Username)
+			}
+		}
+	}
 	utils.Paginated(c, dtos, total, page, pageSize)
 }
 

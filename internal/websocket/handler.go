@@ -137,6 +137,28 @@ func (h *WSHandler) readPump(client *Client) {
 			break
 		}
 
+		// Handle application-layer heartbeat (mirrors Java ResultWebSocket.onMessage
+		// "heartbeat" branch). The client sends a plain-text "heartbeat" message
+		// periodically; the server records the timestamp to track online status.
+		msgStr := strings.TrimSpace(string(message))
+		if msgStr == "heartbeat" || strings.HasPrefix(msgStr, "heartbeat") {
+			if client.username != "" {
+				h.hub.UpdateHeartbeat(client.username)
+			}
+			continue
+		}
+
+		// Handle message confirmation (mirrors Java ResultWebSocket.onMessage
+		// "confirm {messageId}" branch). The client confirms receipt of a
+		// cached message; the server removes it from the MessageCache.
+		if strings.HasPrefix(msgStr, "confirm ") {
+			messageId := strings.TrimSpace(strings.TrimPrefix(msgStr, "confirm "))
+			if messageId != "" && h.hub.messageCache != nil {
+				h.hub.messageCache.Remove(messageId)
+			}
+			continue
+		}
+
 		var cmd WSCommand
 		if err := json.Unmarshal(message, &cmd); err != nil {
 			logger.Errorf("websocket: invalid command from client %s: %v", client.id, err)

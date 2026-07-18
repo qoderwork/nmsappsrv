@@ -242,11 +242,23 @@ func main() {
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// ========== 初始化所有模块Handler ==========
+	// WebSocket Hub is created early so user.NewHandler can use it for
+	// online-status (loginState) checks.
+	wsHub := websocket.NewHub()
+	utils.SafeGo("ws-hub", func() { wsHub.Run() })
+
+	// WebSocket message cache + dispatcher for confirmed delivery with retry.
+	// Mirrors Java's MessageCache + WebSocketMessageDispatcher.
+	wsCache := websocket.NewMessageCache()
+	wsHub.SetMessageCache(wsCache)
+	wsDispatcher := websocket.NewDispatcher(wsHub, wsCache)
+	utils.SafeGo("ws-dispatcher", wsDispatcher.Start)
+
 	deviceH := device.NewHandler(db)
 	alarmH := alarm.NewHandler(db)
 	// Captcha + adaptive login risk-control (Redis is initialized above).
 	captchaMgr := captcha.NewManager(redis.RDB, cfg.Captcha.Length)
-	userH := user.NewHandler(db, captchaMgr)
+	userH := user.NewHandler(db, captchaMgr, wsHub)
 	licenseH := license.NewHandler(db, licenseEnf)
 	parameterH := parameter.NewHandler(db)
 	upgradeH := upgrade.NewHandler(db)
@@ -357,8 +369,6 @@ func main() {
 		return nil
 	})
 	// ========== WebSocket ==========
-	wsHub := websocket.NewHub()
-	utils.SafeGo("ws-hub", func() { wsHub.Run() })
 	wsH := websocket.NewWSHandler(wsHub)
 	wsBridge := websocket.NewBridge(wsHub, db)
 	mgr.Add(workerTask("ws-bridge", wsBridge.Start, wsBridge.Stop))

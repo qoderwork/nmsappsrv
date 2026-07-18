@@ -57,6 +57,10 @@ type UserDTO struct {
 	UpdateTime         *time.Time `json:"updateTime"`
 	FirstLogin         *bool      `json:"firstLogin"`
 	Roles              []string   `json:"roles,omitempty"`
+	// LoginState indicates whether the user is currently online, determined by
+	// the WebSocket heartbeat. Mirrors Java's ListUserVO.loginState derived from
+	// ResultWebSocket.lastHeartbeatTime.
+	LoginState bool `json:"loginState"`
 }
 
 // ToUserDTO converts a SysUser to a UserDTO (strips password/salt).
