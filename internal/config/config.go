@@ -353,6 +353,21 @@ func applyEnvOverrides(c *Config) {
 			c.Redis.DB = v
 		}
 	}
+	// License required flag. viper's AutomaticEnv is unreliable for nested
+	// keys during Unmarshal, so apply NMS_LICENSE_REQUIRED explicitly. This
+	// is the documented dev/test override (see config.yaml §license).
+	if v := os.Getenv("NMS_LICENSE_REQUIRED"); v != "" {
+		// Accept common truthy/falsy string forms; default to true on parse
+		// error to fail safe (license gating stays on).
+		switch strings.ToLower(v) {
+		case "false", "0", "no", "off":
+			c.License.Required = false
+		case "true", "1", "yes", "on":
+			c.License.Required = true
+		default:
+			c.License.Required = true
+		}
+	}
 }
 
 // Validate checks that all required configuration fields are set.
