@@ -460,7 +460,6 @@ func main() {
 
 	// Public routes (no auth)
 	health.RegisterPublicRoutes(router, healthH)
-	cacert.RegisterPublicRoutes(router, cacertH)
 	upgrade.RegisterPublicRoutes(router, upgradeH)
 
 	// ========== Device-facing file server (/acs-file-server/**, Basic auth) ==========

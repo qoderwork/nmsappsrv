@@ -1,7 +1,6 @@
 package filebase
 
 import (
-	"os"
 	"path/filepath"
 )
 
@@ -72,7 +71,7 @@ func (s *Service) resolveCa(fileId int) (absPath, name string, ok bool) {
 	}
 	dir := s.cfg.CaDir
 	if dir == "" {
-		dir = filepath.Join(os.TempDir(), "ca_files")
+		dir = filepath.Join(s.cfg.Root, "ca")
 	}
 	base := filepath.Base(deref(v.FileName))
 	return filepath.Join(dir, base), base, true
