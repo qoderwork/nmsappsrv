@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: nms-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: base_station
+      MYSQL_CHARSET: utf8mb4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "13306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nms-net
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: nms-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - nms-net
+
+  # NMS 后端服务
+  nmsappsrv:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nms-appsrv
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # 数据库配置
+      NMS_DB_HOST: mysql
+      NMS_DB_PORT: "3306"
+      NMS_DB_USER: root
+      NMS_DB_PASSWORD: root123456
+      NMS_DB_NAME: base_station
+      # Redis 配置
+      NMS_REDIS_HOST: redis
+      NMS_REDIS_PORT: "6379"
+      NMS_REDIS_DB: "0"
+      # JWT 密钥（生产环境请修改！）
+      NMS_JWT_SECRET: "change-me-please-this-is-a-dev-only-secret-key-1234567890"
+      # License 开关（开发测试环境可设为 false 跳过授权校验）
+      NMS_LICENSE_REQUIRED: "false"
+      # 服务模式
+      NMS_SERVER_MODE: release
+      # CORS 允许的源
+      NMS_SERVER_CORS_ALLOWED_ORIGINS: "*"
+    ports:
+      - "8080:8080"
+      - "50000:50000/udp"
+      - "10022:10022"
+    volumes:
+      - nms_data:/app/data
+      - nms_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - nms-net
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  nms_data:
+    driver: local
+  nms_logs:
+    driver: local
+
+networks:
+  nms-net:
+    driver: bridge

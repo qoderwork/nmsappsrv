@@ -1,11 +1,51 @@
+# Git
 .git
 .gitignore
-*.md
+.gitattributes
+
+# Go
 bin/
-.env
 *.exe
 *.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Logs
 *.log
-node_modules/
+logs/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Docs (非必要不打入镜像)
+docs/
+*.md
+scripts/
+scripts_gen_seeds/
+
+# Test artifacts
+coverage.out
+coverage.html
+
+# Database/data (运行时数据，不打入镜像)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker 自身
+Dockerfile
+docker-compose.yml
+.dockerignore
