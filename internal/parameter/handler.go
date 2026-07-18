@@ -262,9 +262,9 @@ func (h *Handler) DeleteParameterTemplate(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
-// DeployTemplate handles POST /parameter/templates/:templateId/deploy
+// DeployTemplate handles POST /parameter-templates/:id/deploy
 func (h *Handler) DeployTemplate(c *gin.Context) {
-	templateId, err := strconv.ParseInt(c.Param("templateId"), 10, 64)
+	templateId, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "invalid template id")
 		return
@@ -287,9 +287,9 @@ func (h *Handler) DeployTemplate(c *gin.Context) {
 	utils.Success(c, results)
 }
 
-// ListDeployTemplateLogs handles GET /parameter-templates/:templateId/deploy-logs
+// ListDeployTemplateLogs handles GET /parameter-templates/:id/deploy-logs
 func (h *Handler) ListDeployTemplateLogs(c *gin.Context) {
-	templateId, err := strconv.ParseInt(c.Param("templateId"), 10, 64)
+	templateId, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		utils.Error(c, http.StatusBadRequest, "invalid template id")
 		return
