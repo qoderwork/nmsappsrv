@@ -264,7 +264,8 @@ func (h *ACSHandler) handleInform(c *gin.Context, soapXml string, sn string, dev
 	if headerId == "" {
 		headerId = soap.GenerateHeaderID()
 	}
-	responseXml := soap.BuildInformResponse(headerId)
+	cwmpNS := soap.DetectCWMPNamespace(soapXml)
+	responseXml := soap.BuildInformResponseWithNS(headerId, cwmpNS)
 	h.sendSoapToResponse(c, responseXml)
 }
 
@@ -303,7 +304,8 @@ func (h *ACSHandler) handleReportTransmissionProgress(c *gin.Context, soapXml st
 	if headerId == "" {
 		headerId = soap.GenerateHeaderID()
 	}
-	h.sendSoapToResponse(c, soap.BuildReportTransmissionProgressResponse(headerId))
+	cwmpNS := soap.DetectCWMPNamespace(soapXml)
+	h.sendSoapToResponse(c, soap.BuildReportTransmissionProgressResponseWithNS(headerId, cwmpNS))
 }
 
 // handleGetRPCMethods processes a GetRPCMethods request from CPE.
@@ -316,7 +318,8 @@ func (h *ACSHandler) handleGetRPCMethods(c *gin.Context, soapXml string, sn stri
 	logger.Infof("received GetRPCMethods request from SN=%s, headerId=%s", sn, headerId)
 
 	// Build and send GetRPCMethodsResponse
-	responseXml := soap.BuildGetRPCMethodsResponse(headerId)
+	cwmpNS := soap.DetectCWMPNamespace(soapXml)
+	responseXml := soap.BuildGetRPCMethodsResponseWithNS(headerId, cwmpNS)
 	h.sendSoapToResponse(c, responseXml)
 }
 

@@ -347,8 +347,13 @@ var supportedRPCMethods = []string{
 
 // BuildGetRPCMethodsResponse builds a GetRPCMethodsResponse SOAP XML listing supported methods.
 func BuildGetRPCMethodsResponse(headerId string) string {
+	return BuildGetRPCMethodsResponseWithNS(headerId, CWMPNamespace1_0)
+}
+
+// BuildGetRPCMethodsResponseWithNS builds a GetRPCMethodsResponse SOAP XML with specified CWMP namespace
+func BuildGetRPCMethodsResponseWithNS(headerId string, ns string) string {
 	var b strings.Builder
-	writeSoapOpen(&b, headerId)
+	writeSoapOpenWithNS(&b, headerId, ns)
 	b.WriteString(`GetRPCMethodsResponse><MethodList soap-enc:arrayType="xsd:string[`)
 	b.WriteString(strconv.Itoa(len(supportedRPCMethods)))
 	b.WriteString(`]">`)
@@ -438,15 +443,12 @@ func BuildSoftReboot(headerId string, commandKey string) string {
 //
 // Mirrors Java NgLogProcessHandler.build().
 func BuildReportTransmissionProgressResponse(headerId string) string {
+	return BuildReportTransmissionProgressResponseWithNS(headerId, CWMPNamespace1_0)
+}
+
+func BuildReportTransmissionProgressResponseWithNS(headerId string, ns string) string {
 	var b strings.Builder
-	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
-	b.WriteString(`<soap:Envelope`)
-	b.WriteString(` xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"`)
-	b.WriteString(` xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/"`)
-	b.WriteString(` xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"`)
-	b.WriteString(` xmlns:xsd="http://www.w3.org/2001/XMLSchema"`)
-	b.WriteString(` xmlns:cwmp="urn:dslforum-org:cwmp-1-0">`)
-	b.WriteString(`<soap:Header><cwmp:ID>`)
+	b.WriteString(soapHeaderWithNS(ns))
 	b.WriteString(EscapeXML(headerId))
 	b.WriteString(`</cwmp:ID></soap:Header>`)
 	b.WriteString(`<soap:Body>`)

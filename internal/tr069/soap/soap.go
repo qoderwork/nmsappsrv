@@ -6,8 +6,38 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+const (
+	CWMPNamespace1_0 = "urn:dslforum-org:cwmp-1-0"
+	CWMPNamespace1_2 = "urn:dslforum-org:cwmp-1-2"
+)
+
+var (
+	defaultCWMPNsMu sync.RWMutex
+	defaultCWMPNs   = CWMPNamespace1_0
+)
+
+func GetDefaultCWMPNamespace() string {
+	defaultCWMPNsMu.RLock()
+	defer defaultCWMPNsMu.RUnlock()
+	return defaultCWMPNs
+}
+
+func SetDefaultCWMPNamespace(ns string) {
+	defaultCWMPNsMu.Lock()
+	defer defaultCWMPNsMu.Unlock()
+	defaultCWMPNs = ns
+}
+
+func DetectCWMPNamespace(xmlStr string) string {
+	if strings.Contains(xmlStr, CWMPNamespace1_2) {
+		return CWMPNamespace1_2
+	}
+	return CWMPNamespace1_0
+}
 
 // CWMP data structures
 
@@ -305,8 +335,25 @@ const (
 	soapFooter    = `</soap:Body></soap:Envelope>`
 )
 
+func soapHeaderWithNS(ns string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<soap:Envelope` +
+		` xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"` +
+		` xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/"` +
+		` xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"` +
+		` xmlns:xsd="http://www.w3.org/2001/XMLSchema"` +
+		` xmlns:cwmp="` + ns + `">` +
+		`<soap:Header><cwmp:ID>`
+}
+
 func writeSoapOpen(b *strings.Builder, headerId string) {
 	b.WriteString(soapHeader1)
+	b.WriteString(EscapeXML(headerId))
+	b.WriteString(soapHeaderEnd)
+}
+
+func writeSoapOpenWithNS(b *strings.Builder, headerId string, ns string) {
+	b.WriteString(soapHeaderWithNS(ns))
 	b.WriteString(EscapeXML(headerId))
 	b.WriteString(soapHeaderEnd)
 }
@@ -320,15 +367,13 @@ func writeSoapClose(b *strings.Builder, method string) {
 
 // BuildFaultResponse builds Fault response SOAP XML
 func BuildFaultResponse(headerId string, faultCode int, faultString string) string {
+	return BuildFaultResponseWithNS(headerId, faultCode, faultString, CWMPNamespace1_0)
+}
+
+// BuildFaultResponseWithNS builds Fault response SOAP XML with specified CWMP namespace
+func BuildFaultResponseWithNS(headerId string, faultCode int, faultString string, ns string) string {
 	var b strings.Builder
-	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
-	b.WriteString(`<soap:Envelope`)
-	b.WriteString(` xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"`)
-	b.WriteString(` xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/"`)
-	b.WriteString(` xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"`)
-	b.WriteString(` xmlns:xsd="http://www.w3.org/2001/XMLSchema"`)
-	b.WriteString(` xmlns:cwmp="urn:dslforum-org:cwmp-1-0">`)
-	b.WriteString(`<soap:Header><cwmp:ID>`)
+	b.WriteString(soapHeaderWithNS(ns))
 	b.WriteString(EscapeXML(headerId))
 	b.WriteString(`</cwmp:ID></soap:Header>`)
 	b.WriteString(`<soap:Body>`)

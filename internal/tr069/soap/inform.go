@@ -64,8 +64,13 @@ func ParseInform(xmlStr string) (*Inform, error) {
 
 // BuildInformResponse builds InformResponse SOAP XML
 func BuildInformResponse(headerId string) string {
+	return BuildInformResponseWithNS(headerId, CWMPNamespace1_0)
+}
+
+// BuildInformResponseWithNS builds InformResponse SOAP XML with specified CWMP namespace
+func BuildInformResponseWithNS(headerId string, ns string) string {
 	var b strings.Builder
-	writeSoapOpen(&b, headerId)
+	writeSoapOpenWithNS(&b, headerId, ns)
 	b.WriteString(`InformResponse><MaxEnvelopes>1</MaxEnvelopes>`)
 	writeSoapClose(&b, "InformResponse")
 	return b.String()
