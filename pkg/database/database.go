@@ -2,6 +2,8 @@ package database
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"nmsappsrv/pkg/logger"
@@ -67,6 +69,15 @@ func Init(cfg Config) (*gorm.DB, error) {
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(logLevel),
+		//Logger: gormlogger.New(
+		//	log.New(os.Stdout, "", log.LstdFlags),
+		//	gormlogger.Config{
+		//		SlowThreshold:             200 * time.Millisecond,
+		//		LogLevel:                  logLevel,
+		//		IgnoreRecordNotFoundError: true, // Java/Hibernate 查不到记录只返回 null，不刷日志
+		//		Colorful:                  false,
+		//	},
+		//),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect database: %w", err)

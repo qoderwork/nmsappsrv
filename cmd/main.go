@@ -1070,7 +1070,7 @@ func notifyCbsdStatusToDevices(db *gorm.DB, opSender *tr069.OperationSender) {
 		cbsdInfoForNotice
 	}
 	if err := db.Table("cbsd_info").
-		Where("serial_number IS NOT NULL AND serial_number <> '' AND deleted = ?", false).
+		Where("serial_number IS NOT NULL AND serial_number <> ''").
 		Select("serial_number, license_id, cbsd_serial_number, operation_state, low_frequency, high_frequency, transmit_expire_time, max_eirp, path_loss, antenna_gain").
 		Scan(&rows).Error; err != nil {
 		logger.Errorf("cbsd-notice-device: failed to scan cbsd_info: %v", err)

@@ -96,8 +96,14 @@ func (t *Thread) ScanAndProcess(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("load ztp setting: %w", err)
 	}
+	// Java behavior (GenerateZTPFileThread.run): when validateZTPSettings
+	// fails it generates a ZTP-setting alarm and `continue`s the loop
+	// WITHOUT logging an error. Mirror that here — return (0, nil) so the
+	// caller does not print an ERROR every tick (this job runs every 30s).
+	// The detail is surfaced via debug logging only.
 	if msg := validateZTPSettings(setting); msg != nil {
-		return 0, fmt.Errorf("ztp setting invalid: %s", *msg)
+		logger.Debugf("ztp-external-gen: setting invalid, skipping scan: %s", *msg)
+		return 0, nil
 	}
 	cfg := external.FromZTPSetting(setting)
 	reg := external.NewRegistryWithTransports(cfg, t.transports)
