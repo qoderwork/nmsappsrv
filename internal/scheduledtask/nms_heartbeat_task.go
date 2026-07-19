@@ -57,22 +57,24 @@ func (t *NMSHeartbeatTask) SendHeartbeat() {
 
 // sendHeartbeatForLicense 为指定License发送心跳
 func (t *NMSHeartbeatTask) sendHeartbeatForLicense(licenseId int, omcName *string, enterpriseOID uint32, nmsIP, nmsHostname string) {
-	// 检查是否有alarm_trap类型的north_report
-	var northReports []struct {
-		Id        int    `gorm:"column:id"`
-		ServerUrl string `gorm:"column:server_url"`
-		Port      int    `gorm:"column:port"`
-		Community string `gorm:"column:community"`
+	// 查询该 license 下 task_type=alarm_trap 且 task_state=true 的 north_report
+	// 记录。Java 的 NorthReport 实体没有 port/community 字段 — 完整连接信息
+	// 编码在 server_url 字段里（snmp://... 格式），通过 ParseConnectionURL 解析。
+	// 这里直接读取 north_report 行，再用 snmp.ParseConnectionURL 解析 server_url，
+	// 对齐 Java NMSHeartbeatTask + AlarmGeneratedPostprocessor.getConnectionInfo。
+	var reports []struct {
+		Id        int     `gorm:"column:id"`
+		ServerUrl *string `gorm:"column:server_url"`
 	}
 	if err := t.db.Table("north_report").
-		Select("id, server_url, port, community").
+		Select("id, server_url").
 		Where("license_id = ? AND task_type = ? AND task_state = ?", licenseId, "alarm_trap", true).
-		Find(&northReports).Error; err != nil {
+		Find(&reports).Error; err != nil {
 		logger.Errorf("NMSHeartbeatTask: failed to query north_report for license %d: %v", licenseId, err)
 		return
 	}
 
-	if len(northReports) == 0 {
+	if len(reports) == 0 {
 		return
 	}
 
@@ -110,20 +112,19 @@ func (t *NMSHeartbeatTask) sendHeartbeatForLicense(licenseId int, omcName *strin
 	}
 	params = append([]snmp.SnmpParameter{trapMarker}, params...)
 
-	// 对每个north_report发送trap
-	for _, report := range northReports {
-		connInfo := snmp.SnmpConnectionInfo{
-			IP:        report.ServerUrl,
-			Port:      report.Port,
-			Version:   2, // v2c
-			Community: report.Community,
+	// 对每个 north_report 解析 server_url 后发送 trap
+	for _, report := range reports {
+		if report.ServerUrl == nil || *report.ServerUrl == "" {
+			continue
+		}
+		connInfo, err := snmp.ParseConnectionURL(*report.ServerUrl)
+		if err != nil {
+			logger.Errorf("NMSHeartbeatTask: failed to parse server_url %q for license %d: %v",
+				*report.ServerUrl, licenseId, err)
+			continue
 		}
 
-		if connInfo.Port == 0 {
-			connInfo.Port = 162 // 默认SNMP trap端口
-		}
-
-		if err := snmp.SendTrap(connInfo, params); err != nil {
+		if err := snmp.SendTrap(*connInfo, params); err != nil {
 			logger.Errorf("NMSHeartbeatTask: failed to send trap to %s:%d for license %d: %v",
 				connInfo.IP, connInfo.Port, licenseId, err)
 			continue

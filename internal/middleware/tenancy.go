@@ -1,16 +1,50 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/utils"
 )
 
+// publicPathPrefixes lists path prefixes that bypass TenancyMiddleware.
+// These are the device-facing / infra endpoints that have no per-tenant
+// context and must remain reachable without a license_id (e.g. Docker
+// healthcheck hitting /health every 30s). Mirrors Java's
+// LicenseCheckInterceptor exclude list + Spring Security permitAll paths.
+var publicPathPrefixes = []string{
+	"/health",
+	"/ready",
+	"/metrics",
+	"/swagger",
+	"/acs-file-server/", // device-facing file server (Basic auth)
+	"/ws",               // WebSocket handshake (token-bound)
+	"/webssh",           // WebSSH
+}
+
+// isPublicPath returns true if the path matches a public prefix.
+func isPublicPath(path string) bool {
+	for _, p := range publicPathPrefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // TenancyMiddleware extracts license_id and tenancy_id from request headers
 // or JWT context, and sets tenancy_id in gin.Context for downstream handlers.
+// Public paths (health, metrics, swagger, device-facing file server, etc.)
+// bypass this check entirely — they have no per-tenant context.
 func TenancyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isPublicPath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+
 		// Extract license_id: header first, then JWT context
 		licenseID := c.GetHeader("X-License-Id")
 		if licenseID == "" {

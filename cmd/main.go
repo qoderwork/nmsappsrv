@@ -863,7 +863,7 @@ func main() {
 	// CBSD result task (every 2 minutes) — mirrors Java CBSDResultTask.noticeDevice.
 	// Scans online devices with CBSD records and pushes UpdateCBSDStatus SOAP to
 	// notify each CPE of its CBSDs' current SAS state (AUTHORIZED/GRANTED/REGISTERED...).
-	if err := mainScheduler.AddJob("cbsd-notice-device", "0 */2 * * *", func() {
+	if err := mainScheduler.AddJob("cbsd-notice-device", "0 */2 * * * *", func() {
 		notifyCbsdStatusToDevices(db, tr069OpSender)
 	}); err != nil {
 		logger.Errorf("failed to register cbsd-notice-device cron job: %v", err)
@@ -872,7 +872,7 @@ func main() {
 	// CoreNetwork UE number statistic task (every 10 minutes).
 	// Mirrors Java CoreNetworkUeNumberStatisticTask.statistic().
 	// Reads IMS/SMF UE counts from CoreNetworkData and persists to core_network_statistic_data.
-	if err := mainScheduler.AddJob("corenet-ue-statistic", "0 */10 * * *", func() {
+	if err := mainScheduler.AddJob("corenet-ue-statistic", "0 */10 * * * *", func() {
 		corenetRepo := corenet.NewRepository(db)
 		dataList, err := corenetRepo.FindAllCoreNetworkData()
 		if err != nil {

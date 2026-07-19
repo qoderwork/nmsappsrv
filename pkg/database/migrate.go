@@ -21,6 +21,7 @@ import (
 	"nmsappsrv/internal/pm"
 	"nmsappsrv/internal/pmfile"
 	"nmsappsrv/internal/restapi"
+	"nmsappsrv/internal/reset"
 	"nmsappsrv/internal/site"
 	sshmod "nmsappsrv/internal/ssh"
 	"nmsappsrv/internal/snmp"
@@ -218,6 +219,15 @@ func AutoMigrateAll(db *gorm.DB) error {
 		// pmfile (2)
 		&pmfile.PMFile{},
 		&pmfile.PMKPIMeasurement{},
+
+		// reset (1) — ResetTask table for scheduled factory-reset jobs
+		// (mirrors Java ResetTask entity). TaskToEventLog is shared with
+		// eventlog and already registered there.
+		&reset.ResetTask{},
+
+		// pm replenish task (1) — mirrors Java PMReplenishTask. The
+		// replenish worker reads pending tasks by status IN (1,2).
+		&pm.PMReplenishTask{},
 	}
 
 	logger.Infof("auto migrating %d model tables...", len(models))

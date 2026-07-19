@@ -6,6 +6,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app
 
+ENV GOPROXY=https://goproxy.cn,direct
+ENV CGO_ENABLED=0
+
 # 复制 go.mod 和 go.sum 并下载依赖（利用缓存
 COPY go.mod go.sum ./
 RUN go mod download

@@ -29,8 +29,8 @@ logs/
 .env.*
 !.env.example
 
-# Docs (非必要不打入镜像)
-docs/
+# Docs: *.md 不打入镜像，但 docs/ 目录必须保留 — cmd/main.go 的
+# `_ "nmsappsrv/docs"` import 在编译期需要 docs.go（含 swag 注册的 init()）。
 *.md
 scripts/
 scripts_gen_seeds/
