@@ -469,15 +469,24 @@ func main() {
 	// ========== Java-compatible permission endpoints (v2 prefix) ==========
 	// Mirrors nms-serv RoleManagementServiceImpl.getPermissionIdsForUser /
 	// getPermission so the frontend permission tree keeps working.
+	//
+	// Split into two groups to match Java InterceptorConfig semantics:
+	//   - v2Public:  requires auth but NO license check (excludePathPatterns)
+	//   - v2:        requires auth + license check (default interceptor)
+	v2Public := router.Group("/api/v2")
+	v2Public.Use(middleware.AuthMiddleware())
+	{
+		// Java InterceptorConfig excludePathPatterns — no license check:
+		v2Public.GET("/getPermissionIdsForUser", authz.GetPermissionIdsForUser)
+		v2Public.POST("/updateNorthBoundConfig", systemsettingsH.UpdateNorthBoundConfig)
+	}
 	v2 := router.Group("/api/v2")
 	v2.Use(middleware.AuthMiddleware())
 	v2.Use(middleware.LicenseMiddleware(licenseEnf))
 	{
-		v2.GET("/getPermissionIdsForUser", authz.GetPermissionIdsForUser)
 		v2.GET("/getPermission", authz.GetPermission)
-		// NorthBoundConfig (ABSENT backfill #3) — exact Java URLs for drop-in compat.
+		// NorthBoundConfig — GET requires license; POST is excluded above.
 		v2.GET("/getNorthBoundConfig", systemsettingsH.GetNorthBoundConfig)
-		v2.POST("/updateNorthBoundConfig", systemsettingsH.UpdateNorthBoundConfig)
 		// NorthInterfaceLog query (ABSENT backfill #4) — exact Java URL.
 		v2.POST("/listNorthInterfaceLog", northLogH.ListLogs)
 	}

@@ -28,7 +28,7 @@ func LicenseMiddleware(gate LicenseGate) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		utils.Error(c, http.StatusForbidden, "service requires a valid license")
+		utils.Error(c, http.StatusForbidden, "NMS License expired")
 		c.Abort()
 	}
 }

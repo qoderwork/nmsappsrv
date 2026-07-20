@@ -9,11 +9,8 @@ import (
 	"nmsappsrv/pkg/utils"
 )
 
-// publicPathPrefixes lists path prefixes that bypass TenancyMiddleware.
-// These are the device-facing / infra endpoints that have no per-tenant
-// context and must remain reachable without a license_id (e.g. Docker
-// healthcheck hitting /health every 30s). Mirrors Java's
-// LicenseCheckInterceptor exclude list + Spring Security permitAll paths.
+// publicPathPrefixes lists path prefixes that bypass TenancyMiddleware
+// via prefix matching (e.g. /acs-file-server/ matches all sub-paths).
 var publicPathPrefixes = []string{
 	"/health",
 	"/ready",
@@ -24,10 +21,33 @@ var publicPathPrefixes = []string{
 	"/webssh",           // WebSSH
 }
 
-// isPublicPath returns true if the path matches a public prefix.
+// publicExactPaths lists paths that bypass TenancyMiddleware via exact
+// matching. Mirrors Java InterceptorConfig.excludePathPatterns
+// (LicenseCheckInterceptor bypass) + Spring Security permitAll paths.
+var publicExactPaths = []string{
+	"/api/v1/login",
+	"/api/v1/logout",
+	"/api/v1/captchaImage",
+	"/api/v1/users/login-failed-times",
+	"/api/v1/users/need-change-password",
+	"/api/v1/users/reset-password-by-link",
+	"/api/v2/getLicenseInfo",
+	"/api/v2/uploadLicenseFile",
+	"/api/v2/getPermissionIdsForUser",
+	"/api/v2/getLogo",
+	"/api/v2/caFile/list",
+	"/api/v2/downloadPasswordRSAPublicKey",
+}
+
+// isPublicPath returns true if the path matches a public prefix or exact path.
 func isPublicPath(path string) bool {
 	for _, p := range publicPathPrefixes {
 		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	for _, p := range publicExactPaths {
+		if path == p {
 			return true
 		}
 	}

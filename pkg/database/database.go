@@ -2,8 +2,6 @@ package database
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"nmsappsrv/pkg/logger"

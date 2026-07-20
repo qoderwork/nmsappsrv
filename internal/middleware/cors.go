@@ -7,20 +7,26 @@ import (
 )
 
 // CORSMiddleware handles Cross-Origin Resource Sharing.
-// If allowedOrigins is empty, all origins are allowed (development mode).
+// If allowedOrigins is empty or contains "*", all origins are allowed.
 // In production, pass a specific list of allowed origins from config.
 func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
+	// "*" as a list element means allow all origins (common convention
+	// for env-var override like NMS_SERVER_CORS_ALLOWED_ORIGINS="*").
+	allowAll := len(allowedOrigins) == 0
 	originSet := make(map[string]bool, len(allowedOrigins))
 	for _, o := range allowedOrigins {
-		originSet[o] = true
+		if o == "*" {
+			allowAll = true
+		} else {
+			originSet[o] = true
+		}
 	}
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 
 		allowed := false
-		if len(allowedOrigins) == 0 {
-			// Dev mode: allow all
+		if allowAll {
 			allowed = true
 			c.Header("Access-Control-Allow-Origin", "*")
 		} else if originSet[origin] {

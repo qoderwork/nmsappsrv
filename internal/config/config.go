@@ -368,6 +368,24 @@ func applyEnvOverrides(c *Config) {
 			c.License.Required = true
 		}
 	}
+
+	// CORS allowed origins override. viper's AutomaticEnv treats comma-
+	// separated env values as slices, but a single "*" should mean "allow
+	// all origins". Apply NMS_SERVER_CORS_ALLOWED_ORIGINS explicitly so
+	// the Docker Compose env var works reliably.
+	if v := os.Getenv("NMS_SERVER_CORS_ALLOWED_ORIGINS"); v != "" {
+		parts := strings.Split(v, ",")
+		origins := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				origins = append(origins, p)
+			}
+		}
+		if len(origins) > 0 {
+			c.Server.CORSAllowedOrigins = origins
+		}
+	}
 }
 
 // Validate checks that all required configuration fields are set.
