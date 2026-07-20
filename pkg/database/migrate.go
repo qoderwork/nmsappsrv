@@ -69,7 +69,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&corenet.CoreNetworkStatisticData{},
 		&corenet.CoreNetworkData{},
 
-		// parameter (8)
+		// parameter (10)
 		&parameter.Parameter{},
 		&parameter.ParameterAttributes{},
 		&parameter.ParameterLog{},
@@ -78,6 +78,8 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&parameter.ParameterSetHasParameter{},
 		&parameter.ParameterTemplate{},
 		&parameter.ParameterTemplateHasParameter{},
+		&parameter.ParameterDeploymentTemplate{},
+		&parameter.ParameterDeploymentTemplateHasElement{},
 
 		// upgrade (10)
 		&upgrade.UpgradeTask{},

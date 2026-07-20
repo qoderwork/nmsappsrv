@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"nmsappsrv/internal/tr069"
 	"nmsappsrv/internal/tr069/soap"
@@ -14,22 +13,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// AlarmSyncTask 告警同步定时任务
-// 镜像 Java AlarmSyncTaskJob
-// 对在线 enb 设备通过 SPV 设置 Device.FAP.Service.Status.AlarmSync=1 触发设备上报告警
 type AlarmSyncTask struct {
 	db       *gorm.DB
 	opSender *tr069.OperationSender
 }
 
-// alarmSyncConfigRow 对应 system_config 表中 alarm_sync_config 的结构
-type alarmSyncConfigRow struct {
-	Enabled      *bool   `json:"enabled"`
-	SyncInterval *int    `json:"syncInterval"`
-	LastSyncTime *string `json:"lastSyncTime"`
+type alarmSyncConfig struct {
+	Enable *bool `json:"enable"`
+	Period *int  `json:"period"`
 }
 
-// NewAlarmSyncTask 创建 AlarmSyncTask 实例
 func NewAlarmSyncTask(db *gorm.DB, opSender *tr069.OperationSender) *AlarmSyncTask {
 	return &AlarmSyncTask{
 		db:       db,
@@ -37,25 +30,35 @@ func NewAlarmSyncTask(db *gorm.DB, opSender *tr069.OperationSender) *AlarmSyncTa
 	}
 }
 
-// SyncAlarms 执行告警同步
-// 1. 读取 alarm_sync_config 配置，检查是否启用
-// 2. 查询所有在线的 enb 设备
-// 3. 对在线设备下发 AlarmSync 参数（SPV 设置 Device.FAP.Service.Status.AlarmSync=1）
-// 4. 使用限流控制下发速率（Java 使用 RateLimiter(14)）
 func (t *AlarmSyncTask) SyncAlarms() {
 	ctx := context.Background()
 
-	// 1. 读取 alarm_sync_config 配置
-	config := t.loadAlarmSyncConfig()
-	if config == nil {
-		logger.Warnf("AlarmSyncTask: no alarm_sync_config found, skipping")
-		return
+	type tenancyRow struct {
+		Id int `gorm:"column:id"`
 	}
-	if config.Enabled != nil && !*config.Enabled {
+	var tenancies []tenancyRow
+	if err := t.db.Table("license").Select("id").Find(&tenancies).Error; err != nil {
+		logger.Errorf("AlarmSyncTask: query tenancies failed: %v", err)
 		return
 	}
 
-	// 2. 查询所有在线的 enb 设备
+	totalSynced := 0
+	for _, tenancy := range tenancies {
+		config := t.loadAlarmSyncConfig(tenancy.Id)
+		if config.Enable != nil && !*config.Enable {
+			continue
+		}
+
+		syncCount := t.syncAlarmsForTenancy(ctx, tenancy.Id)
+		totalSynced += syncCount
+	}
+
+	if totalSynced > 0 {
+		logger.Infof("AlarmSyncTask: synced alarms for %d enb devices across %d tenancies", totalSynced, len(tenancies))
+	}
+}
+
+func (t *AlarmSyncTask) syncAlarmsForTenancy(ctx context.Context, tenancyId int) int {
 	type enbElementRow struct {
 		NeNeid       int64  `gorm:"column:ne_neid"`
 		SerialNumber string `gorm:"column:serial_number"`
@@ -63,19 +66,16 @@ func (t *AlarmSyncTask) SyncAlarms() {
 	var elements []enbElementRow
 	if err := t.db.Table("cpe_element").
 		Select("ne_neid, serial_number").
-		Where("deleted = ? AND serial_number IS NOT NULL AND serial_number != '' AND device_type = ?", false, "enb").
+		Where("deleted = ? AND serial_number IS NOT NULL AND serial_number != '' AND device_type = ? AND tenancy_id = ?", false, "enb", tenancyId).
 		Find(&elements).Error; err != nil {
-		logger.Errorf("AlarmSyncTask: query enb devices failed: %v", err)
-		return
+		logger.Errorf("AlarmSyncTask: query enb devices for tenancy %d failed: %v", tenancyId, err)
+		return 0
 	}
 
 	if len(elements) == 0 {
-		return
+		return 0
 	}
 
-	// 3. 对在线设备下发 AlarmSync 参数，限流控制
-	// Java 使用 RateLimiter(14)，即每秒最多 14 个请求
-	// 使用带缓冲的 channel 模拟限流
 	rateLimiter := make(chan struct{}, 14)
 	syncCount := 0
 
@@ -83,17 +83,22 @@ func (t *AlarmSyncTask) SyncAlarms() {
 		elementId := elem.NeNeid
 		sn := elem.SerialNumber
 
-		// 检查在线状态
 		onlineKey := fmt.Sprintf("online_%d", elementId)
 		onlineVal, err := redis.Get(ctx, onlineKey)
 		if err != nil || onlineVal != "yes" {
 			continue
 		}
 
-		// 限流
+		var blackListCount int64
+		t.db.Table("element_black_list").
+			Where("sn = ?", sn).
+			Count(&blackListCount)
+		if blackListCount > 0 {
+			continue
+		}
+
 		rateLimiter <- struct{}{}
 
-		// 下发 AlarmSync 参数
 		params := []soap.ParameterValueStruct{
 			{Name: "Device.FAP.Service.Status.AlarmSync", Value: "1", Type: "xsd:string"},
 		}
@@ -108,58 +113,48 @@ func (t *AlarmSyncTask) SyncAlarms() {
 		<-rateLimiter
 	}
 
-	// 4. 更新最后同步时间
-	if syncCount > 0 {
-		t.updateLastSyncTime()
-		logger.Infof("AlarmSyncTask: synced alarms for %d enb devices", syncCount)
-	}
+	return syncCount
 }
 
-// loadAlarmSyncConfig 从 system_config 表读取告警同步配置
-func (t *AlarmSyncTask) loadAlarmSyncConfig() *alarmSyncConfigRow {
+func (t *AlarmSyncTask) loadAlarmSyncConfig(tenancyId int) *alarmSyncConfig {
+	configKey := fmt.Sprintf("alarm_sync_%d", tenancyId)
+
 	var configStr *string
 	if err := t.db.Table("system_config").
 		Select("config").
-		Where("id = ?", "alarm_sync_config").
+		Where("id = ?", configKey).
 		Scan(&configStr).Error; err != nil {
-		logger.Errorf("AlarmSyncTask: failed to load alarm_sync_config: %v", err)
-		return nil
+		logger.Warnf("AlarmSyncTask: failed to load %s, using defaults: %v", configKey, err)
+		return t.defaultConfig()
 	}
 
 	if configStr == nil || *configStr == "" {
-		return nil
+		return t.defaultConfig()
 	}
 
-	var cfg alarmSyncConfigRow
+	var cfg alarmSyncConfig
 	if err := json.Unmarshal([]byte(*configStr), &cfg); err != nil {
-		logger.Errorf("AlarmSyncTask: failed to unmarshal alarm_sync_config: %v", err)
-		return nil
+		logger.Errorf("AlarmSyncTask: failed to unmarshal %s, using defaults: %v", configKey, err)
+		return t.defaultConfig()
+	}
+
+	if cfg.Enable == nil {
+		enable := true
+		cfg.Enable = &enable
+	}
+	if cfg.Period == nil || *cfg.Period <= 0 {
+		period := 60
+		cfg.Period = &period
 	}
 
 	return &cfg
 }
 
-// updateLastSyncTime 更新告警同步的最后同步时间
-func (t *AlarmSyncTask) updateLastSyncTime() {
-	// 读取当前配置
-	cfg := t.loadAlarmSyncConfig()
-	if cfg == nil {
-		return
-	}
-
-	now := time.Now().Format("2006-01-02 15:04:05")
-	cfg.LastSyncTime = &now
-
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		logger.Errorf("AlarmSyncTask: failed to marshal alarm_sync_config: %v", err)
-		return
-	}
-
-	configStr := string(data)
-	if err := t.db.Table("system_config").
-		Where("id = ?", "alarm_sync_config").
-		Update("config", configStr).Error; err != nil {
-		logger.Errorf("AlarmSyncTask: failed to update last sync time: %v", err)
+func (t *AlarmSyncTask) defaultConfig() *alarmSyncConfig {
+	enable := true
+	period := 60
+	return &alarmSyncConfig{
+		Enable: &enable,
+		Period: &period,
 	}
 }

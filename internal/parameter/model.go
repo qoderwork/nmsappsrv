@@ -195,6 +195,35 @@ type ParameterTemplateDetailVo struct {
 	Parameters  []TemplateParameterVo `json:"parameters"`
 }
 
+// ParameterDeploymentTemplate 对应 parameter_deployment_template 表 (对齐Java ParameterDeploymentTemplate)
+type ParameterDeploymentTemplate struct {
+	Id           int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	TemplateName *string    `gorm:"column:template_name;type:varchar(255)" json:"templateName"`
+	Scope        *string    `gorm:"column:scope;type:varchar(255)" json:"scope"`
+	DeviceGroupIds *string  `gorm:"column:device_group_ids;type:longtext" json:"deviceGroupIds"`
+	ElementIds   *string    `gorm:"column:element_ids;type:longtext" json:"elementIds"`
+	Parameters   *string    `gorm:"column:parameters;type:longtext" json:"parameters"`
+	NeedReboot   *bool      `gorm:"column:need_reboot" json:"needReboot"`
+	TenancyId    *int       `gorm:"column:tenancy_id" json:"tenancyId"`
+	CreateTime   *time.Time `gorm:"column:create_time" json:"createTime"`
+	UpdateTime   *time.Time `gorm:"column:update_time" json:"updateTime"`
+	CreateUser   *string    `gorm:"column:create_user;type:varchar(255)" json:"createUser"`
+	UpdateUser   *string    `gorm:"column:update_user;type:varchar(255)" json:"updateUser"`
+}
+
+func (ParameterDeploymentTemplate) TableName() string { return "parameter_deployment_template" }
+
+// ParameterDeploymentTemplateHasElement 对应 parameter_deployment_template_has_element 表
+type ParameterDeploymentTemplateHasElement struct {
+	Id         int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	TemplateId *int64 `gorm:"column:template_id" json:"templateId"`
+	ElementId  *int64 `gorm:"column:element_id" json:"elementId"`
+}
+
+func (ParameterDeploymentTemplateHasElement) TableName() string {
+	return "parameter_deployment_template_has_element"
+}
+
 type ParameterDeploymentLog struct {
 	Id            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	TemplateId    *int64     `gorm:"column:template_id" json:"template_id"`
