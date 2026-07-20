@@ -91,8 +91,8 @@ func (h *Handler) Login(c *gin.Context) {
 		h.captchaMgr.OnSuccess(req.Username, ip)
 	}
 
-	licenseId := 0
-	if u.LicenseId != nil {
+	licenseId := 1 // default license ID
+	if u.LicenseId != nil && *u.LicenseId > 0 {
 		licenseId = *u.LicenseId
 	}
 
@@ -257,9 +257,24 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Set creator
+	// Set creator and license (tenancy) — mirrors Java SecurityUtil.getTenancyId()
+	// Admin/Operator roles are not restricted by tenancy isolation (returns null in Java)
 	creatorId := middleware.GetUserId(c)
 	u.CreateUserId = &creatorId
+	roleNames := middleware.GetRoleNames(c)
+	isAdminOrOperator := false
+	for _, r := range roleNames {
+		if strings.EqualFold(r, "admin") || strings.EqualFold(r, "operator") {
+			isAdminOrOperator = true
+			break
+		}
+	}
+	if !isAdminOrOperator {
+		licenseId := middleware.GetLicenseId(c)
+		if licenseId > 0 {
+			u.LicenseId = &licenseId
+		}
+	}
 
 	password, err := h.svc.CreateUser(&u)
 	if err != nil {

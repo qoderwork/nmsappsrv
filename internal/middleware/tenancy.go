@@ -59,6 +59,26 @@ func isPublicPath(path string) bool {
 	return false
 }
 
+// extractLicenseIDFromJWT parses the JWT from Authorization header and
+// extracts the license_id claim. Used by TenancyMiddleware when neither
+// X-License-Id header nor gin context (set by AuthMiddleware) is available.
+func extractLicenseIDFromJWT(c *gin.Context) int {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return 0
+	}
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return 0
+	}
+	tokenString := strings.TrimSpace(parts[1])
+	claims, err := ValidateToken(tokenString)
+	if err != nil {
+		return 0
+	}
+	return claims.LicenseID
+}
+
 // TenancyMiddleware extracts license_id and tenancy_id from request headers
 // or JWT context, and sets tenancy_id in gin.Context for downstream handlers.
 // Public paths (health, metrics, swagger, device-facing file server, etc.)
@@ -70,7 +90,7 @@ func TenancyMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Extract license_id: header first, then JWT context
+		// Extract license_id: header first, then JWT context, then JWT from Authorization header
 		licenseIDStr := c.GetHeader("X-License-Id")
 		var licenseID int
 		if licenseIDStr == "" {
@@ -82,6 +102,11 @@ func TenancyMiddleware() gin.HandlerFunc {
 				case float64:
 					licenseID = int(v)
 				}
+			}
+			// If AuthMiddleware hasn't run yet (e.g. global middleware order),
+			// parse JWT directly from Authorization header
+			if licenseID <= 0 {
+				licenseID = extractLicenseIDFromJWT(c)
 			}
 		} else {
 			// Handle "default" as special case (maps to ID 1)
