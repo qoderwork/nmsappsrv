@@ -7,7 +7,7 @@ import (
 	"nmsappsrv/pkg/utils"
 )
 
-// GetPermissionIdsForUser handles GET /api/v2/getPermissionIdsForUser.
+// GetPermissionIdsForUser handles GET /api/v1/auth/permissions/user-ids.
 // It returns the effective permission ids for the currently authenticated
 // user, mirroring Java RoleManagementServiceImpl.getPermissionIdsForUser.
 func GetPermissionIdsForUser(c *gin.Context) {
@@ -16,7 +16,7 @@ func GetPermissionIdsForUser(c *gin.Context) {
 	utils.Success(c, vo)
 }
 
-// GetPermission handles GET /api/v2/getPermission.
+// GetPermission handles GET /api/v1/auth/permissions.
 // It returns the full permission registry (the permission tree the frontend
 // uses to render the role-permission matrix), mirroring Java
 // RoleManagementServiceImpl.getPermission.

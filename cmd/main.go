@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"nmsappsrv/internal/alarm"
@@ -30,6 +31,7 @@ import (
 	"nmsappsrv/internal/heartbeat"
 	"nmsappsrv/internal/initserver"
 	"nmsappsrv/internal/license"
+	"nmsappsrv/internal/logcleanup"
 	"nmsappsrv/internal/mail"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/internal/misc"
@@ -47,18 +49,17 @@ import (
 	"nmsappsrv/internal/platform"
 	"nmsappsrv/internal/pm"
 	"nmsappsrv/internal/pmfile"
+	"nmsappsrv/internal/pmstatistic"
 	"nmsappsrv/internal/reboot"
 	"nmsappsrv/internal/reset"
 	"nmsappsrv/internal/resources"
 	"nmsappsrv/internal/restapi"
+	"nmsappsrv/internal/scheduledtask"
 	"nmsappsrv/internal/scheduler"
 	"nmsappsrv/internal/security"
 	"nmsappsrv/internal/site"
 	"nmsappsrv/internal/snmp"
 	sshmod "nmsappsrv/internal/ssh"
-	"nmsappsrv/internal/logcleanup"
-	"nmsappsrv/internal/pmstatistic"
-	"nmsappsrv/internal/scheduledtask"
 	"nmsappsrv/internal/systemsettings"
 	"nmsappsrv/internal/tcpdump"
 	"nmsappsrv/internal/tenancy"
@@ -71,10 +72,8 @@ import (
 	"nmsappsrv/internal/webssh"
 	"nmsappsrv/internal/ztp"
 	"nmsappsrv/internal/ztp/sftp"
-	"path/filepath"
 	"nmsappsrv/pkg/database"
 	"nmsappsrv/pkg/logger"
-	"gorm.io/gorm"
 	"nmsappsrv/pkg/metrics"
 	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
@@ -84,6 +83,7 @@ import (
 	"github.com/qoderwork/go-infra/lifecycle"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"gorm.io/gorm"
 
 	_ "nmsappsrv/docs" // swagger generated docs
 )
@@ -455,6 +455,9 @@ func main() {
 			pmfile.RegisterRoutes(auth, pmfileH)
 			topology.RegisterRoutes(auth, topologyH)
 			mnormalfile.RegisterRoutes(auth, mnormalfileH)
+
+			authz.RegisterRoutes(auth.Group("/auth"))
+			northinterfacelog.RegisterRoutes(auth, northLogH)
 		}
 	}
 
@@ -463,58 +466,16 @@ func main() {
 	upgrade.RegisterPublicRoutes(router, upgradeH)
 
 	// ========== Device-facing file server (/acs-file-server/**, Basic auth) ==========
-	// Registered at the root (no /api/v1) to mirror Java's gateway-stripped path.
 	filebase.RegisterRoutes(router, systemsettingsH.Service(), filebaseSvc, mrSvc)
 
-	// ========== Java-compatible permission endpoints (v2 prefix) ==========
-	// Mirrors nms-serv RoleManagementServiceImpl.getPermissionIdsForUser /
-	// getPermission so the frontend permission tree keeps working.
-	//
-	// Split into two groups to match Java InterceptorConfig semantics:
-	//   - v2Public:  requires auth but NO license check (excludePathPatterns)
-	//   - v2:        requires auth + license check (default interceptor)
-	v2Public := router.Group("/api/v2")
-	v2Public.Use(middleware.AuthMiddleware())
+	// ========== REST API (Northbound) — /v1 prefix ==========
+	// Aligns with Java's northbound base path "/v1/..."
+	northbound := router.Group("/v1")
+	northbound.Use(middleware.AuthMiddleware())
+	northbound.Use(middleware.LicenseMiddleware(licenseEnf))
+	northbound.Use(northinterfacelog.AuditMiddleware(northLogSvc))
 	{
-		// Java InterceptorConfig excludePathPatterns — no license check:
-		v2Public.GET("/getPermissionIdsForUser", authz.GetPermissionIdsForUser)
-		v2Public.POST("/updateNorthBoundConfig", systemsettingsH.UpdateNorthBoundConfig)
-	}
-	v2 := router.Group("/api/v2")
-	v2.Use(middleware.AuthMiddleware())
-	v2.Use(middleware.LicenseMiddleware(licenseEnf))
-	{
-		v2.GET("/getPermission", authz.GetPermission)
-		// NorthBoundConfig — GET requires license; POST is excluded above.
-		v2.GET("/getNorthBoundConfig", systemsettingsH.GetNorthBoundConfig)
-		// NorthInterfaceLog query (ABSENT backfill #4) — exact Java URL.
-		v2.POST("/listNorthInterfaceLog", northLogH.ListLogs)
-	}
-
-	// ========== REST API (Northbound) — offset-based pagination ==========
-	rest := router.Group("/api/rest/v1")
-	rest.Use(middleware.AuthMiddleware())
-	rest.Use(middleware.LicenseMiddleware(licenseEnf))
-	rest.Use(northinterfacelog.AuditMiddleware(northLogSvc))
-	{
-		restapi.RegisterRoutes(rest, restapiH)
-	}
-
-	// ========== REST API (Northbound) — /v1 alias ==========
-	// Java's northbound base path is "/v1/...". When clients connect
-	// directly to the NMS (no gateway doing URL rewrite), they expect the
-	// Java-equivalent base. This alias group serves the SAME handlers under
-	// "/v1" without touching the existing "/api/rest/v1" mount, so either
-	// path works during the coding phase (no live devices/clients yet).
-	// NOTE: only the base prefix is aliased; sub-path names remain the Go
-	// naming (e.g. /v1/tbg, not Java's /v1/femtos). A full sub-path
-	// rename to match Java exactly is a separate, larger task if ever needed.
-	v1 := router.Group("/v1")
-	v1.Use(middleware.AuthMiddleware())
-	v1.Use(middleware.LicenseMiddleware(licenseEnf))
-	v1.Use(northinterfacelog.AuditMiddleware(northLogSvc))
-	{
-		restapi.RegisterRoutes(v1, restapiH)
+		restapi.RegisterRoutes(northbound, restapiH)
 	}
 
 	// TR069 ACS endpoints (CWMP) — optional HTTP Basic auth via middleware
@@ -897,14 +858,18 @@ func main() {
 			hasData := false
 			var imsNum, smfNum *int
 			if data.ImsUeNumber != nil && *data.ImsUeNumber != "" {
-				var ueNum struct{ Data struct{ UeNum int } `json:"data"` }
+				var ueNum struct {
+					Data struct{ UeNum int } `json:"data"`
+				}
 				if json.Unmarshal([]byte(*data.ImsUeNumber), &ueNum) == nil {
 					imsNum = &ueNum.Data.UeNum
 					hasData = true
 				}
 			}
 			if data.SmfUeNumber != nil && *data.SmfUeNumber != "" {
-				var ueNum struct{ Data struct{ UeNum int } `json:"data"` }
+				var ueNum struct {
+					Data struct{ UeNum int } `json:"data"`
+				}
 				if json.Unmarshal([]byte(*data.SmfUeNumber), &ueNum) == nil {
 					smfNum = &ueNum.Data.UeNum
 					hasData = true
@@ -1068,7 +1033,9 @@ type cbsdInfoForNotice struct {
 // CBSDResultTask.noticeDevice (every 2 min).
 //
 // For each CBSD in AUTHORIZED or GRANTED state, transmit power is computed as
-//   floor(maxEirp + 10 + pathLoss - antennaGain)
+//
+//	floor(maxEirp + 10 + pathLoss - antennaGain)
+//
 // mirroring Java's expression.
 func notifyCbsdStatusToDevices(db *gorm.DB, opSender *tr069.OperationSender) {
 	ctx := context.Background()
@@ -1087,8 +1054,8 @@ func notifyCbsdStatusToDevices(db *gorm.DB, opSender *tr069.OperationSender) {
 	}
 
 	type devKey struct {
-		sn   string
-		lic  int
+		sn  string
+		lic int
 	}
 	byDevice := make(map[devKey][]cbsdInfoForNotice)
 	for _, r := range rows {

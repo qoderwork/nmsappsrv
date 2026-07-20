@@ -40,7 +40,7 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// ListLogs handles POST /api/v2/listNorthInterfaceLog (exact Java URL). It
+// ListLogs handles POST /api/v1/north-interface-logs. It
 // filters by the caller's tenancy, an optional searchText (log_name or the
 // device referenced by element_id), and an optional time window, returning a
 // 1-based page ordered by operationTime descending.

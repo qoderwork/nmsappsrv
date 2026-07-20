@@ -31,12 +31,12 @@ var publicExactPaths = []string{
 	"/api/v1/users/login-failed-times",
 	"/api/v1/users/need-change-password",
 	"/api/v1/users/reset-password-by-link",
-	"/api/v2/getLicenseInfo",
-	"/api/v2/uploadLicenseFile",
-	"/api/v2/getPermissionIdsForUser",
-	"/api/v2/getLogo",
-	"/api/v2/caFile/list",
-	"/api/v2/downloadPasswordRSAPublicKey",
+	"/api/v1/license/info",
+	"/api/v1/license/upload",
+	"/api/v1/auth/permissions/user-ids",
+	"/api/v1/getLogo",
+	"/api/v1/caFile/list",
+	"/api/v1/downloadPasswordRSAPublicKey",
 }
 
 // isPublicPath returns true if the path matches a public prefix or exact path.
