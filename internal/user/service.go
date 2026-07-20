@@ -19,8 +19,8 @@ type Service interface {
 	Logout(username, jwtToken string) error
 	RecordLogin(username, ip string, licenseId int, result int) error
 	RecordLogout(username, ip string, licenseId int) error
-	ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64, error)
-	CreateUser(u *SysUser) error
+	ListUsers(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error)
+	CreateUser(u *SysUser) (string, error)
 	UpdateUser(u *SysUser) error
 	DeleteUser(id int) error
 	KickOutUser(userId int) error
@@ -194,7 +194,7 @@ func (s *service) RecordLogout(username, ip string, licenseId int) error {
 // ---------------------------------------------------------------------------
 
 // ListUsers returns a paginated user list.
-func (s *service) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64, error) {
+func (s *service) ListUsers(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -202,23 +202,37 @@ func (s *service) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	users, total, err := s.repo.FindUsers(licenseId, offset, pageSize)
+	users, total, err := s.repo.FindUsers(offset, pageSize, excludeAdmin, creatorName)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_USERS_FAILED", 500, "failed to list users")
 	}
 	return users, total, nil
 }
 
-// CreateUser hashes the password and persists a new user.
-func (s *service) CreateUser(u *SysUser) error {
-	if u.Password != nil && *u.Password != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
+// CreateUser auto-generates a password if not provided, hashes it, and persists a new user.
+// Returns the generated password for display to the admin.
+// Mirrors Java SystemUserManagementServiceImpl.addUser.
+func (s *service) CreateUser(u *SysUser) (string, error) {
+	var generatedPassword string
+	var err error
+
+	// Auto-generate password if not provided (mirrors Java behavior)
+	if u.Password == nil || *u.Password == "" {
+		generatedPassword, err = GeneratePassword(12)
 		if err != nil {
-			return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
+			return "", apperror.Wrap(err, "PASSWORD_GENERATE_FAILED", 500, "failed to generate password")
 		}
-		hashed := string(hash)
-		u.Password = &hashed
+		u.Password = &generatedPassword
 	}
+
+	// Hash the password
+	hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
+	}
+	hashed := string(hash)
+	u.Password = &hashed
+
 	// Set defaults
 	if u.Enable == nil {
 		enabled := true
@@ -228,10 +242,18 @@ func (s *service) CreateUser(u *SysUser) error {
 		zero := 0
 		u.LoginErrorTimes = &zero
 	}
+
+	// Set timestamps (mirrors Java: sysUser.setCreateTime(new Date()); sysUser.setUpdateTime(new Date());)
+	now := time.Now()
+	u.CreateTime = &now
+	u.UpdateTime = &now
+
 	if err := s.repo.CreateUser(u); err != nil {
-		return apperror.Wrap(err, "CREATE_USER_FAILED", 500, "failed to create user")
+		return "", apperror.Wrap(err, "CREATE_USER_FAILED", 500, "failed to create user")
 	}
-	return nil
+
+	// Return the plaintext password for display (only for auto-generated)
+	return generatedPassword, nil
 }
 
 // UpdateUser persists changes to an existing user. If the password field has
@@ -245,6 +267,10 @@ func (s *service) UpdateUser(u *SysUser) error {
 		hashed := string(hash)
 		u.Password = &hashed
 	}
+	// Update timestamp (mirrors Java behavior on modification)
+	now := time.Now()
+	u.UpdateTime = &now
+
 	if err := s.repo.UpdateUser(u); err != nil {
 		return apperror.Wrap(err, "UPDATE_USER_FAILED", 500, "failed to update user")
 	}
@@ -379,7 +405,8 @@ func (s *service) DisableUser(userId int) error {
 }
 
 // ResetPassword resets a user's password (admin action).
-// Returns a reset key that can be used to construct a reset link.
+// Generates a new password, saves it to database, and returns the plaintext password.
+// Mirrors Java SystemUserManagementServiceImpl.resetPassword (simplified - no email link).
 func (s *service) ResetPassword(adminId, userId int) (string, error) {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
@@ -389,27 +416,34 @@ func (s *service) ResetPassword(adminId, userId int) (string, error) {
 		return "", apperror.ErrUserNotFound.WithMessage("user has no username")
 	}
 
-	// Generate a random reset key
-	resetKey := generateRandomString(32)
-
-	// Store in Redis with 5-minute TTL
-	ctx := context.Background()
-	redisKey := RedisKeyPwdReset + resetKey
-	if err := redis.Set(ctx, redisKey, *u.Username, 5*time.Minute); err != nil {
-		return "", apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to store reset key")
+	// Generate a new random password
+	generatedPassword, err := GeneratePassword(12)
+	if err != nil {
+		return "", apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to generate password")
 	}
 
-	// Reset login error times and update last login time
+	// Hash the new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(generatedPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return "", apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
+	}
+	hashed := string(hash)
+
+	// Update password and reset login error times
 	now := time.Now()
-	_ = s.repo.UpdateUserFields(userId, map[string]interface{}{
-		"login_error_times": 0,
-		"last_login_time":   now,
-	})
+	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
+		"password":             hashed,
+		"login_error_times":    0,
+		"last_login_time":      now,
+		"password_modify_time": nil, // Reset to nil so user must change on first login
+	}); err != nil {
+		return "", apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to update password")
+	}
 
 	// Force logout
 	s.invalidateUser(*u.Username)
 
-	return resetKey, nil
+	return generatedPassword, nil
 }
 
 // ResetPasswordByLink validates a reset key and sets a new password.

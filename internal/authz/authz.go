@@ -222,7 +222,7 @@ func Enforce(roleNames []string, permID string) bool {
 		return false
 	}
 	for _, r := range roleNames {
-		if allowed, _ := e.Enforce(r, permID); allowed {
+		if allowed, _ := e.Enforce(strings.ToLower(r), permID); allowed {
 			return true
 		}
 	}
@@ -252,7 +252,7 @@ func CurrentUserPermissionIDs(roleNames []string) *GetPermissionIdsForUserVO {
 	vo := &GetPermissionIdsForUserVO{PermissionIDs: []string{}}
 	isAdmin := false
 	for _, r := range roleNames {
-		if r == RoleAdminName || r == RoleOperatorName {
+		if strings.EqualFold(r, RoleAdminName) || strings.EqualFold(r, RoleOperatorName) {
 			isAdmin = true
 		}
 	}
@@ -275,7 +275,7 @@ func CurrentUserPermissionIDs(roleNames []string) *GetPermissionIdsForUserVO {
 	set := make(map[string]bool)
 	if e != nil {
 		for _, r := range roleNames {
-			ps, _ := e.GetFilteredPolicy(0, r)
+			ps, _ := e.GetFilteredPolicy(0, strings.ToLower(r))
 			for _, p := range ps {
 				if len(p) >= 2 && p[1] != "*" {
 					set[p[1]] = true

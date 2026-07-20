@@ -3,6 +3,7 @@ package user
 import (
 	"crypto/rand"
 	"fmt"
+	"math/big"
 	"time"
 )
 
@@ -36,55 +37,91 @@ type SysUser struct {
 func (SysUser) TableName() string { return "sys_user" }
 
 // UserDTO is the API response DTO for user data, excluding sensitive fields (password, salt).
+// Aligned with Java ListUserVO:
+//   id, username, createUsername, enable, updateTime, createTime, tenancy, email, loginState
 type UserDTO struct {
-	Id                 int        `json:"id"`
-	Username           *string    `json:"username"`
-	Email              *string    `json:"email"`
-	PhoneNumber        *string    `json:"phoneNumber"`
-	RealName           *string    `json:"realName"`
-	Status             *int       `json:"status"`
-	LicenseId          *int       `json:"licenseId"`
-	CreateTime         *time.Time `json:"createTime"`
-	LastLoginTime      *time.Time `json:"lastLoginTime"`
-	LoginErrorTimes    *int       `json:"loginErrorTimes"`
-	LastLockTime       *time.Time `json:"lastLockTime"`
-	Enable             *bool      `json:"enable"`
-	PasswordModifyTime *time.Time `json:"passwordModifyTime"`
-	CreateUserId       *int       `json:"createUserId"`
-	Avatar             *string    `json:"avatar"`
-	LoginErrorTime     *time.Time `json:"loginErrorTime"`
-	CreateUserName     *string    `json:"createUserName"`
-	UpdateTime         *time.Time `json:"updateTime"`
-	FirstLogin         *bool      `json:"firstLogin"`
-	Roles              []string   `json:"roles,omitempty"`
+	Id             int        `json:"id"`
+	Username       *string    `json:"username"`
+	CreateUsername *string    `json:"createUsername"`
+	Enable         *bool      `json:"enable"`
+	UpdateTime     *time.Time `json:"updateTime"`
+	CreateTime     *time.Time `json:"createTime"`
+	Tenancy        string     `json:"tenancy"`
+	Email          *string    `json:"email"`
 	// LoginState indicates whether the user is currently online, determined by
 	// the WebSocket heartbeat. Mirrors Java's ListUserVO.loginState derived from
 	// ResultWebSocket.lastHeartbeatTime.
 	LoginState bool `json:"loginState"`
 }
 
+// AddUserVO is the response for addUser, containing the generated password.
+// Mirrors Java AddUserVo.
+type AddUserVO struct {
+	UserId   int    `json:"userId"`
+	Password string `json:"password"`
+}
+
+// GeneratePassword generates a random password with the specified length.
+// Includes lowercase, uppercase, digits, and special characters.
+// Mirrors Java PasswordGenerator.generatePassword.
+func GeneratePassword(length int) (string, error) {
+	const (
+		lowercase = "abcdefghijklmnopqrstuvwxyz"
+		uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		digits    = "0123456789"
+		special   = "!@#$%^&*"
+		all       = lowercase + uppercase + digits + special
+	)
+
+	// Ensure at least 4 characters to include each category
+	if length < 4 {
+		length = 4
+	}
+
+	password := make([]byte, length)
+
+	// Guarantee at least one character from each category
+	categories := []string{lowercase, uppercase, digits, special}
+	for i := 0; i < 4; i++ {
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(categories[i]))))
+		if err != nil {
+			return "", err
+		}
+		password[i] = categories[i][idx.Int64()]
+	}
+
+	// Fill remaining positions with random characters
+	for i := 4; i < length; i++ {
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(all))))
+		if err != nil {
+			return "", err
+		}
+		password[i] = all[idx.Int64()]
+	}
+
+	// Shuffle the password
+	for i := len(password) - 1; i > 0; i-- {
+		j, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return "", err
+		}
+		password[i], password[j.Int64()] = password[j.Int64()], password[i]
+	}
+
+	return string(password), nil
+}
+
 // ToUserDTO converts a SysUser to a UserDTO (strips password/salt).
+// Aligned with Java ListUserVO fields.
 func ToUserDTO(u *SysUser) UserDTO {
 	return UserDTO{
-		Id:                 u.Id,
-		Username:           u.Username,
-		Email:              u.Email,
-		PhoneNumber:        u.PhoneNumber,
-		RealName:           u.RealName,
-		Status:             u.Status,
-		LicenseId:          u.LicenseId,
-		CreateTime:         u.CreateTime,
-		LastLoginTime:      u.LastLoginTime,
-		LoginErrorTimes:    u.LoginErrorTimes,
-		LastLockTime:       u.LastLockTime,
-		Enable:             u.Enable,
-		PasswordModifyTime: u.PasswordModifyTime,
-		CreateUserId:       u.CreateUserId,
-		Avatar:             u.Avatar,
-		LoginErrorTime:     u.LoginErrorTime,
-		CreateUserName:     u.CreateUserName,
-		UpdateTime:         u.UpdateTime,
-		FirstLogin:         u.FirstLogin,
+		Id:             u.Id,
+		Username:       u.Username,
+		CreateUsername: u.CreateUserName,
+		Enable:         u.Enable,
+		UpdateTime:     u.UpdateTime,
+		CreateTime:     u.CreateTime,
+		Email:          u.Email,
 	}
 }
 

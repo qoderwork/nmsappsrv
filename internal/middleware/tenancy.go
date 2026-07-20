@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,10 @@ var publicPathPrefixes = []string{
 	"/ws",               // WebSocket handshake (token-bound)
 	"/webssh",           // WebSSH
 }
+
+// defaultLicenseIdStr is the string representation of the default license ID.
+// Corresponds to pkg/database.DefaultLicenseId ("1").
+const defaultLicenseIdStr = "1"
 
 // publicExactPaths lists paths that bypass TenancyMiddleware via exact
 // matching. Mirrors Java InterceptorConfig.excludePathPatterns
@@ -66,12 +71,33 @@ func TenancyMiddleware() gin.HandlerFunc {
 		}
 
 		// Extract license_id: header first, then JWT context
-		licenseID := c.GetHeader("X-License-Id")
-		if licenseID == "" {
+		licenseIDStr := c.GetHeader("X-License-Id")
+		var licenseID int
+		if licenseIDStr == "" {
+			// Try JWT context (int type from AuthMiddleware)
 			if val, exists := c.Get("license_id"); exists {
-				if s, ok := val.(string); ok {
-					licenseID = s
+				switch v := val.(type) {
+				case int:
+					licenseID = v
+				case float64:
+					licenseID = int(v)
 				}
+			}
+		} else {
+			// Handle "default" as special case (maps to ID 1)
+			if licenseIDStr == "default" || licenseIDStr == defaultLicenseIdStr {
+				licenseID = 1
+			} else {
+				// Try parsing as integer
+				id, err := strconv.Atoi(licenseIDStr)
+				if err != nil {
+					logger.Warnf("invalid license_id header '%s' for request %s %s from %s",
+						licenseIDStr, c.Request.Method, c.Request.RequestURI, c.ClientIP())
+					utils.Error(c, 403, "invalid license_id")
+					c.Abort()
+					return
+				}
+				licenseID = id
 			}
 		}
 
@@ -85,16 +111,16 @@ func TenancyMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// license_id is required
-		if licenseID == "" {
-			logger.Warnf("missing license_id for request %s %s from %s",
+		// license_id is required (must be > 0)
+		if licenseID <= 0 {
+			logger.Warnf("missing or invalid license_id for request %s %s from %s",
 				c.Request.Method, c.Request.RequestURI, c.ClientIP())
 			utils.Error(c, 403, "license_id required")
 			c.Abort()
 			return
 		}
 
-		// Set values in context for downstream handlers
+		// Set values in context for downstream handlers as int
 		c.Set("license_id", licenseID)
 		if tenancyID != "" {
 			c.Set("tenancy_id", tenancyID)

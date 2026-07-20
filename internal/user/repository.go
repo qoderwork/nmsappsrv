@@ -13,7 +13,7 @@ import (
 type Repository interface {
 	FindUserByUsername(username string) (*SysUser, error)
 	FindUserByID(id int) (*SysUser, error)
-	FindUsers(licenseId int, offset, limit int) ([]SysUser, int64, error)
+	FindUsers(offset, limit int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error)
 	CreateUser(u *SysUser) error
 	UpdateUser(u *SysUser) error
 	DeleteUser(id int) error
@@ -70,18 +70,37 @@ func (r *repository) FindUserByID(id int) (*SysUser, error) {
 	return r.BaseRepository.FindByID(id)
 }
 
-// FindUsers returns a paginated list of users for the given license.
-func (r *repository) FindUsers(licenseId int, offset, limit int) ([]SysUser, int64, error) {
+// FindUsers returns a paginated list of users.
+// Mirrors Java SystemUserManagementServiceImpl.listUser:
+//   - excludes admin user (admin should not appear in user list)
+//   - non-admin users can only see users they created (via createUserName filter)
+//   - excludes deleted users
+// Note: Java does NOT filter by license_id in listUser
+func (r *repository) FindUsers(offset, limit int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 	var users []SysUser
 	var total int64
 
-	query := r.db.Model(&SysUser{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&SysUser{})
+
+	// Exclude admin user (mirrors Java: predicates.add(criteriaBuilder.notEqual(root.get("username"), "admin")))
+	if excludeAdmin {
+		query = query.Where("username != ?", "admin")
+	}
+
+	// Non-admin users can only see users they created
+	// (mirrors Java: predicates.add(criteriaBuilder.equal(root.get("createUserName"), SecurityUtil.getCurrentUsername())))
+	if creatorName != "" {
+		query = query.Where("create_user_name = ?", creatorName)
+	}
+
+	// Exclude deleted users (mirrors Java: deleted = false or null)
+	query = query.Where("deleted IS NULL OR deleted = ?", false)
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindUsers count error: %v", err)
 		return nil, 0, err
 	}
-	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+	if err := query.Order("update_time DESC").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
 		logger.Errorf("FindUsers query error: %v", err)
 		return nil, 0, err
 	}

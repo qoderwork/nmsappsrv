@@ -154,18 +154,64 @@ func (h *Handler) Logout(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 // ListUsers handles GET /users?page=1&pageSize=20
+// Mirrors Java SystemUserManagementServiceImpl.listUser:
+//   - excludes admin user
+//   - non-admin users can only see users they created
+//   - returns fields aligned with Java ListUserVO
 func (h *Handler) ListUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	licenseId := middleware.GetLicenseId(c)
+	username := middleware.GetUsername(c)
+	roleNames := middleware.GetRoleNames(c)
 
-	data, total, err := h.svc.ListUsers(licenseId, page, pageSize)
+	// Determine if current user is admin (mirrors Java authorityHelper.isAdminRole)
+	isAdmin := false
+	for _, r := range roleNames {
+		if strings.EqualFold(r, "admin") {
+			isAdmin = true
+			break
+		}
+	}
+
+	// Non-admin users can only see users they created
+	creatorName := ""
+	if !isAdmin {
+		creatorName = username
+	}
+
+	data, total, err := h.svc.ListUsers(page, pageSize, true, creatorName)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
 	}
 	// Convert to DTOs to exclude sensitive fields (password, salt)
 	dtos := ToUserDTOs(data)
+
+	// Fill tenancy names (mirrors Java: tenancyIdToNameMap)
+	// Build lookup from license_id -> license_name
+	licenseIds := make(map[int]bool)
+	for _, u := range data {
+		if u.LicenseId != nil {
+			licenseIds[*u.LicenseId] = true
+		}
+	}
+	var tenancyMap map[int]string
+	if len(licenseIds) > 0 {
+		tenancyMap = h.buildTenancyMap(licenseIds)
+	}
+
+	for i := range dtos {
+		// Fill tenancy name
+		if data[i].LicenseId != nil && tenancyMap != nil {
+			dtos[i].Tenancy = tenancyMap[*data[i].LicenseId]
+		}
+		// Default createUsername to "admin" if empty (mirrors Java)
+		if dtos[i].CreateUsername == nil || *dtos[i].CreateUsername == "" {
+			admin := "admin"
+			dtos[i].CreateUsername = &admin
+		}
+	}
+
 	// Fill LoginState from WebSocket heartbeat (mirrors Java's
 	// lastHeartbeatTime check in SystemUserManagementServiceImpl).
 	if h.onlineChecker != nil {
@@ -178,7 +224,32 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	utils.Paginated(c, dtos, total, page, pageSize)
 }
 
+// buildTenancyMap queries the license table and returns a map of id -> license_name.
+func (h *Handler) buildTenancyMap(licenseIds map[int]bool) map[int]string {
+	result := make(map[int]string)
+	var ids []int
+	for id := range licenseIds {
+		ids = append(ids, id)
+	}
+	type licenseRow struct {
+		Id          int
+		LicenseName *string `gorm:"column:license_name"`
+	}
+	var rows []licenseRow
+	if err := h.db.Table("license").Select("id, license_name").Where("id IN ?", ids).Find(&rows).Error; err != nil {
+		logger.Warnf("buildTenancyMap: failed to query licenses: %v", err)
+		return result
+	}
+	for _, r := range rows {
+		if r.LicenseName != nil {
+			result[r.Id] = *r.LicenseName
+		}
+	}
+	return result
+}
+
 // CreateUser handles POST /users
+// Returns AddUserVO with userId and generated password.
 func (h *Handler) CreateUser(c *gin.Context) {
 	var u SysUser
 	if err := c.ShouldBindJSON(&u); err != nil {
@@ -190,13 +261,17 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	creatorId := middleware.GetUserId(c)
 	u.CreateUserId = &creatorId
 
-	if err := h.svc.CreateUser(&u); err != nil {
+	password, err := h.svc.CreateUser(&u)
+	if err != nil {
 		utils.HandleError(c, err)
 		return
 	}
-	// Return DTO to exclude sensitive fields (password, salt)
-	dto := ToUserDTO(&u)
-	utils.Success(c, &dto)
+
+	// Return AddUserVO for new users (mirrors Java behavior)
+	utils.Success(c, &AddUserVO{
+		UserId:   u.Id,
+		Password: password,
+	})
 }
 
 // UpdateUser handles PUT /users/:id
@@ -327,6 +402,7 @@ func (h *Handler) DisableUser(c *gin.Context) {
 }
 
 // ResetPassword handles POST /users/reset-password
+// Returns the newly generated password.
 func (h *Handler) ResetPassword(c *gin.Context) {
 	var req ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -335,12 +411,15 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 	}
 
 	adminId := middleware.GetUserId(c)
-	resetKey, err := h.svc.ResetPassword(adminId, req.UserId)
+	password, err := h.svc.ResetPassword(adminId, req.UserId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
 	}
-	utils.Success(c, gin.H{"resetKey": resetKey})
+	utils.Success(c, &AddUserVO{
+		UserId:   req.UserId,
+		Password: password,
+	})
 }
 
 // ResetPasswordByLink handles POST /users/reset-password-by-link
