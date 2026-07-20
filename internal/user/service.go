@@ -597,6 +597,8 @@ func (s *service) UpdateRolePermissions(roleId string, permissionIds []string) e
 // ---------------------------------------------------------------------------
 
 // GetRoleNamesForUser returns the role names for a given user.
+// Mirrors Java RoleManagementServiceImpl: query user_has_role by userId,
+// then load roles by id IN (roleIds) — NOT by tenancy/license filter.
 func (s *service) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
 	userRoles, err := s.repo.FindUserRoles(userId)
 	if err != nil {
@@ -606,22 +608,27 @@ func (s *service) GetRoleNamesForUser(userId int, licenseId int) ([]string, erro
 		return nil, nil
 	}
 
-	allRoles, err := s.repo.FindRoles(licenseId)
+	roleIds := make([]string, 0, len(userRoles))
+	for _, ur := range userRoles {
+		roleIds = append(roleIds, ur.RoleId)
+	}
+
+	roles, err := s.repo.FindRolesByIds(roleIds)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_ROLE_NAMES_FAILED", 500, "failed to get roles")
 	}
 
 	// Build lookup map: role ID → role name
-	roleMap := make(map[string]string, len(allRoles))
-	for _, r := range allRoles {
+	roleMap := make(map[string]string, len(roles))
+	for _, r := range roles {
 		if r.RoleName != nil {
 			roleMap[r.Id] = *r.RoleName
 		}
 	}
 
 	var names []string
-	for _, ur := range userRoles {
-		if name, ok := roleMap[ur.RoleId]; ok {
+	for _, roleId := range roleIds {
+		if name, ok := roleMap[roleId]; ok {
 			names = append(names, name)
 		}
 	}

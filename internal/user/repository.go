@@ -19,6 +19,7 @@ type Repository interface {
 	DeleteUser(id int) error
 	UpdateUserFields(id int, fields map[string]interface{}) error
 	FindRoles(licenseId int) ([]Role, error)
+	FindRolesByIds(roleIds []string) ([]Role, error)
 	CreateRole(role *Role) error
 	UpdateRole(role *Role) error
 	DeleteRole(id string) error
@@ -118,7 +119,21 @@ func (r *repository) UpdateUserFields(id int, fields map[string]interface{}) err
 // FindRoles returns all roles for the given license.
 func (r *repository) FindRoles(licenseId int) ([]Role, error) {
 	var roles []Role
-	if err := r.db.Where("license_id = ?", licenseId).Find(&roles).Error; err != nil {
+	if err := r.db.Where("tenancy_id = ?", licenseId).Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// FindRolesByIds returns roles matching the given role IDs.
+// Mirrors Java roleService.getByIdIn(roleIds) — used to resolve role names
+// for a user via the user_has_role association table.
+func (r *repository) FindRolesByIds(roleIds []string) ([]Role, error) {
+	if len(roleIds) == 0 {
+		return nil, nil
+	}
+	var roles []Role
+	if err := r.db.Where("id IN ?", roleIds).Find(&roles).Error; err != nil {
 		return nil, err
 	}
 	return roles, nil

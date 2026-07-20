@@ -64,6 +64,9 @@ func (m *mockRepository) UpdateUserFields(id int, fields map[string]interface{})
 func (m *mockRepository) FindRoles(licenseId int) ([]Role, error) {
 	panic("not implemented")
 }
+func (m *mockRepository) FindRolesByIds(roleIds []string) ([]Role, error) {
+	panic("not implemented")
+}
 func (m *mockRepository) CreateRole(role *Role) error { panic("not implemented") }
 func (m *mockRepository) UpdateRole(role *Role) error { panic("not implemented") }
 func (m *mockRepository) DeleteRole(id string) error  { panic("not implemented") }
