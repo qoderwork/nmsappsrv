@@ -18,7 +18,7 @@ type Service interface {
 	GetParameters(elementId int64) (*DeviceParameterDetailVo, error)
 	SetParameter(elementId int64, paramName string, value string, username string) error
 	BatchSetParameter(elementId int64, records []SetParameterRecord, username string) error
-	ListParameterLogs(elementId int64, page, pageSize int) ([]ParameterLog, int64, error)
+	ListParameterLogs(elementId int64, keyword string, page, pageSize int) ([]ParameterLog, int64, error)
 	PresetParameters(elementId int64, presets map[string]string) error
 	ListParameterSets(licenseId int) ([]ParameterSet, error)
 	CreateParameterSet(ps *ParameterSet) error
@@ -33,6 +33,7 @@ type Service interface {
 	ListDeployTemplateLogs(templateId int64, page, pageSize int) ([]DeployTemplateLogVo, int64, error)
 	TriggerBackup(elementId int64, username string) error
 	ListBackupLogs(elementId int64) ([]ParameterBackupLog, error)
+	ListBackupLogsWithPage(req *ListParameterBackupLogsRequest) ([]ParameterBackupLogVo, int64, error)
 	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error
 	BatchParameterConfiguration(excelBytes []byte, username string, tenancyId int) error
 	ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error)
@@ -339,7 +340,9 @@ func (s *service) BatchSetParameter(elementId int64, records []SetParameterRecor
 // ---------------------------------------------------------------------------
 
 // ListParameterLogs returns a paginated list of parameter change logs.
-func (s *service) ListParameterLogs(elementId int64, page, pageSize int) ([]ParameterLog, int64, error) {
+// When elementId is 0, logs for all devices under the tenant are returned.
+// keyword matches device name or serial number.
+func (s *service) ListParameterLogs(elementId int64, keyword string, page, pageSize int) ([]ParameterLog, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -347,7 +350,7 @@ func (s *service) ListParameterLogs(elementId int64, page, pageSize int) ([]Para
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindParameterLogs(elementId, offset, pageSize)
+	return s.repo.FindParameterLogs(elementId, keyword, offset, pageSize)
 }
 
 // ---------------------------------------------------------------------------

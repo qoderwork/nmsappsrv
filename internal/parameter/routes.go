@@ -19,7 +19,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.DELETE("/parameter-templates/:id", h.DeleteParameterTemplate)
 	rg.POST("/parameter-templates/:id/deploy", h.DeployTemplate)
 	rg.GET("/parameter-templates/:id/deploy-logs", h.ListDeployTemplateLogs)
-	rg.GET("/parameter-backup-logs", h.ListBackupLogs)
+	rg.POST("/parameter-backup-logs/list", h.ListBackupLogs)
 	rg.POST("/parameter-backup/:elementId", h.TriggerBackup)
 	rg.POST("/parameter-tasks", h.BatchParameterConfigurationDirect)
 	rg.POST("/batch-configuration", h.BatchParameterConfiguration)

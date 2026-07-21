@@ -98,6 +98,23 @@ type ParameterBackupLog struct {
 	GenerateTime *int64  `gorm:"column:generate_time" json:"generate_time"`
 }
 
+// ListParameterBackupLogsRequest 查询参数备份日志请求
+type ListParameterBackupLogsRequest struct {
+	Page      int    `json:"page"`
+	PageSize  int    `json:"pageSize"`
+	ElementId int64  `json:"elementId"`
+	Keyword   string `json:"keyword"`
+}
+
+// ParameterBackupLogVo 列表返回 VO
+type ParameterBackupLogVo struct {
+	Id           int    `json:"id"`
+	TaskId       string `json:"task_id"`
+	ElementId    int64  `json:"element_id"`
+	Filename     string `json:"filename"`
+	GenerateTime int64  `json:"generate_time"`
+}
+
 func (ParameterBackupLog) TableName() string { return "parameter_backup_log" }
 
 // ParameterSet 对应 parameter_set 表 (UUID主键)

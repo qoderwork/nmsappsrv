@@ -112,3 +112,46 @@ func (s *service) TriggerBackup(elementId int64, username string) error {
 func (s *service) ListBackupLogs(elementId int64) ([]ParameterBackupLog, error) {
 	return s.repo.FindParameterBackupLogs(elementId)
 }
+
+// ListBackupLogsWithPage returns paginated backup logs with optional filtering.
+func (s *service) ListBackupLogsWithPage(req *ListParameterBackupLogsRequest) ([]ParameterBackupLogVo, int64, error) {
+	page := req.Page
+	pageSize := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	logs, total, err := s.repo.FindParameterBackupLogsWithPage(req.ElementId, req.Keyword, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]ParameterBackupLogVo, 0, len(logs))
+	for _, log := range logs {
+		vo := ParameterBackupLogVo{
+			Id:           log.Id,
+			GenerateTime: derefInt64(log.GenerateTime),
+		}
+		if log.TaskId != nil {
+			vo.TaskId = *log.TaskId
+		}
+		if log.ElementId != nil {
+			vo.ElementId = *log.ElementId
+		}
+		if log.Filename != nil {
+			vo.Filename = *log.Filename
+		}
+		result = append(result, vo)
+	}
+	return result, total, nil
+}
+
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}

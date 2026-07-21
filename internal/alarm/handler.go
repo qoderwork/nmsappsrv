@@ -15,6 +15,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// SyncAlarmsFunc is a function type for alarm sync.
+type SyncAlarmsFunc func()
+
+// syncAlarmsFn stores the alarm sync function injected from main.go.
+var syncAlarmsFn SyncAlarmsFunc
+
+// SetSyncAlarmsFunc sets the alarm sync function.
+func SetSyncAlarmsFunc(fn SyncAlarmsFunc) {
+	syncAlarmsFn = fn
+}
+
 // Handler exposes HTTP handlers for alarm-related endpoints.
 type Handler struct {
 	svc Service
@@ -553,6 +564,17 @@ func (h *Handler) UpdateAlarmSyncConfig(c *gin.Context) {
 		return
 	}
 	utils.Success(c, updated)
+}
+
+// SyncAlarms handles POST /alarms/sync
+// Manually triggers alarm sync for all online enb devices.
+func (h *Handler) SyncAlarms(c *gin.Context) {
+	if syncAlarmsFn == nil {
+		utils.Error(c, http.StatusInternalServerError, "alarm sync not initialized")
+		return
+	}
+	syncAlarmsFn()
+	utils.Success(c, nil)
 }
 
 // ---------------------------------------------------------------------------

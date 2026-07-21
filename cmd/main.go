@@ -724,6 +724,7 @@ func main() {
 	}); err != nil {
 		logger.Errorf("failed to register alarm-sync cron job: %v", err)
 	}
+	alarm.SetSyncAlarmsFunc(alarmSyncTask.SyncAlarms)
 
 	// BackupScheduleTask (daily 00:00): auto-backups online devices via SPV.
 	// Mirrors Java BackupScheduleJob.

@@ -93,16 +93,22 @@ func (h *Handler) BatchSetParameter(c *gin.Context) {
 
 // ListParameterLogs handles GET /:elementId/logs?page=&pageSize=
 func (h *Handler) ListParameterLogs(c *gin.Context) {
-	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid element id")
-		return
+	// elementId 是可选的查询参数；不传时查询当前租户下所有设备的参数日志
+	var elementId int64
+	if v := c.Query("elementId"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			utils.Error(c, http.StatusBadRequest, "invalid element id")
+			return
+		}
+		elementId = id
 	}
+	keyword := c.Query("keyword")
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 
-	data, total, err := h.svc.ListParameterLogs(elementId, page, pageSize)
+	data, total, err := h.svc.ListParameterLogs(elementId, keyword, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list parameter logs")
 		return
@@ -326,20 +332,29 @@ func (h *Handler) TriggerBackup(c *gin.Context) {
 // ParameterBackupLog endpoints
 // ---------------------------------------------------------------------------
 
-// ListBackupLogs handles GET /:elementId/backups
+// ListBackupLogs handles POST /parameter-backup-logs/list
 func (h *Handler) ListBackupLogs(c *gin.Context) {
-	elementId, err := strconv.ParseInt(c.Param("elementId"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid element id")
+	var req ListParameterBackupLogsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
 		return
 	}
 
-	data, err := h.svc.ListBackupLogs(elementId)
+	list, total, err := h.svc.ListBackupLogsWithPage(&req)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list backup logs")
+		utils.HandleError(c, err)
 		return
 	}
-	utils.Success(c, data)
+
+	page := req.Page
+	pageSize := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	utils.Paginated(c, list, total, page, pageSize)
 }
 
 // ---------------------------------------------------------------------------

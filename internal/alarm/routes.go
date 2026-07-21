@@ -37,6 +37,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.PUT("/alarm-filters/:id/enable", h.ToggleAlarmFilterEnable)
 	rg.GET("/alarm-sync-config", h.GetAlarmSyncConfig)
 	rg.PUT("/alarm-sync-config", h.UpdateAlarmSyncConfig)
+	rg.POST("/alarms/sync", h.SyncAlarms)
 
 	// 邮件通知配置
 	rg.GET("/email-notification/config", h.ListEmailNotificationConfig)

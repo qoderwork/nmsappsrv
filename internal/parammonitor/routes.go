@@ -9,7 +9,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/param-monitor/configs/delete", h.DeleteMonitorConfig)
 	rg.POST("/param-monitor/configs/view", h.ViewMonitorConfig)
 	rg.PUT("/param-monitor/configs", h.UpdateMonitorConfig)
-	rg.GET("/param-monitor/configs", h.ListMonitorConfigs)
+	rg.POST("/param-monitor/configs/list", h.ListMonitorConfigs)
 	rg.POST("/param-monitor/configs/toggle", h.ToggleMonitorConfig)
 	rg.POST("/param-monitor/realtime", h.GetRealtimeMonitorData)
 	rg.POST("/param-monitor/reload", h.ReloadMonitorParameters)

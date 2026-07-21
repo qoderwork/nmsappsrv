@@ -52,10 +52,10 @@ type CBSDRow struct {
 
 // FindCBSDDevices queries CBSD devices with optional keyword search and pagination.
 func (r *Repository) FindCBSDDevices(query string, offset, limit int) ([]CBSDRow, int64, error) {
-	q := r.db.Table("cbsd_infos").Select("serial_number, device_name")
+	q := r.db.Table("cbsd_info").Select("serial_number, cbsd_serial_number as device_name")
 	if query != "" {
 		like := fmt.Sprintf("%%%s%%", query)
-		q = q.Where("serial_number LIKE ? OR device_name LIKE ?", like, like)
+		q = q.Where("serial_number LIKE ? OR cbsd_serial_number LIKE ?", like, like)
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {

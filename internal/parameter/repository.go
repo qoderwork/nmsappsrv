@@ -32,7 +32,7 @@ type Repository interface {
 	CreateParameterAttributes(pa *ParameterAttributes) error
 	UpdateParameterAttributes(pa *ParameterAttributes) error
 	CreateParameterLog(log *ParameterLog) error
-	FindParameterLogs(elementId int64, offset, limit int) ([]ParameterLog, int64, error)
+	FindParameterLogs(elementId int64, keyword string, offset, limit int) ([]ParameterLog, int64, error)
 	FindParameterSets(licenseId int) ([]ParameterSet, error)
 	FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
 	FindParameterTemplate(id int64) (*ParameterTemplate, []TemplateParameter, error)
@@ -42,6 +42,7 @@ type Repository interface {
 	SaveTemplateParameters(templateId int64, params []TemplateParameter) error
 	CreateParameterBackupLog(log *ParameterBackupLog) error
 	FindParameterBackupLogs(elementId int64) ([]ParameterBackupLog, error)
+	FindParameterBackupLogsWithPage(elementId int64, keyword string, page, pageSize int) ([]ParameterBackupLog, int64, error)
 	CreateBatchConfigLog(log *misc.BatchConfigurationLog) error
 	CreateBatchConfigDeviceLog(log *misc.BatchConfigurationDeviceLog) error
 	FindBatchConfigLogs(tenancyId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error)
@@ -162,13 +163,21 @@ func (r *repository) CreateParameterLog(log *ParameterLog) error {
 	return r.db.Create(log).Error
 }
 
-// FindParameterLogs returns a paginated list of parameter change logs for the
-// given element together with the total count.
-func (r *repository) FindParameterLogs(elementId int64, offset, limit int) ([]ParameterLog, int64, error) {
+// FindParameterLogs returns a paginated list of parameter change logs.
+// When elementId is 0, logs for all devices are returned.
+// keyword matches parameter_name (LIKE).
+func (r *repository) FindParameterLogs(elementId int64, keyword string, offset, limit int) ([]ParameterLog, int64, error) {
 	var logs []ParameterLog
 	var total int64
 
-	query := r.db.Model(&ParameterLog{}).Where("element_id = ?", elementId)
+	query := r.db.Model(&ParameterLog{})
+	if elementId > 0 {
+		query = query.Where("element_id = ?", elementId)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("parameter_name LIKE ?", like)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindParameterLogs count error: %v", err)
@@ -305,6 +314,31 @@ func (r *repository) FindParameterBackupLogs(elementId int64) ([]ParameterBackup
 		return nil, err
 	}
 	return logs, nil
+}
+
+// FindParameterBackupLogsWithPage returns paginated backup logs with optional filtering.
+func (r *repository) FindParameterBackupLogsWithPage(elementId int64, keyword string, page, pageSize int) ([]ParameterBackupLog, int64, error) {
+	var logs []ParameterBackupLog
+	var total int64
+
+	query := r.db.Model(&ParameterBackupLog{})
+	if elementId > 0 {
+		query = query.Where("element_id = ?", elementId)
+	}
+	if keyword != "" {
+		query = query.Where("filename LIKE ? OR task_id LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	if err := query.Order("generate_time DESC").Offset(offset).Limit(pageSize).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return logs, total, nil
 }
 
 // ---------------------------------------------------------------------------

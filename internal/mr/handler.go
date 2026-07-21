@@ -121,16 +121,28 @@ func (h *Handler) DownloadReport(c *gin.Context) {
 	c.File(path)
 }
 
-// ListLogs handles POST /listMRLogs (pagination via query params).
+// ListLogs handles POST /listMRLogs.
 func (h *Handler) ListLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	logs, total, err := h.svc.ListLogs(page, pageSize)
+	var req struct {
+		Page     int `json:"page"`
+		PageSize int `json:"pageSize"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Page = 1
+		req.PageSize = 20
+	}
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PageSize < 1 {
+		req.PageSize = 20
+	}
+	logs, total, err := h.svc.ListLogs(req.Page, req.PageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	utils.Paginated(c, logs, total, page, pageSize)
+	utils.Paginated(c, logs, total, req.Page, req.PageSize)
 }
 
 // DownloadRaw handles GET /downloadMRFile?id= (serves the raw uploaded file).

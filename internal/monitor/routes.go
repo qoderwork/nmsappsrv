@@ -12,8 +12,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.DELETE("/monitor-tasks/:id", h.DeleteMonitorTask)
 	rg.GET("/monitor-data", h.GetMonitorData)
 	rg.GET("/monitor-statistics", h.GetMonitorStatistics)
-	rg.GET("/monitor-elements", h.GetMonitorElements)
-	rg.PUT("/monitor-elements", h.SaveMonitorElements)
-	rg.GET("/monitor-parameters", h.GetMonitorParameters)
-	rg.PUT("/monitor-parameters", h.SaveMonitorParameters)
+	rg.GET("/monitor-elements/:id", h.GetMonitorElements)
+	rg.PUT("/monitor-elements/:id", h.SaveMonitorElements)
+	rg.GET("/monitor-parameters/:id", h.GetMonitorParameters)
+	rg.PUT("/monitor-parameters/:id", h.SaveMonitorParameters)
 }
