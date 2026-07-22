@@ -51,6 +51,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 
 	// System operator logs
 	rg.GET("/system/operator-logs", h.ListOperatorLogs)
+	rg.POST("/system/operator-logs", h.ListOperatorLogs)
 
 	// 基站配置备份与恢复 (Base Station Backup & Restore)
 	rg.GET("/bs-backup/info", h.ListBaseStationBackupInfo)

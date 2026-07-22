@@ -1,6 +1,8 @@
 package upgrade
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"nmsappsrv/internal/middleware"
@@ -43,11 +45,9 @@ func (h *ShutdownHandler) AddShutdownTask(c *gin.Context) {
 
 // ListShutdownTasks returns a paginated list of shutdown tasks.
 func (h *ShutdownHandler) ListShutdownTasks(c *gin.Context) {
-	var req ListShutdownTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, 400, "Invalid request: "+err.Error())
-		return
-	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	req := ListShutdownTaskRequest{Page: page, PageSize: pageSize}
 
 	tenantId := middleware.GetTenantId(c)
 
@@ -63,13 +63,13 @@ func (h *ShutdownHandler) ListShutdownTasks(c *gin.Context) {
 
 // ViewShutdownTask returns the detail of a shutdown task with device list.
 func (h *ShutdownHandler) ViewShutdownTask(c *gin.Context) {
-	var req ViewShutdownTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, 400, "Invalid request: "+err.Error())
+	taskId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "Invalid task id")
 		return
 	}
 
-	task, err := h.svc.ViewShutdownTask(req.TaskId)
+	task, err := h.svc.ViewShutdownTask(taskId)
 	if err != nil {
 		logger.Errorf("Failed to view shutdown task: %v", err)
 		utils.Error(c, 500, "Failed to view shutdown task")
@@ -81,13 +81,13 @@ func (h *ShutdownHandler) ViewShutdownTask(c *gin.Context) {
 
 // DeleteShutdownTask deletes a shutdown task and associated logs.
 func (h *ShutdownHandler) DeleteShutdownTask(c *gin.Context) {
-	var req DeleteShutdownTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, 400, "Invalid request: "+err.Error())
+	taskId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "Invalid task id")
 		return
 	}
 
-	if err := h.svc.DeleteShutdownTask(req.TaskId); err != nil {
+	if err := h.svc.DeleteShutdownTask(taskId); err != nil {
 		logger.Errorf("Failed to delete shutdown task: %v", err)
 		utils.Error(c, 500, "Failed to delete shutdown task")
 		return
@@ -98,18 +98,20 @@ func (h *ShutdownHandler) DeleteShutdownTask(c *gin.Context) {
 
 // ListShutdownResults returns the per-device shutdown results for a task.
 func (h *ShutdownHandler) ListShutdownResults(c *gin.Context) {
-	var req ListShutdownResultRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, 400, "Invalid request: "+err.Error())
+	taskId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.Error(c, 400, "Invalid task id")
 		return
 	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 
-	results, total, err := h.svc.ListShutdownResults(req.TaskId, req.Page, req.PageSize)
+	results, total, err := h.svc.ListShutdownResults(taskId, page, pageSize)
 	if err != nil {
 		logger.Errorf("Failed to list shutdown results: %v", err)
 		utils.Error(c, 500, "Failed to list shutdown results")
 		return
 	}
 
-	utils.Paginated(c, results, total, req.Page, req.PageSize)
+	utils.Paginated(c, results, total, page, pageSize)
 }

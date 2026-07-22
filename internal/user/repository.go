@@ -28,6 +28,7 @@ type Repository interface {
 	FindUserRoles(userId int) ([]UserHasRole, error)
 	SaveUserRoles(userId int, roleIds []string) error
 	CreateLoginLog(log *LoginLog) error
+	ListLoginLogs(tenantId int, offset, limit int) ([]LoginLog, int64, error)
 	CreatePasswordHistory(h *PasswordHistory) error
 	FindRecentPasswords(username string, limit int) ([]PasswordHistory, error)
 	CountUsersByTenantId(tenantId int) (int64, error)
@@ -240,6 +241,23 @@ func (r *repository) SaveUserRoles(userId int, roleIds []string) error {
 // CreateLoginLog inserts a new login log entry.
 func (r *repository) CreateLoginLog(log *LoginLog) error {
 	return r.db.Create(log).Error
+}
+
+// ListLoginLogs returns paginated login logs, optionally filtered by tenant.
+func (r *repository) ListLoginLogs(tenantId int, offset, limit int) ([]LoginLog, int64, error) {
+	var logs []LoginLog
+	var total int64
+	q := r.db.Model(&LoginLog{})
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	return logs, total, nil
 }
 
 // ---------------------------------------------------------------------------

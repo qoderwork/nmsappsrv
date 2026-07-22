@@ -29,6 +29,9 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.DELETE("/roles/:id", authz.RequirePermission("System.Authority.Role.DeleteRole"), h.DeleteRole)
 	rg.GET("/roles/:id/permissions", authz.RequirePermission("System.Authority.Role.GetRolePermissions"), h.GetRolePermissions)
 	rg.PUT("/roles/:id/permissions", authz.RequirePermission("System.Authority.Role.UpdateRolePermissions"), h.UpdateRolePermissions)
+
+	// Login logs
+	rg.GET("/users/loginlog", authz.RequirePermission("System.Log.ListLoginLog"), h.ListLoginLogs)
 }
 
 // RegisterPublicRoutes registers public routes (no auth required) on the given router group.

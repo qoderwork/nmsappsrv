@@ -15,11 +15,9 @@ import (
 // ListBaseStationBackupInfo handles POST /listBaseStationBackupLatestFileInfo.
 // Returns a paginated list of devices with their latest config file / backup info.
 func (h *Handler) ListBaseStationBackupInfo(c *gin.Context) {
-	var req ListBaseStationBackupInfoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	req := ListBaseStationBackupInfoRequest{Page: page, PageSize: pageSize}
 	if req.Page <= 0 {
 		req.Page = 1
 	}

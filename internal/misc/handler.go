@@ -35,12 +35,17 @@ func getTenantId(c *gin.Context) int {
 	if !ok {
 		return 0
 	}
-	s, ok := v.(string)
-	if !ok {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case string:
+		id, _ := strconv.Atoi(t)
+		return id
+	default:
 		return 0
 	}
-	id, _ := strconv.Atoi(s)
-	return id
 }
 
 func (h *Handler) ListBackupRestoreTasks(c *gin.Context) {
@@ -433,15 +438,60 @@ func (h *Handler) DeleteRadius(c *gin.Context) {
 }
 
 func (h *Handler) ListOperatorLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	var q OperatorLogQuery
+	// Support both GET query params and POST JSON body
+	if c.Request.Method == "POST" {
+		if err := c.ShouldBindJSON(&q); err != nil {
+			utils.Error(c, 400, "invalid request body")
+			return
+		}
+	} else {
+		q.Page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
+		q.PageSize, _ = strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+		username := c.Query("username")
+		ip := c.Query("ipAddress")
+		logName := c.Query("logName")
+		detail := c.Query("recordDetail")
+		resultsStr := c.Query("results")
+		startStr := c.Query("startTime")
+		endStr := c.Query("endTime")
+
+		if username != "" {
+			q.Username = &username
+		}
+		if ip != "" {
+			q.IPAddress = &ip
+		}
+		if logName != "" {
+			q.LogName = &logName
+		}
+		if detail != "" {
+			q.RecordDetail = &detail
+		}
+		if resultsStr != "" {
+			if r, err := strconv.Atoi(resultsStr); err == nil {
+				q.Results = &r
+			}
+		}
+		if startStr != "" {
+			if t, err := time.Parse(time.RFC3339, startStr); err == nil {
+				q.StartTime = &t
+			}
+		}
+		if endStr != "" {
+			if t, err := time.Parse(time.RFC3339, endStr); err == nil {
+				q.EndTime = &t
+			}
+		}
+	}
+
 	tenantId := getTenantId(c)
-	data, total, err := h.svc.ListOperatorLogs(tenantId, page, pageSize)
+	data, total, err := h.svc.ListOperatorLogsFiltered(tenantId, q)
 	if err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to list operator logs")
+		utils.Error(c, 500, "failed to list operator logs")
 		return
 	}
-	utils.Paginated(c, data, total, page, pageSize)
+	utils.Paginated(c, data, total, q.Page, q.PageSize)
 }
 
 func (h *Handler) ListUploadFiles(c *gin.Context) {

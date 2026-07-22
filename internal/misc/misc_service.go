@@ -93,6 +93,22 @@ func (s *service) ListOperatorLogs(tenantId int, page, pageSize int) ([]SystemOp
 	return s.repo.FindOperatorLogs(tenantId, offset, pageSize)
 }
 
+// ListOperatorLogsFiltered returns operator logs with optional search filters.
+func (s *service) ListOperatorLogsFiltered(tenantId int, q OperatorLogQuery) ([]SystemOperatorLogVo, int64, error) {
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.PageSize < 1 {
+		q.PageSize = 20
+	}
+	return s.repo.FindOperatorLogsFiltered(tenantId, q)
+}
+
+// CreateOperatorLog inserts a single operator log record.
+func (s *service) CreateOperatorLog(log *SystemOperatorLog) error {
+	return s.repo.CreateOperatorLog(log)
+}
+
 // ---------------------------------------------------------------------------
 // UploadFile
 // ---------------------------------------------------------------------------

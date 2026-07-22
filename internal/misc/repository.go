@@ -40,7 +40,9 @@ type Repository interface {
 	SaveRadius(rad *Radius) error
 	DeleteRadius(id int) error
 	CreateOperatorLog(log *SystemOperatorLog) error
+	BatchCreateOperatorLogs(logs []SystemOperatorLog) error
 	FindOperatorLogs(tenantId int, offset, limit int) ([]SystemOperatorLog, int64, error)
+	FindOperatorLogsFiltered(tenantId int, query OperatorLogQuery) ([]SystemOperatorLogVo, int64, error)
 	FindUploadFiles(offset, limit int) ([]UploadFile, int64, error)
 	CreateUploadFile(f *UploadFile) error
 	DeleteUploadFile(id string) error
@@ -248,6 +250,14 @@ func (r *repository) CreateOperatorLog(log *SystemOperatorLog) error {
 	return r.db.Create(log).Error
 }
 
+// BatchCreateOperatorLogs inserts multiple operator log records in a single transaction.
+func (r *repository) BatchCreateOperatorLogs(logs []SystemOperatorLog) error {
+	if len(logs) == 0 {
+		return nil
+	}
+	return r.db.CreateInBatches(logs, 100).Error
+}
+
 // FindOperatorLogs returns a paginated list of operator logs.
 func (r *repository) FindOperatorLogs(tenantId int, offset, limit int) ([]SystemOperatorLog, int64, error) {
 	var logs []SystemOperatorLog
@@ -267,6 +277,80 @@ func (r *repository) FindOperatorLogs(tenantId int, offset, limit int) ([]System
 		return nil, 0, err
 	}
 	return logs, total, nil
+}
+
+// OperatorLogQuery carries filter parameters for operator log searches.
+type OperatorLogQuery struct {
+	Username     *string
+	IPAddress    *string
+	LogName      *string
+	RecordDetail *string
+	Results      *int
+	StartTime    *time.Time
+	EndTime      *time.Time
+	Page         int
+	PageSize     int
+}
+
+// SystemOperatorLogVo is the enriched view model for operator logs.
+type SystemOperatorLogVo struct {
+	Id                 int64     `json:"id"`
+	Username           *string   `json:"username"`
+	IPAddress          *string   `json:"ipAddress"`
+	LogName            *string   `json:"logName"`
+	RecordDetail       *string   `json:"recordDetail"`
+	Results            *int      `json:"results"`
+	FailureReason      *string   `json:"failureReason"`
+	OperationStartTime *time.Time `json:"operationStartTime"`
+	OperationEndTime   *time.Time `json:"operationEndTime"`
+	TenancyName        string    `json:"tenancyName"`
+}
+
+// FindOperatorLogsFiltered returns operator logs with optional filters, enriched with tenancy name.
+func (r *repository) FindOperatorLogsFiltered(tenantId int, q OperatorLogQuery) ([]SystemOperatorLogVo, int64, error) {
+	var result []SystemOperatorLogVo
+	var total int64
+
+	query := r.db.Table("system_operator_log").
+		Select("system_operator_log.*, t.tenancy_name").
+		Joins("LEFT JOIN tenancy t ON system_operator_log.tenant_id = t.license_id")
+
+	if tenantId > 0 {
+		query = query.Where("system_operator_log.tenant_id = ?", tenantId)
+	}
+	if q.Username != nil && *q.Username != "" {
+		query = query.Where("system_operator_log.username LIKE ?", "%"+*q.Username+"%")
+	}
+	if q.IPAddress != nil && *q.IPAddress != "" {
+		query = query.Where("system_operator_log.ip_address LIKE ?", "%"+*q.IPAddress+"%")
+	}
+	if q.LogName != nil && *q.LogName != "" {
+		query = query.Where("system_operator_log.log_name LIKE ?", "%"+*q.LogName+"%")
+	}
+	if q.RecordDetail != nil && *q.RecordDetail != "" {
+		query = query.Where("system_operator_log.record_detail LIKE ?", "%"+*q.RecordDetail+"%")
+	}
+	if q.Results != nil {
+		query = query.Where("system_operator_log.results = ?", *q.Results)
+	}
+	if q.StartTime != nil {
+		query = query.Where("system_operator_log.operation_start_time >= ?", q.StartTime)
+	}
+	if q.EndTime != nil {
+		query = query.Where("system_operator_log.operation_start_time <= ?", q.EndTime)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("FindOperatorLogsFiltered count error: %v", err)
+		return nil, 0, err
+	}
+
+	offset := (q.Page - 1) * q.PageSize
+	if err := query.Order("system_operator_log.id DESC").Offset(offset).Limit(q.PageSize).Scan(&result).Error; err != nil {
+		logger.Errorf("FindOperatorLogsFiltered query error: %v", err)
+		return nil, 0, err
+	}
+	return result, total, nil
 }
 
 // FindUploadFiles returns a paginated list of uploaded files.

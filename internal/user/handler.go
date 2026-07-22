@@ -628,3 +628,16 @@ func (h *Handler) UpdateRolePermissions(c *gin.Context) {
 	}
 	utils.Success(c, nil)
 }
+
+// ListLoginLogs returns a paginated list of login/logout records.
+func (h *Handler) ListLoginLogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	tenantId := middleware.GetTenantId(c)
+	data, total, err := h.svc.ListLoginLogs(tenantId, page, pageSize)
+	if err != nil {
+		utils.Error(c, 500, "failed to list login logs")
+		return
+	}
+	utils.Paginated(c, data, total, page, pageSize)
+}

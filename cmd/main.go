@@ -275,6 +275,7 @@ func main() {
 	corenetH := corenet.NewHandler(db)
 	miscH := misc.NewHandler(db, cfg)
 	miscH.EnqueueZTPFunc = tr069.EnqueueZTPProvision
+	auditWriter := &auditWriterAdapter{w: misc.NewAuditLogBatchWriter(misc.NewRepository(db))}
 	diagnosticsH := diagnostics.NewHandler(db)
 	rebootH := reboot.NewHandler(db)
 	resetH := reset.NewHandler(db)
@@ -410,6 +411,7 @@ func main() {
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())
 		auth.Use(middleware.LicenseMiddleware(licenseEnf))
+		auth.Use(middleware.AuditMiddleware(auditWriter))
 		{
 			device.RegisterRoutes(auth, deviceH)
 			site.RegisterRoutes(auth, siteH)
@@ -1102,4 +1104,24 @@ func notifyCbsdStatusToDevices(db *gorm.DB, opSender *tr069.OperationSender) {
 	if sent > 0 {
 		logger.Infof("cbsd-notice-device: sent UpdateCBSDStatus to %d device(s)", sent)
 	}
+}
+
+// auditWriterAdapter bridges middleware.AuditLogEntry → misc.AuditLogEntry.
+// Both types have the same field structure but live in different packages.
+type auditWriterAdapter struct {
+	w *misc.AuditLogBatchWriter
+}
+
+func (a *auditWriterAdapter) Write(entry *middleware.AuditLogEntry) {
+	a.w.Write(&misc.AuditLogEntry{
+		Username:           entry.Username,
+		IPAddress:          entry.IPAddress,
+		LogName:            entry.LogName,
+		RecordDetail:       entry.RecordDetail,
+		Results:            entry.Results,
+		FailureReason:      entry.FailureReason,
+		OperationStartTime: entry.OperationStartTime,
+		OperationEndTime:   entry.OperationEndTime,
+		TenantID:           entry.TenantID,
+	})
 }

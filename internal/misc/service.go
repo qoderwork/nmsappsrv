@@ -20,6 +20,8 @@ type Service interface {
 	SaveRadius(r *Radius) error
 	DeleteRadius(id int) error
 	ListOperatorLogs(tenantId int, page, pageSize int) ([]SystemOperatorLog, int64, error)
+	ListOperatorLogsFiltered(tenantId int, q OperatorLogQuery) ([]SystemOperatorLogVo, int64, error)
+	CreateOperatorLog(log *SystemOperatorLog) error
 	ListUploadFiles(page, pageSize int) ([]UploadFile, int64, error)
 	CreateUploadFile(f *UploadFile) error
 	DeleteUploadFile(id string) error

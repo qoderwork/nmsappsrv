@@ -126,16 +126,13 @@ func TenancyMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// tenant_id is required (must be > 0)
+		// If tenantID is 0 (platform admin/operator with no tenant), still allow
+		// the request through — downstream handlers will skip tenant filtering when
+		// tenant_id is 0 (aligns with Java: admin has no tenant isolation).
 		if tenantID <= 0 {
-			logger.Warnf("missing or invalid tenant_id for request %s %s from %s",
+			logger.Debugf("tenant_id not set (platform user) for request %s %s from %s",
 				c.Request.Method, c.Request.RequestURI, c.ClientIP())
-			utils.Error(c, 403, "tenant_id required")
-			c.Abort()
-			return
 		}
-
-		// Set tenant_id in context for downstream handlers as int
 		c.Set("tenant_id", tenantID)
 
 		c.Next()

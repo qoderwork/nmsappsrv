@@ -20,6 +20,7 @@ type Service interface {
 	Logout(username, jwtToken string) error
 	RecordLogin(username, ip string, tenantId int, result int) error
 	RecordLogout(username, ip string, tenantId int) error
+	ListLoginLogs(tenantId int, page, pageSize int) ([]LoginLog, int64, error)
 	ListUsers(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error)
 	CreateUser(u *SysUser) (string, error)
 	UpdateUser(u *SysUser) error
@@ -222,6 +223,14 @@ func (s *service) RecordLogout(username, ip string, tenantId int) error {
 		return apperror.Wrap(err, "RECORD_LOGOUT_FAILED", 500, "failed to record logout")
 	}
 	return nil
+}
+
+// ListLoginLogs returns paginated login logs.
+func (s *service) ListLoginLogs(tenantId int, page, pageSize int) ([]LoginLog, int64, error) {
+	if page < 1 { page = 1 }
+	if pageSize < 1 { pageSize = 20 }
+	offset := (page - 1) * pageSize
+	return s.repo.ListLoginLogs(tenantId, offset, pageSize)
 }
 
 // ---------------------------------------------------------------------------
