@@ -58,3 +58,15 @@ var (
 	LoginCodeUsernameDeletedUsed    = 10282
 	LoginMsgUsernameDeletedUsed     = "The username has been used before, please use another username"
 )
+
+// Redis key prefixes mirror Java constants for IP-level lockout.
+var (
+	IPFailedLoginPrefix = "IP_FAILED_LOGIN_PREFIX:"
+	IPLoginLockPrefix   = "IP_LOGIN_LOCK_PREFIX:"
+)
+
+// IP lockout thresholds (matches Java defaults).
+const (
+	IPFailedLoginMaxAttempts = 20
+	IPLockDurationMinutes    = 30
+)

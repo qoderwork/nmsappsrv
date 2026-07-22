@@ -83,6 +83,10 @@ func Exists(ctx context.Context, key string) bool {
 	return RDB.Exists(ctx, key).Val() > 0
 }
 
+func Incr(ctx context.Context, key string) (int64, error) {
+	return RDB.Incr(ctx, key).Result()
+}
+
 func Expire(ctx context.Context, key string, expiration time.Duration) error {
 	return RDB.Expire(ctx, key, expiration).Err()
 }

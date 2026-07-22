@@ -44,6 +44,17 @@ func Error(c *gin.Context, code int, message string) {
 	})
 }
 
+// StatusCode writes HTTP 200 with an arbitrary numeric code in the response
+// body. Used for Java-compatible 100xx login error codes (10047, 10048,
+// 10296, …) which must appear in JSON.code while the transport status stays
+// 200 OK — mirrors Java global exception handler behaviour.
+func StatusCode(c *gin.Context, code int, message string) {
+	c.JSON(http.StatusOK, Response{
+		Code:    code,
+		Message: message,
+	})
+}
+
 // ErrorWithExtra returns an error envelope with the extra fields placed inside
 // the "data" key, keeping the shape consistent with the standard Response:
 // {"code":400, "message":"captcha required", "data":{"required":true}}

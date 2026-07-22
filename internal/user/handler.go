@@ -1,16 +1,20 @@
 package user
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"nmsappsrv/internal/authz"
 	"nmsappsrv/internal/captcha"
 	"nmsappsrv/internal/middleware"
+	"nmsappsrv/pkg/enums"
 	"nmsappsrv/pkg/logger"
+	"nmsappsrv/pkg/redis"
 	"nmsappsrv/pkg/utils"
 
 	"gorm.io/gorm"
@@ -61,6 +65,16 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	ip := resolveClientIP(c)
+	ctx := context.Background()
+
+	// --- IP-level lockout (mirrors Java IP_FAILED_LOGIN_PREFIX / IP_LOGIN_LOCK_PREFIX) ---
+	ipLockKey := enums.IPLoginLockPrefix + ip
+	ipFailedKey := enums.IPFailedLoginPrefix + ip
+	if redis.Exists(ctx, ipLockKey) {
+		_ = h.svc.RecordLogin(req.Username, ip, 0, 0, enums.LoginMsgIPLocked)
+		utils.StatusCode(c, int(enums.LoginCodeIPLocked), enums.LoginMsgIPLocked)
+		return
+	}
 
 	// Adaptive captcha gate: only enforced once failures have triggered it.
 	if h.captchaMgr != nil && h.captchaMgr.IsRequired(req.Username, ip) {
@@ -70,6 +84,9 @@ func (h *Handler) Login(c *gin.Context) {
 		}
 		if !h.captchaMgr.Verify(c.Request.Context(), req.VerificationKey, req.VerificationCode) {
 			h.captchaMgr.OnFailure(req.Username, ip)
+			// Captcha failure also counts toward the IP failure budget.
+			h.bumpIPFailedLogin(ctx, ipFailedKey, ipLockKey)
+			_ = h.svc.RecordLogin(req.Username, ip, 0, 0, "invalid captcha")
 			utils.ErrorWithExtra(c, http.StatusBadRequest, "invalid captcha", map[string]interface{}{"required": true})
 			return
 		}
@@ -81,10 +98,14 @@ func (h *Handler) Login(c *gin.Context) {
 		if h.captchaMgr != nil {
 			h.captchaMgr.OnFailure(req.Username, ip)
 		}
+		h.bumpIPFailedLogin(ctx, ipFailedKey, ipLockKey)
 		_ = h.svc.RecordLogin(req.Username, ip, 0, 0, err.Error())
 		utils.HandleError(c, err)
 		return
 	}
+
+	// Successful login: clear IP-level failure state.
+	_ = redis.Del(ctx, ipFailedKey, ipLockKey)
 
 	// Successful login resets the captcha risk state.
 	if h.captchaMgr != nil {
@@ -672,4 +693,24 @@ func (h *Handler) ListLoginLogs(c *gin.Context) {
 		return
 	}
 	utils.Paginated(c, data, total, page, pageSize)
+}
+
+// bumpIPFailedLogin increments the IP-level failed-login counter in Redis and,
+// once the threshold is reached, sets the IP lock key. Both keys share the
+// same sliding 30-min window to match Java behaviour.
+func (h *Handler) bumpIPFailedLogin(ctx context.Context, ipFailedKey, ipLockKey string) {
+	n, err := redis.Incr(ctx, ipFailedKey)
+	if err != nil {
+		logger.Warnf("ip lockout: incr %s failed: %v", ipFailedKey, err)
+		return
+	}
+	// Set TTL only on first increment so the counter window slides naturally.
+	if n == 1 {
+		_ = redis.Expire(ctx, ipFailedKey, enums.IPLockDurationMinutes*time.Minute)
+	}
+	if n >= int64(enums.IPFailedLoginMaxAttempts) {
+		if err := redis.Set(ctx, ipLockKey, "1", enums.IPLockDurationMinutes*time.Minute); err != nil {
+			logger.Warnf("ip lockout: set lock %s failed: %v", ipLockKey, err)
+		}
+	}
 }
