@@ -141,6 +141,24 @@ func (h *Handler) CaptchaImage(c *gin.Context) {
 	utils.Success(c, gin.H{"key": key, "imageBase64": b64})
 }
 
+// RenewToken handles GET /renewToken: issues a fresh JWT for the authenticated
+// user, extending the session (sliding expiration). Mirrors the Java /renewToken
+// endpoint used by the original nms-web frontend.
+func (h *Handler) RenewToken(c *gin.Context) {
+	userId := middleware.GetUserId(c)
+	username := middleware.GetUsername(c)
+	tenantId := middleware.GetTenantId(c)
+	roleNames := middleware.GetRoleNames(c)
+
+	token, err := middleware.GenerateToken(userId, username, tenantId, roleNames, "")
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+
+	utils.Success(c, gin.H{"token": token})
+}
+
 // Logout handles POST /logout
 func (h *Handler) Logout(c *gin.Context) {
 	username := middleware.GetUsername(c)

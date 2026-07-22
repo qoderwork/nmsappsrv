@@ -15,6 +15,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.DELETE("/users/:id", authz.RequirePermission("System.Authority.User.DeleteUser"), h.DeleteUser)
 	rg.POST("/users/kick-out", authz.RequirePermission("System.Authority.User.KickOutUser"), h.KickOutUser)
 	rg.POST("/users/unlock", authz.RequirePermission("System.Authority.User.EnableUser"), h.UnlockUser)
+	rg.GET("/renewToken", h.RenewToken)
 	rg.POST("/users/modify-password", h.ModifyPassword)
 	rg.POST("/users/enable", authz.RequirePermission("System.Authority.User.EnableUser"), h.EnableUser)
 	rg.POST("/users/disable", authz.RequirePermission("System.Authority.User.DisableUser"), h.DisableUser)
