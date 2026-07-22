@@ -588,7 +588,7 @@ func (s *service) SetTenancyForUser(userId, tenantId int) error {
 	}
 
 	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
-		"tenant_id": tenantId,
+		"license_id": tenantId,
 	}); err != nil {
 		return apperror.Wrap(err, "SET_TENANCY_FAILED", 500, "failed to set tenancy")
 	}

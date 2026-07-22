@@ -57,10 +57,12 @@ func NewRepository(db *gorm.DB) Repository {
 // SysUser CRUD
 // ---------------------------------------------------------------------------
 
-// FindUserByUsername returns a user by username.
+// FindUserByUsername returns a user by username, excluding deleted rows.
+// Mirrors Java: findByUsernameAndDeletedIsFalse — a soft-deleted user must
+// not be discoverable by username (including for login).
 func (r *repository) FindUserByUsername(username string) (*SysUser, error) {
 	var u SysUser
-	if err := r.db.Where("username = ?", username).First(&u).Error; err != nil {
+	if err := r.db.Where("username = ? AND (deleted IS NULL OR deleted = ?)", username, false).First(&u).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil
@@ -283,9 +285,12 @@ func (r *repository) FindRecentPasswords(username string, limit int) ([]Password
 // ---------------------------------------------------------------------------
 
 // CountUsersByTenantId returns the number of users for a license.
+// Alias name kept for interface stability; internally uses license_id column.
 func (r *repository) CountUsersByTenantId(tenantId int) (int64, error) {
 	var count int64
-	if err := r.db.Model(&SysUser{}).Where("tenant_id = ?", tenantId).Count(&count).Error; err != nil {
+	if err := r.db.Model(&SysUser{}).
+		Where("license_id = ? AND (deleted IS NULL OR deleted = ?)", tenantId, false).
+		Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil

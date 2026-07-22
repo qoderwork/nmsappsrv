@@ -18,7 +18,7 @@ type SysUser struct {
 	PhoneNumber          *string    `gorm:"column:phone_number;type:varchar(255)" json:"phone_number"`
 	RealName             *string    `gorm:"column:real_name;type:varchar(255)" json:"real_name"`
 	Status               *int       `gorm:"column:status" json:"status"`
-	TenantId            *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	LicenseId            *int       `gorm:"column:license_id" json:"license_id"`
 	CreateTime           *time.Time `gorm:"column:create_time" json:"create_time"`
 	LastLoginTime        *time.Time `gorm:"column:last_login_time" json:"last_login_time"`
 	LoginErrorTimes      *int       `gorm:"column:login_error_times" json:"login_error_times"`

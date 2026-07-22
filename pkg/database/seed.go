@@ -195,7 +195,7 @@ func ensureAdminUser(db *gorm.DB, tenantId int, roleId string) error {
 		Password:           &hashedStr,
 		RealName:           strPtr("Administrator"),
 		Status:             &status,
-		TenantId:          &tenantId,
+		LicenseId:          &tenantId,
 		CreateTime:         &now,
 		Enable:             &enable,
 		LoginErrorTimes:    intPtr(0),

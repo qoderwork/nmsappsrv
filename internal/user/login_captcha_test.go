@@ -39,7 +39,7 @@ func TestLoginCaptchaGate(t *testing.T) {
 		return &mockService{
 			loginFn: func(username, password string) (*SysUser, error) {
 				lic := 1
-				return &SysUser{Id: 10, Username: strPtr("alice"), TenantId: &lic}, nil
+				return &SysUser{Id: 10, Username: strPtr("alice"), LicenseId: &lic}, nil
 			},
 			getRoleNamesForUserFn: func(userId, tenantId int) ([]string, error) {
 				return []string{"admin"}, nil

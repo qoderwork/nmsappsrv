@@ -92,8 +92,8 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	tenantId := 0 // 0 = platform user (Admin/Operator), no tenant filter (aligns with Java SecurityUtil.getTenantId() returning null)
-	if u.TenantId != nil && *u.TenantId > 0 {
-		tenantId = *u.TenantId
+	if u.LicenseId != nil && *u.LicenseId > 0 {
+		tenantId = *u.LicenseId
 	}
 
 	// Resolve role names for JWT claims (aligned with Java JWT structure)
@@ -220,11 +220,11 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	dtos := ToUserDTOs(data)
 
 	// Fill tenancy names (mirrors Java: tenantIdToNameMap)
-	// Build lookup from tenant_id -> license_name
+	// Build lookup from license_id -> license_name
 	tenantIds := make(map[int]bool)
 	for _, u := range data {
-		if u.TenantId != nil {
-			tenantIds[*u.TenantId] = true
+		if u.LicenseId != nil {
+			tenantIds[*u.LicenseId] = true
 		}
 	}
 	var tenancyMap map[int]string
@@ -234,8 +234,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	for i := range dtos {
 		// Fill tenancy name
-		if data[i].TenantId != nil && tenancyMap != nil {
-			dtos[i].Tenancy = tenancyMap[*data[i].TenantId]
+		if data[i].LicenseId != nil && tenancyMap != nil {
+			dtos[i].Tenancy = tenancyMap[*data[i].LicenseId]
 		}
 		// Default createUsername to "admin" if empty (mirrors Java)
 		if dtos[i].CreateUsername == nil || *dtos[i].CreateUsername == "" {
@@ -306,8 +306,8 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	}
 	if isAdminOrOperator {
 		// Admin may pass tenantId in body to assign tenant at creation time.
-		if u.TenantId != nil && *u.TenantId > 0 {
-			if !h.svc.TenantExists(*u.TenantId) {
+		if u.LicenseId != nil && *u.LicenseId > 0 {
+			if !h.svc.TenantExists(*u.LicenseId) {
 				utils.Error(c, http.StatusBadRequest, "specified tenant does not exist")
 				return
 			}
@@ -316,9 +316,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		// Non-admin: force inherit creator's tenant, ignore any body value.
 		tenantId := middleware.GetTenantId(c)
 		if tenantId > 0 {
-			u.TenantId = &tenantId
+			u.LicenseId = &tenantId
 		} else {
-			u.TenantId = nil
+			u.LicenseId = nil
 		}
 	}
 
