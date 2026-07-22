@@ -56,9 +56,9 @@ func (h *Handler) BatchUpgradeEUAndRU(c *gin.Context) {
 		utils.Error(c, 400, "invalid request body")
 		return
 	}
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
-	if err := h.svc.BatchUpgradeEUAndRU(&req, tenancyId, username); err != nil {
+	if err := h.svc.BatchUpgradeEUAndRU(&req, tenantId, username); err != nil {
 		utils.HandleError(c, err)
 		return
 	}

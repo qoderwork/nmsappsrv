@@ -13,9 +13,9 @@ import (
 // ============================
 
 func (s *service) ListTBGs(c *gin.Context, offset, limit int) ([]TBGVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	tbgs, total, err := s.repo.ListTBGs(licenseId, offset, limit)
+	tbgs, total, err := s.repo.ListTBGs(tenantId, offset, limit)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_TBGS_FAILED", 500, "failed to list TBGs")
 	}
@@ -66,7 +66,7 @@ func (s *service) GetTBGByWanMac(mac string) (*TBGVo, error) {
 }
 
 func (s *service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
 	if len(reqs) > 100 {
@@ -84,7 +84,7 @@ func (s *service) AddTBGs(c *gin.Context, reqs []AddTBGRequest) ([]TBGVo, error)
 		sn := req.SerialNumber
 		tbg := TBGDevice{
 			SerialNumber: &sn,
-			LicenseId:    &licenseId,
+			TenantId:    &tenantId,
 		}
 		if req.Band != "" {
 			tbg.Band = &req.Band

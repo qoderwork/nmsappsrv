@@ -12,7 +12,7 @@ type Repository interface {
 	FindFileByFileId(fileId string) (*MNormalFile, error)
 	UpdateFile(f *MNormalFile) error
 	DeleteFile(fileId string) error
-	FindFiles(licenseId int, fileName string, offset, limit int) ([]MNormalFile, int64, error)
+	FindFiles(tenantId int, fileName string, offset, limit int) ([]MNormalFile, int64, error)
 
 	CreateChunk(chunk *MNormalFileChunk) error
 	FindChunk(fileId string, chunkIndex int) (*MNormalFileChunk, error)
@@ -66,12 +66,12 @@ func (r *repository) DeleteFile(fileId string) error {
 }
 
 // FindFiles returns a paginated list of MNormal file records.
-func (r *repository) FindFiles(licenseId int, fileName string, offset, limit int) ([]MNormalFile, int64, error) {
+func (r *repository) FindFiles(tenantId int, fileName string, offset, limit int) ([]MNormalFile, int64, error) {
 	var list []MNormalFile
 	var total int64
 	query := r.db.Model(&MNormalFile{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if fileName != "" {
 		query = query.Where("file_name LIKE ?", "%"+fileName+"%")

@@ -116,12 +116,12 @@ func (r *repository) CreateMmlCommandParam(p *MmlCommandParam) error {
 }
 
 // FindMmlSetsByVersionAndLicense returns every MmlSet for the version+license
-// (top-level and nested), 对齐 Java mmlSetService.getByVersionAndLicenseId.
-func (r *repository) FindMmlSetsByVersionAndLicense(version string, licenseId int) ([]MmlSet, error) {
+// (top-level and nested), 对齐 Java mmlSetService.getByVersionAndTenantId.
+func (r *repository) FindMmlSetsByVersionAndLicense(version string, tenantId int) ([]MmlSet, error) {
 	var sets []MmlSet
 	query := r.db.Where("version = ?", version)
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Find(&sets).Error; err != nil {
 		logger.Errorf("FindMmlSetsByVersionAndLicense error: %v", err)
@@ -132,11 +132,11 @@ func (r *repository) FindMmlSetsByVersionAndLicense(version string, licenseId in
 
 // FindTopMmlSets returns only the top-level MmlSet rows (parent_id IS NULL) for
 // the version+license.
-func (r *repository) FindTopMmlSets(version string, licenseId int) ([]MmlSet, error) {
+func (r *repository) FindTopMmlSets(version string, tenantId int) ([]MmlSet, error) {
 	var sets []MmlSet
 	query := r.db.Where("version = ? AND parent_id IS NULL", version)
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Find(&sets).Error; err != nil {
 		logger.Errorf("FindTopMmlSets error: %v", err)
@@ -157,11 +157,11 @@ func (r *repository) FindChildMmlSets(parentId int) ([]MmlSet, error) {
 
 // FindMmlSetByParentIdAndName resolves an existing MmlSet by parent + name +
 // license (used for idempotent import, 对齐 Java getByParentIdAndName).
-func (r *repository) FindMmlSetByParentIdAndName(parentId *int, name string, licenseId int) ([]MmlSet, error) {
+func (r *repository) FindMmlSetByParentIdAndName(parentId *int, name string, tenantId int) ([]MmlSet, error) {
 	var sets []MmlSet
 	q := r.db.Where("name = ?", name)
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	if parentId != nil {
 		q = q.Where("parent_id = ?", *parentId)
@@ -202,12 +202,12 @@ func (r *repository) FindMmlCommandParamsByCommandIds(ids []int) ([]MmlCommandPa
 }
 
 // FindMmlVersions returns the distinct, non-null versions for the license,
-// 对齐 Java mmlSetService.getByLicenseId -> distinct version.
-func (r *repository) FindMmlVersions(licenseId int) ([]string, error) {
+// 对齐 Java mmlSetService.getByTenantId -> distinct version.
+func (r *repository) FindMmlVersions(tenantId int) ([]string, error) {
 	var versions []string
 	query := r.db.Model(&MmlSet{}).Where("version IS NOT NULL")
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Distinct("version").
 		Pluck("version", &versions).Error; err != nil {
@@ -254,7 +254,7 @@ func (r *repository) DeleteMmlCommandParamsByIds(ids []int) error {
 // ParameterSet/Parameter catalog and ErrorInfo from the same XML. Those belong
 // to the parameter/errorinfo domains and are intentionally out of scope here;
 // this implementation covers the MML command tree only.
-func (s *service) ImportMMLAndParameter(reader io.Reader, version string, licenseId int) error {
+func (s *service) ImportMMLAndParameter(reader io.Reader, version string, tenantId int) error {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return apperror.Wrap(err, "IMPORT_MML_READ_FAILED", 500, "failed to read MML file")
@@ -274,7 +274,7 @@ func (s *service) ImportMMLAndParameter(reader io.Reader, version string, licens
 
 	// Version replace: drop existing MmlSet/Command/Param for this version+license.
 	if version != "" {
-		if delErr := s.deleteMmlByVersionInternal(version, licenseId); delErr != nil {
+		if delErr := s.deleteMmlByVersionInternal(version, tenantId); delErr != nil {
 			return delErr
 		}
 	}
@@ -282,7 +282,7 @@ func (s *service) ImportMMLAndParameter(reader io.Reader, version string, licens
 	for i := range root.Mmls {
 		folder := &root.Mmls[i]
 		if folder.Type == "mml" {
-			s.insertMMLSet(hintMap, folder, nil, licenseId, version)
+			s.insertMMLSet(hintMap, folder, nil, tenantId, version)
 		}
 	}
 	return nil
@@ -290,9 +290,9 @@ func (s *service) ImportMMLAndParameter(reader io.Reader, version string, licens
 
 // insertMMLSet creates (or reuses) a folder node and recurses into its commands
 // and sub-folders, 对齐 Java insertMMLSet.
-func (s *service) insertMMLSet(hintMap map[string]string, folder *mmlFolder, parentId *int, licenseId int, version string) {
+func (s *service) insertMMLSet(hintMap map[string]string, folder *mmlFolder, parentId *int, tenantId int, version string) {
 	setId := 0
-	existing, err := s.repo.FindMmlSetByParentIdAndName(parentId, folder.Name, licenseId)
+	existing, err := s.repo.FindMmlSetByParentIdAndName(parentId, folder.Name, tenantId)
 	if err != nil {
 		logger.Errorf("insertMMLSet: failed to resolve existing set %q: %v", folder.Name, err)
 		return
@@ -311,7 +311,7 @@ func (s *service) insertMMLSet(hintMap map[string]string, folder *mmlFolder, par
 		}
 	}
 	if !reused {
-		set := &MmlSet{Name: mmlStrPtr(folder.Name), ParentId: parentId, LicenseId: &licenseId}
+		set := &MmlSet{Name: mmlStrPtr(folder.Name), ParentId: parentId, TenantId: &tenantId}
 		if version != "" {
 			set.Version = mmlStrPtr(version)
 		}
@@ -329,7 +329,7 @@ func (s *service) insertMMLSet(hintMap map[string]string, folder *mmlFolder, par
 	// Nested sub-folders.
 	for i := range folder.Children {
 		childId := setId
-		s.insertMMLSet(hintMap, &folder.Children[i], &childId, licenseId, version)
+		s.insertMMLSet(hintMap, &folder.Children[i], &childId, tenantId, version)
 	}
 }
 
@@ -419,14 +419,14 @@ func mmlEnumValueToKey(option, defaultValue string) (string, bool) {
 }
 
 // GetMmlVersions returns distinct versions for the license, 对齐 Java getMmlVersions.
-func (s *service) GetMmlVersions(licenseId int) ([]string, error) {
-	return s.repo.FindMmlVersions(licenseId)
+func (s *service) GetMmlVersions(tenantId int) ([]string, error) {
+	return s.repo.FindMmlVersions(tenantId)
 }
 
 // GetMmlCommandsByVersion returns the full command tree for a specific version,
 // 对齐 Java getMmlCommandsByVersion.
-func (s *service) GetMmlCommandsByVersion(version string, licenseId int) (*MmlVersionInfoVO, error) {
-	sets, err := s.repo.FindMmlSetsByVersionAndLicense(version, licenseId)
+func (s *service) GetMmlCommandsByVersion(version string, tenantId int) (*MmlVersionInfoVO, error) {
+	sets, err := s.repo.FindMmlSetsByVersionAndLicense(version, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -442,8 +442,8 @@ func (s *service) GetMmlCommandsByVersion(version string, licenseId int) (*MmlVe
 
 // GetMmlCommandTree returns the command tree for the CURRENT (max) version,
 // 对齐 Java getMmlCommand (versions reverse-sorted, first = current).
-func (s *service) GetMmlCommandTree(licenseId int) ([]MmlSetVo, error) {
-	versions, err := s.repo.FindMmlVersions(licenseId)
+func (s *service) GetMmlCommandTree(tenantId int) ([]MmlSetVo, error) {
+	versions, err := s.repo.FindMmlVersions(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +456,7 @@ func (s *service) GetMmlCommandTree(licenseId int) ([]MmlSetVo, error) {
 			current = v
 		}
 	}
-	sets, err := s.repo.FindMmlSetsByVersionAndLicense(current, licenseId)
+	sets, err := s.repo.FindMmlSetsByVersionAndLicense(current, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -469,14 +469,14 @@ func (s *service) GetMmlCommandTree(licenseId int) ([]MmlSetVo, error) {
 
 // DeleteMmlByVersion cascade-deletes all MmlSet/Command/Param for a version,
 // 对齐 Java deleteMmlByVersion.
-func (s *service) DeleteMmlByVersion(version string, licenseId int) error {
-	return s.deleteMmlByVersionInternal(version, licenseId)
+func (s *service) DeleteMmlByVersion(version string, tenantId int) error {
+	return s.deleteMmlByVersionInternal(version, tenantId)
 }
 
 // deleteMmlByVersionInternal is the shared cascade-delete used by both the
 // explicit delete endpoint and the import version-replace path.
-func (s *service) deleteMmlByVersionInternal(version string, licenseId int) error {
-	sets, err := s.repo.FindMmlSetsByVersionAndLicense(version, licenseId)
+func (s *service) deleteMmlByVersionInternal(version string, tenantId int) error {
+	sets, err := s.repo.FindMmlSetsByVersionAndLicense(version, tenantId)
 	if err != nil {
 		return apperror.Wrap(err, "DELETE_MML_QUERY_FAILED", 500, "failed to query MML sets")
 	}
@@ -589,7 +589,7 @@ func (h *Handler) ImportMML(c *gin.Context) {
 		return
 	}
 	version := c.PostForm("version")
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	f, err := fileHeader.Open()
 	if err != nil {
@@ -598,7 +598,7 @@ func (h *Handler) ImportMML(c *gin.Context) {
 	}
 	defer f.Close()
 
-	if err := h.svc.ImportMMLAndParameter(f, version, licenseId); err != nil {
+	if err := h.svc.ImportMMLAndParameter(f, version, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -607,8 +607,8 @@ func (h *Handler) ImportMML(c *gin.Context) {
 
 // GetMmlVersions handles GET /mml/versions.
 func (h *Handler) GetMmlVersions(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	versions, err := h.svc.GetMmlVersions(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	versions, err := h.svc.GetMmlVersions(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -623,8 +623,8 @@ func (h *Handler) GetMmlCommandsByVersion(c *gin.Context) {
 		utils.Error(c, 400, "version is required")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	vo, err := h.svc.GetMmlCommandsByVersion(version, licenseId)
+	tenantId := middleware.GetTenantId(c)
+	vo, err := h.svc.GetMmlCommandsByVersion(version, tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -634,8 +634,8 @@ func (h *Handler) GetMmlCommandsByVersion(c *gin.Context) {
 
 // GetMmlCommandTree handles GET /mml/command-tree (current version tree).
 func (h *Handler) GetMmlCommandTree(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	tree, err := h.svc.GetMmlCommandTree(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	tree, err := h.svc.GetMmlCommandTree(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -650,8 +650,8 @@ func (h *Handler) DeleteMmlByVersion(c *gin.Context) {
 		utils.Error(c, 400, "version is required")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	if err := h.svc.DeleteMmlByVersion(version, licenseId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.DeleteMmlByVersion(version, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}

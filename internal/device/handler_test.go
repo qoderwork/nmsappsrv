@@ -19,15 +19,15 @@ import (
 
 type mockService struct {
 	getDeviceFn     func(id int64) (*CpeElement, error)
-	listDevicesFn   func(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
-	createDeviceFn  func(elem *CpeElement, licenseId int) error
+	listDevicesFn   func(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
+	createDeviceFn  func(elem *CpeElement, tenantId int) error
 	updateDeviceFn  func(elem *CpeElement) error
 	deleteDeviceFn  func(id int64) error
-	listGroupsFn    func(licenseId int) ([]DeviceGroup, error)
-	createGroupFn   func(g *DeviceGroup, licenseId int) error
+	listGroupsFn    func(tenantId int) ([]DeviceGroup, error)
+	createGroupFn   func(g *DeviceGroup, tenantId int) error
 	updateGroupFn   func(g *DeviceGroup) error
 	deleteGroupFn   func(id string) error
-	importDevicesFn func(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error)
+	importDevicesFn func(rows []ImportDeviceRow, deviceType string, deviceGroupId string, tenantId int) (*ImportDeviceResult, error)
 }
 
 func (m *mockService) GetDevice(id int64) (*CpeElement, error) {
@@ -37,16 +37,16 @@ func (m *mockService) GetDevice(id int64) (*CpeElement, error) {
 	return nil, nil
 }
 
-func (m *mockService) ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
+func (m *mockService) ListDevices(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
 	if m.listDevicesFn != nil {
-		return m.listDevicesFn(licenseId, keyword, page, pageSize)
+		return m.listDevicesFn(tenantId, keyword, page, pageSize)
 	}
 	return nil, 0, nil
 }
 
-func (m *mockService) CreateDevice(elem *CpeElement, licenseId int) error {
+func (m *mockService) CreateDevice(elem *CpeElement, tenantId int) error {
 	if m.createDeviceFn != nil {
-		return m.createDeviceFn(elem, licenseId)
+		return m.createDeviceFn(elem, tenantId)
 	}
 	return nil
 }
@@ -65,16 +65,16 @@ func (m *mockService) DeleteDevice(id int64) error {
 	return nil
 }
 
-func (m *mockService) ListGroups(licenseId int) ([]DeviceGroup, error) {
+func (m *mockService) ListGroups(tenantId int) ([]DeviceGroup, error) {
 	if m.listGroupsFn != nil {
-		return m.listGroupsFn(licenseId)
+		return m.listGroupsFn(tenantId)
 	}
 	return nil, nil
 }
 
-func (m *mockService) CreateGroup(g *DeviceGroup, licenseId int) error {
+func (m *mockService) CreateGroup(g *DeviceGroup, tenantId int) error {
 	if m.createGroupFn != nil {
-		return m.createGroupFn(g, licenseId)
+		return m.createGroupFn(g, tenantId)
 	}
 	return nil
 }
@@ -93,22 +93,22 @@ func (m *mockService) DeleteGroup(id string) error {
 	return nil
 }
 
-func (m *mockService) ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error) {
+func (m *mockService) ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, tenantId int) (*ImportDeviceResult, error) {
 	if m.importDevicesFn != nil {
-		return m.importDevicesFn(rows, deviceType, deviceGroupId, licenseId)
+		return m.importDevicesFn(rows, deviceType, deviceGroupId, tenantId)
 	}
 	return nil, nil
 }
 
-func (m *mockService) SetLicenseIdNullByLicenseId(licenseId int) error {
+func (m *mockService) SetTenantIdNullByTenantId(tenantId int) error {
 	return nil
 }
 
-func (m *mockService) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+func (m *mockService) DeleteDefaultGroupsByTenantId(tenantId int) error {
 	return nil
 }
 
-func (m *mockService) CreateDefaultGroup(licenseId int) error {
+func (m *mockService) CreateDefaultGroup(tenantId int) error {
 	return nil
 }
 
@@ -117,15 +117,15 @@ func (m *mockService) CreateDefaultGroup(licenseId int) error {
 // ---------------------------------------------------------------------------
 
 // setupRouter creates a gin test router with the handler registered and
-// a middleware that injects license_id into the context (mocking the JWT
+// a middleware that injects tenant_id into the context (mocking the JWT
 // auth middleware).
 func setupRouter(h *Handler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
-	// Mock middleware: inject license_id so GetLicenseId returns 1.
+	// Mock middleware: inject tenant_id so GetTenantId returns 1.
 	r.Use(func(c *gin.Context) {
-		c.Set("license_id", 1)
+		c.Set("tenant_id", 1)
 		c.Next()
 	})
 
@@ -153,8 +153,8 @@ func TestHandler_ListDevices(t *testing.T) {
 	sn := "SN001"
 	name := "Device1"
 	mockSvc := &mockService{
-		listDevicesFn: func(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
-			assert.Equal(t, 1, licenseId)
+		listDevicesFn: func(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
+			assert.Equal(t, 1, tenantId)
 			assert.Equal(t, "", keyword)
 			assert.Equal(t, 1, page)
 			assert.Equal(t, 20, pageSize)
@@ -186,7 +186,7 @@ func TestHandler_ListDevices(t *testing.T) {
 
 func TestHandler_ListDevices_WithKeyword(t *testing.T) {
 	mockSvc := &mockService{
-		listDevicesFn: func(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
+		listDevicesFn: func(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
 			assert.Equal(t, "test", keyword)
 			return []CpeElement{}, 0, nil
 		},
@@ -205,7 +205,7 @@ func TestHandler_ListDevices_WithKeyword(t *testing.T) {
 
 func TestHandler_ListDevices_ServiceError(t *testing.T) {
 	mockSvc := &mockService{
-		listDevicesFn: func(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
+		listDevicesFn: func(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
 			return nil, 0, apperror.Wrap(errors.New("db error"), "LIST_DEVICES_FAILED", 500, "failed to list devices")
 		},
 	}

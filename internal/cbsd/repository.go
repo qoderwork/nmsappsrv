@@ -19,21 +19,21 @@ type Repository interface {
 	FindAll(query *gorm.DB) ([]CbsdInfo, error)
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[CbsdInfo], error)
-	FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo, int64, error)
-	FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, error)
+	FindCbsdInfos(tenantId int, offset, limit int) ([]CbsdInfo, int64, error)
+	FindCbsdInfoBySN(sn string, tenantId int) (*CbsdInfo, error)
 	FindCbrsLogs(cbsdId string, logType string, offset, limit int) ([]CbrsLog, int64, error)
 	CreateCbrsLog(log *CbrsLog) error
 	CreateCertFileSendTask(t *CBSDCertFileSendTask) error
-	FindCertFileSendTasks(tenancyId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error)
+	FindCertFileSendTasks(tenantId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error)
 
 	// CBSD lifecycle
 	FindCbsdInfoByID(id string) (*CbsdInfo, error)
 	UpdateCbsdEnable(id string, enable bool) error
-	CountCbsdByStatus(licenseId int) ([]CbsdStatusCountItem, error)
+	CountCbsdByStatus(tenantId int) ([]CbsdStatusCountItem, error)
 	BulkCreateCbsdInfos(infos []CbsdInfo) error
 
 	// SAS config
-	FindSasConfigs(licenseId int) ([]SasConfig, error)
+	FindSasConfigs(tenantId int) ([]SasConfig, error)
 	FindSasConfigByID(id int64) (*SasConfig, error)
 	UpdateSasConfig(cfg *SasConfig) error
 
@@ -62,13 +62,13 @@ func NewRepository(db *gorm.DB) Repository {
 // ---------------------------------------------------------------------------
 
 // FindCbsdInfos returns a paginated list of CBSD info records for the given license.
-func (r *repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo, int64, error) {
+func (r *repository) FindCbsdInfos(tenantId int, offset, limit int) ([]CbsdInfo, int64, error) {
 	var infos []CbsdInfo
 	var total int64
 
 	query := r.db.Model(&CbsdInfo{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -83,11 +83,11 @@ func (r *repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo
 }
 
 // FindCbsdInfoBySN looks up a CBSD info by serial number and license.
-func (r *repository) FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, error) {
+func (r *repository) FindCbsdInfoBySN(sn string, tenantId int) (*CbsdInfo, error) {
 	var info CbsdInfo
 	query := r.db.Where("cbsd_serial_number = ?", sn)
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.First(&info).Error; err != nil {
 		return nil, err
@@ -138,13 +138,13 @@ func (r *repository) CreateCertFileSendTask(t *CBSDCertFileSendTask) error {
 }
 
 // FindCertFileSendTasks returns a paginated list of cert file send tasks for the given tenancy.
-func (r *repository) FindCertFileSendTasks(tenancyId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error) {
+func (r *repository) FindCertFileSendTasks(tenantId int, offset, limit int) ([]CBSDCertFileSendTask, int64, error) {
 	var tasks []CBSDCertFileSendTask
 	var total int64
 
 	query := r.db.Model(&CBSDCertFileSendTask{})
-	if tenancyId > 0 {
-		query = query.Where("tenancy_id = ?", tenancyId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -177,7 +177,7 @@ func (r *repository) UpdateCbsdEnable(id string, enable bool) error {
 }
 
 // CountCbsdByStatus returns per-operation_state counts for a given license.
-func (r *repository) CountCbsdByStatus(licenseId int) ([]CbsdStatusCountItem, error) {
+func (r *repository) CountCbsdByStatus(tenantId int) ([]CbsdStatusCountItem, error) {
 	var results []CbsdStatusCountItem
 	type row struct {
 		OperationState string `gorm:"column:operation_state"`
@@ -186,8 +186,8 @@ func (r *repository) CountCbsdByStatus(licenseId int) ([]CbsdStatusCountItem, er
 	var rows []row
 	query := r.db.Model(&CbsdInfo{}).
 		Select("operation_state, COUNT(*) as cnt")
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	err := query.Group("operation_state").
 		Find(&rows).Error
@@ -210,11 +210,11 @@ func (r *repository) BulkCreateCbsdInfos(infos []CbsdInfo) error {
 // ---------------------------------------------------------------------------
 
 // FindSasConfigs returns all SAS configs for the given license.
-func (r *repository) FindSasConfigs(licenseId int) ([]SasConfig, error) {
+func (r *repository) FindSasConfigs(tenantId int) ([]SasConfig, error) {
 	var configs []SasConfig
 	query := r.db.Model(&SasConfig{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Find(&configs).Error; err != nil {
 		return nil, err

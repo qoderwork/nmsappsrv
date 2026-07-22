@@ -31,7 +31,7 @@ type ZTPFailedTask struct {
 type ztpDeviceInfo struct {
 	SerialNumber string
 	DeviceName   string
-	LicenseId    int
+	TenantId    int
 }
 
 // ztpLogRow 对应 ztp_log 表的行
@@ -137,21 +137,21 @@ func (t *ZTPFailedTask) exportFailedNotification(log ztpLogRow, elementId int64)
 	var deviceInfoRow struct {
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceName   string `gorm:"column:device_name"`
-		LicenseId    int    `gorm:"column:license_id"`
+		TenantId    int    `gorm:"column:tenant_id"`
 	}
 	t.db.Table("cpe_element").
-		Select("serial_number, device_name, license_id").
+		Select("serial_number, device_name, tenant_id").
 		Where("ne_neid = ?", elementId).
 		Scan(&deviceInfoRow)
 
 	deviceInfo := ztpDeviceInfo{
 		SerialNumber: deviceInfoRow.SerialNumber,
 		DeviceName:   deviceInfoRow.DeviceName,
-		LicenseId:    deviceInfoRow.LicenseId,
+		TenantId:    deviceInfoRow.TenantId,
 	}
 
-	// 创建导出目录: {exportPath}/{licenseId}/ZTP/
-	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", deviceInfo.LicenseId), "ZTP")
+	// 创建导出目录: {exportPath}/{tenantId}/ZTP/
+	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", deviceInfo.TenantId), "ZTP")
 	if err := os.MkdirAll(exportDir, 0755); err != nil {
 		logger.Errorf("ZTPFailedTask: failed to create export directory %s: %v", exportDir, err)
 		return

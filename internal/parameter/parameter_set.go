@@ -5,8 +5,8 @@ package parameter
 // ---------------------------------------------------------------------------
 
 // ListParameterSets returns all parameter sets for the given license.
-func (s *service) ListParameterSets(licenseId int) ([]ParameterSet, error) {
-	return s.repo.FindParameterSets(licenseId)
+func (s *service) ListParameterSets(tenantId int) ([]ParameterSet, error) {
+	return s.repo.FindParameterSets(tenantId)
 }
 
 // CreateParameterSet persists a new parameter set.

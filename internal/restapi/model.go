@@ -11,7 +11,7 @@ type RestDeviceVo struct {
 	SoftwareVersion string `json:"softwareVersion"`
 	Manufacturer    string `json:"manufacturer"`
 	Status          string `json:"status"`
-	LicenseId       int    `json:"licenseId"`
+	TenantId       int    `json:"tenantId"`
 }
 
 type AddRestDeviceRequest struct {
@@ -111,7 +111,7 @@ type TBGDevice struct {
 	WanMacAddress   *string `gorm:"column:wan_mac_address;type:varchar(255)" json:"wan_mac_address"`
 	RadiusThreshold *int    `gorm:"column:radius_threshold" json:"radius_threshold"`
 	EnableGeofence  *bool   `gorm:"column:enable_geofence" json:"enable_geofence"`
-	LicenseId       *int    `gorm:"column:license_id" json:"license_id"`
+	TenantId       *int    `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (TBGDevice) TableName() string { return "tbg" }

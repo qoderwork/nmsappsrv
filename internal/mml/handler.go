@@ -24,9 +24,9 @@ func NewHandler(db *gorm.DB) *Handler {
 
 // ListMmlSets handles GET /mml-sets
 func (h *Handler) ListMmlSets(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	sets, err := h.svc.ListMmlSets(licenseId)
+	sets, err := h.svc.ListMmlSets(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list MML sets")
 		return

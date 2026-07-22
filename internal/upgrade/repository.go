@@ -25,19 +25,19 @@ type Repository interface {
 	RawDB() *gorm.DB
 
 	// Custom methods.
-	FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error)
-	FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error)
+	FindUpgradeFiles(tenantId int, offset, limit int) ([]UpgradeFile, int64, error)
+	FindUpgradeTasks(tenantId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error)
 	FindUpgradeTaskByID(id int) (*UpgradeTask, error)
 	CreateUpgradeTask(t *UpgradeTask) error
 	UpdateUpgradeTask(t *UpgradeTask) error
 	FindUpgradeLogs(taskId int, offset, limit int) ([]UpgradeLog, int64, error)
 	CreateUpgradeLog(log *UpgradeLog) error
 	CreateRebootTask(t *RebootTask) error
-	FindRebootTasks(tenancyId int, offset, limit int) ([]RebootTask, int64, error)
+	FindRebootTasks(tenantId int, offset, limit int) ([]RebootTask, int64, error)
 	CreateRollbackTask(t *RollbackTask) error
 	UpdateRollbackTask(t *RollbackTask) error
 	FindRollbackTaskByID(id int) (*RollbackTask, error)
-	FindRollbackTasks(tenancyId int, offset, limit int) ([]RollbackTask, int64, error)
+	FindRollbackTasks(tenantId int, offset, limit int) ([]RollbackTask, int64, error)
 	UpdateUpgradeLog(log *UpgradeLog) error
 	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
 	CountUpgradeLogsBySuccess(taskId int, success bool) (int64, error)
@@ -51,7 +51,7 @@ type Repository interface {
 	FindUpgradeLogsByTaskIdDetail(taskId int, offset, limit int) ([]UpgradeLog, int64, error)
 
 	// Statistics
-	CountUpgradeTaskStatusCounts(tenancyId int) ([]StatusCountItem, error)
+	CountUpgradeTaskStatusCounts(tenantId int) ([]StatusCountItem, error)
 	CountUpgradeDeviceResultCounts(taskId int) ([]DeviceResultCountItem, error)
 
 	// AutoUpgradeTask CRUD
@@ -92,8 +92,8 @@ func (r *repository) RawDB() *gorm.DB {
 
 // FindUpgradeFiles returns a paginated list of upgrade files for the given
 // tenancy together with the total count.
-func (r *repository) FindUpgradeFiles(tenancyId int, offset, limit int) ([]UpgradeFile, int64, error) {
-	query := r.DB.Model(&UpgradeFile{}).Where("tenancy_id = ?", tenancyId)
+func (r *repository) FindUpgradeFiles(tenantId int, offset, limit int) ([]UpgradeFile, int64, error) {
+	query := r.DB.Model(&UpgradeFile{}).Where("tenant_id = ?", tenantId)
 	result, err := r.FindPage(query, "upload_time DESC", offset, limit)
 	if err != nil {
 		logger.Errorf("FindUpgradeFiles error: %v", err)
@@ -108,11 +108,11 @@ func (r *repository) FindUpgradeFiles(tenancyId int, offset, limit int) ([]Upgra
 
 // FindUpgradeTasks returns a paginated list of upgrade tasks for the given
 // tenancy together with the total count.
-func (r *repository) FindUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error) {
+func (r *repository) FindUpgradeTasks(tenantId int, filter UpgradeTaskFilter, offset, limit int) ([]UpgradeTask, int64, error) {
 	var tasks []UpgradeTask
 	var total int64
 
-	query := r.db.Model(&UpgradeTask{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&UpgradeTask{}).Where("tenant_id = ?", tenantId)
 
 	if filter.SearchText != "" {
 		query = query.Where("name LIKE ? OR user LIKE ?", "%"+filter.SearchText+"%", "%"+filter.SearchText+"%")
@@ -199,11 +199,11 @@ func (r *repository) CreateRebootTask(t *RebootTask) error {
 
 // FindRebootTasks returns a paginated list of reboot tasks for the given
 // tenancy together with the total count.
-func (r *repository) FindRebootTasks(tenancyId int, offset, limit int) ([]RebootTask, int64, error) {
+func (r *repository) FindRebootTasks(tenantId int, offset, limit int) ([]RebootTask, int64, error) {
 	var tasks []RebootTask
 	var total int64
 
-	query := r.db.Model(&RebootTask{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&RebootTask{}).Where("tenant_id = ?", tenantId)
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindRebootTasks count error: %v", err)
@@ -241,11 +241,11 @@ func (r *repository) FindRollbackTaskByID(id int) (*RollbackTask, error) {
 
 // FindRollbackTasks returns a paginated list of rollback tasks for the given
 // tenancy together with the total count.
-func (r *repository) FindRollbackTasks(tenancyId int, offset, limit int) ([]RollbackTask, int64, error) {
+func (r *repository) FindRollbackTasks(tenantId int, offset, limit int) ([]RollbackTask, int64, error) {
 	var tasks []RollbackTask
 	var total int64
 
-	query := r.db.Model(&RollbackTask{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&RollbackTask{}).Where("tenant_id = ?", tenantId)
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindRollbackTasks count error: %v", err)
@@ -366,7 +366,7 @@ func (r *repository) FindUpgradeLogsByTaskIdDetail(taskId int, offset, limit int
 // ---------------------------------------------------------------------------
 
 // CountUpgradeTaskStatusCounts returns per-status counts of upgrade tasks for a tenancy.
-func (r *repository) CountUpgradeTaskStatusCounts(tenancyId int) ([]StatusCountItem, error) {
+func (r *repository) CountUpgradeTaskStatusCounts(tenantId int) ([]StatusCountItem, error) {
 	var results []StatusCountItem
 	type row struct {
 		Status int   `gorm:"column:status"`
@@ -375,7 +375,7 @@ func (r *repository) CountUpgradeTaskStatusCounts(tenancyId int) ([]StatusCountI
 	var rows []row
 	err := r.db.Model(&UpgradeTask{}).
 		Select("status, COUNT(*) as cnt").
-		Where("tenancy_id = ?", tenancyId).
+		Where("tenant_id = ?", tenantId).
 		Group("status").
 		Find(&rows).Error
 	if err != nil {

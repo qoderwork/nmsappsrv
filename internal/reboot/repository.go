@@ -25,14 +25,14 @@ type Repository interface {
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[RebootTask], error)
 
 	// Module-specific methods.
-	TaskNameExists(tenancyId int, name string) bool
+	TaskNameExists(tenantId int, name string) bool
 	FindElementIdsByGroup(groupIds []string) ([]int64, error)
 	FindDueTimedTasks(before time.Time) ([]RebootTask, error)
 	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
 	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
 	CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error
 	IsDeviceInUpgrade(elementId int64) bool
-	ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
+	ListTasks(tenantId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
 	ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error)
 }
 
@@ -56,9 +56,9 @@ func NewRepository(db *gorm.DB) Repository {
 // ---------------------------------------------------------------------------
 
 // TaskNameExists checks if a task name already exists for the given tenancy.
-func (r *repository) TaskNameExists(tenancyId int, name string) bool {
+func (r *repository) TaskNameExists(tenantId int, name string) bool {
 	var count int64
-	r.db.Model(&RebootTask{}).Where("tenancy_id = ? AND name = ?", tenancyId, name).Count(&count)
+	r.db.Model(&RebootTask{}).Where("tenant_id = ? AND name = ?", tenantId, name).Count(&count)
 	return count > 0
 }
 
@@ -147,7 +147,7 @@ func (r *repository) IsDeviceInUpgrade(elementId int64) bool {
 }
 
 // ListTasks returns paginated reboot tasks with computed progress.
-func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
+func (r *repository) ListTasks(tenantId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -158,7 +158,7 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 
 	baseSQL := `
 		SELECT rt.id, rt.name, rt.user, rt.operation_time, rt.status,
-		       rt.start_time, rt.end_time, rt.tenancy_id,
+		       rt.start_time, rt.end_time, rt.tenant_id,
 		       COUNT(tel.id) AS total_count,
 		       SUM(CASE WHEN el.status = 3 THEN 1 ELSE 0 END) AS success_count,
 		       MAX(el.command_response_time) AS last_response_time
@@ -168,9 +168,9 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 		WHERE 1=1`
 
 	args := []interface{}{}
-	if tenancyId > 0 {
-		baseSQL += " AND rt.tenancy_id = ?"
-		args = append(args, tenancyId)
+	if tenantId > 0 {
+		baseSQL += " AND rt.tenant_id = ?"
+		args = append(args, tenantId)
 	}
 
 	if query.TaskName != "" {
@@ -197,9 +197,9 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 	// Count total
 	countSQL := "SELECT COUNT(*) FROM reboot_task rt WHERE 1=1"
 	countArgs := []interface{}{}
-	if tenancyId > 0 {
-		countSQL += " AND rt.tenancy_id = ?"
-		countArgs = append(countArgs, tenancyId)
+	if tenantId > 0 {
+		countSQL += " AND rt.tenant_id = ?"
+		countArgs = append(countArgs, tenantId)
 	}
 	if query.TaskName != "" {
 		countSQL += " AND rt.name LIKE ?"
@@ -237,7 +237,7 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 		Status           int        `gorm:"column:status"`
 		StartTime        *time.Time `gorm:"column:start_time"`
 		EndTime          *time.Time `gorm:"column:end_time"`
-		TenancyId        int        `gorm:"column:tenancy_id"`
+		TenantId        int        `gorm:"column:tenant_id"`
 		TotalCount       int64      `gorm:"column:total_count"`
 		SuccessCount     int64      `gorm:"column:success_count"`
 		LastResponseTime *time.Time `gorm:"column:last_response_time"`
@@ -295,7 +295,7 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 			Status:        row.Status,
 			StartTime:     row.StartTime,
 			EndTime:       row.LastResponseTime,
-			TenancyName:   tenancyNames[row.TenancyId],
+			TenancyName:   tenancyNames[row.TenantId],
 		}
 		if row.TotalCount > 0 {
 			vo.Progress = fmt.Sprintf("%d/%d", row.SuccessCount, row.TotalCount)

@@ -16,14 +16,14 @@ import (
 
 // Service defines the business-logic contract for CBSD management.
 type Service interface {
-	ListCbsdInfos(licenseId int, page, pageSize int) ([]CbsdInfo, int64, error)
-	GetCbsdInfo(sn string, licenseId int) (*CbsdInfo, error)
-	RegisterCbsd(info *CbsdInfo, licenseId int) error
+	ListCbsdInfos(tenantId int, page, pageSize int) ([]CbsdInfo, int64, error)
+	GetCbsdInfo(sn string, tenantId int) (*CbsdInfo, error)
+	RegisterCbsd(info *CbsdInfo, tenantId int) error
 	UpdateCbsdInfo(info *CbsdInfo) error
 	DeregisterCbsd(id string) error
 	ListCbrsLogs(cbsdId string, logType string, page, pageSize int) ([]CbrsLog, int64, error)
 	CreateCertFileSendTask(t *CBSDCertFileSendTask) error
-	ListCertFileSendTasks(tenancyId int, page, pageSize int) ([]CBSDCertFileSendTask, int64, error)
+	ListCertFileSendTasks(tenantId int, page, pageSize int) ([]CBSDCertFileSendTask, int64, error)
 
 	// CBSD lifecycle
 	EnableCBSD(id string) error
@@ -31,7 +31,7 @@ type Service interface {
 	DeleteCBSD(id string) error
 
 	// SAS protocol
-	SpectrumInquiry(licenseId int, req *SpectrumInquiryRequest) (map[string]interface{}, error)
+	SpectrumInquiry(tenantId int, req *SpectrumInquiryRequest) (map[string]interface{}, error)
 	Grant(cbsdId string, req *GrantRequest) (map[string]interface{}, error)
 	Relinquishment(cbsdId string, req *RelinquishmentRequest) (map[string]interface{}, error)
 	SasHeartbeat(cbsdId string) (map[string]interface{}, error)
@@ -40,13 +40,13 @@ type Service interface {
 	MaintainOperationStates(ctx context.Context) (int, error)
 
 	// Import
-	ImportCBSDs(licenseId int, records [][]string) (int, error)
+	ImportCBSDs(tenantId int, records [][]string) (int, error)
 
 	// Statistics
-	ListCBSDStatusCount(licenseId int) ([]CbsdStatusCountItem, error)
+	ListCBSDStatusCount(tenantId int) ([]CbsdStatusCountItem, error)
 
 	// SAS config
-	ListSasConfig(licenseId int) ([]SasConfig, error)
+	ListSasConfig(tenantId int) ([]SasConfig, error)
 	UpdateSasConfig(cfg *SasConfig) error
 }
 
@@ -66,7 +66,7 @@ func newService(repo Repository) Service {
 }
 
 // ListCbsdInfos returns a paginated list of CBSD info records.
-func (s *service) ListCbsdInfos(licenseId int, page, pageSize int) ([]CbsdInfo, int64, error) {
+func (s *service) ListCbsdInfos(tenantId int, page, pageSize int) ([]CbsdInfo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -74,20 +74,20 @@ func (s *service) ListCbsdInfos(licenseId int, page, pageSize int) ([]CbsdInfo, 
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindCbsdInfos(licenseId, offset, pageSize)
+	return s.repo.FindCbsdInfos(tenantId, offset, pageSize)
 }
 
 // GetCbsdInfo returns a single CBSD info by serial number.
-func (s *service) GetCbsdInfo(sn string, licenseId int) (*CbsdInfo, error) {
-	return s.repo.FindCbsdInfoBySN(sn, licenseId)
+func (s *service) GetCbsdInfo(sn string, tenantId int) (*CbsdInfo, error) {
+	return s.repo.FindCbsdInfoBySN(sn, tenantId)
 }
 
 // RegisterCbsd persists a new CBSD registration, stamping the tenant
 // license id from the authenticated context so the record is isolated per
 // tenant (mirrors Java nms-serv behaviour).
-func (s *service) RegisterCbsd(info *CbsdInfo, licenseId int) error {
-	if licenseId > 0 {
-		info.LicenseId = &licenseId
+func (s *service) RegisterCbsd(info *CbsdInfo, tenantId int) error {
+	if tenantId > 0 {
+		info.TenantId = &tenantId
 	}
 	return s.repo.Create(info)
 }
@@ -120,7 +120,7 @@ func (s *service) CreateCertFileSendTask(t *CBSDCertFileSendTask) error {
 }
 
 // ListCertFileSendTasks returns a paginated list of cert file send tasks.
-func (s *service) ListCertFileSendTasks(tenancyId int, page, pageSize int) ([]CBSDCertFileSendTask, int64, error) {
+func (s *service) ListCertFileSendTasks(tenantId int, page, pageSize int) ([]CBSDCertFileSendTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -128,7 +128,7 @@ func (s *service) ListCertFileSendTasks(tenancyId int, page, pageSize int) ([]CB
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindCertFileSendTasks(tenancyId, offset, pageSize)
+	return s.repo.FindCertFileSendTasks(tenantId, offset, pageSize)
 }
 
 // ---------------------------------------------------------------------------
@@ -169,8 +169,8 @@ func (s *service) DeleteCBSD(id string) error {
 // ---------------------------------------------------------------------------
 
 // getSasUrl resolves the active SAS config URL for the given license.
-func (s *service) getSasUrl(licenseId int) (string, error) {
-	configs, err := s.repo.FindSasConfigs(licenseId)
+func (s *service) getSasUrl(tenantId int) (string, error) {
+	configs, err := s.repo.FindSasConfigs(tenantId)
 	if err != nil {
 		return "", fmt.Errorf("failed to load SAS config: %w", err)
 	}
@@ -179,7 +179,7 @@ func (s *service) getSasUrl(licenseId int) (string, error) {
 			return cfg.SasUrl, nil
 		}
 	}
-	return "", fmt.Errorf("no enabled SAS config found for license %d", licenseId)
+	return "", fmt.Errorf("no enabled SAS config found for license %d", tenantId)
 }
 
 // callSasApi sends a POST request to the SAS API and returns the parsed response.
@@ -215,8 +215,8 @@ func (s *service) callSasApi(sasUrl, path string, body interface{}) (map[string]
 }
 
 // SpectrumInquiry sends a spectrum inquiry request to the SAS.
-func (s *service) SpectrumInquiry(licenseId int, req *SpectrumInquiryRequest) (map[string]interface{}, error) {
-	sasUrl, err := s.getSasUrl(licenseId)
+func (s *service) SpectrumInquiry(tenantId int, req *SpectrumInquiryRequest) (map[string]interface{}, error) {
+	sasUrl, err := s.getSasUrl(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -229,11 +229,11 @@ func (s *service) Grant(cbsdId string, req *GrantRequest) (map[string]interface{
 	if err != nil {
 		return nil, fmt.Errorf("CBSD not found: %w", err)
 	}
-	licenseId := 0
-	if info.LicenseId != nil {
-		licenseId = *info.LicenseId
+	tenantId := 0
+	if info.TenantId != nil {
+		tenantId = *info.TenantId
 	}
-	sasUrl, err := s.getSasUrl(licenseId)
+	sasUrl, err := s.getSasUrl(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -277,11 +277,11 @@ func (s *service) Relinquishment(cbsdId string, req *RelinquishmentRequest) (map
 	if err != nil {
 		return nil, fmt.Errorf("CBSD not found: %w", err)
 	}
-	licenseId := 0
-	if info.LicenseId != nil {
-		licenseId = *info.LicenseId
+	tenantId := 0
+	if info.TenantId != nil {
+		tenantId = *info.TenantId
 	}
-	sasUrl, err := s.getSasUrl(licenseId)
+	sasUrl, err := s.getSasUrl(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -319,11 +319,11 @@ func (s *service) SasHeartbeat(cbsdId string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("CBSD not found: %w", err)
 	}
-	licenseId := 0
-	if info.LicenseId != nil {
-		licenseId = *info.LicenseId
+	tenantId := 0
+	if info.TenantId != nil {
+		tenantId = *info.TenantId
 	}
-	sasUrl, err := s.getSasUrl(licenseId)
+	sasUrl, err := s.getSasUrl(tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +447,7 @@ func (s *service) writeCbrsLog(cbsdID *string, logType, status string) {
 
 // ImportCBSDs imports CBSD records from parsed CSV data.
 // Each record is expected as [serial_number, cbsd_category, latitude, longitude, height, vendor, model].
-func (s *service) ImportCBSDs(licenseId int, records [][]string) (int, error) {
+func (s *service) ImportCBSDs(tenantId int, records [][]string) (int, error) {
 	if len(records) == 0 {
 		return 0, fmt.Errorf("no records to import")
 	}
@@ -460,7 +460,7 @@ func (s *service) ImportCBSDs(licenseId int, records [][]string) (int, error) {
 		}
 		info := CbsdInfo{
 			CbsdSerialNumber: strPtr(row[0]),
-			LicenseId:        &licenseId,
+			TenantId:        &tenantId,
 			LastRegistrationTime: &now,
 		}
 		if len(row) > 1 {
@@ -500,8 +500,8 @@ func (s *service) ImportCBSDs(licenseId int, records [][]string) (int, error) {
 // ---------------------------------------------------------------------------
 
 // ListCBSDStatusCount returns per-operation_state counts of CBSD records.
-func (s *service) ListCBSDStatusCount(licenseId int) ([]CbsdStatusCountItem, error) {
-	return s.repo.CountCbsdByStatus(licenseId)
+func (s *service) ListCBSDStatusCount(tenantId int) ([]CbsdStatusCountItem, error) {
+	return s.repo.CountCbsdByStatus(tenantId)
 }
 
 // ---------------------------------------------------------------------------
@@ -509,8 +509,8 @@ func (s *service) ListCBSDStatusCount(licenseId int) ([]CbsdStatusCountItem, err
 // ---------------------------------------------------------------------------
 
 // ListSasConfig returns all SAS configs for a license.
-func (s *service) ListSasConfig(licenseId int) ([]SasConfig, error) {
-	return s.repo.FindSasConfigs(licenseId)
+func (s *service) ListSasConfig(tenantId int) ([]SasConfig, error) {
+	return s.repo.FindSasConfigs(tenantId)
 }
 
 // UpdateSasConfig persists changes to a SAS config.

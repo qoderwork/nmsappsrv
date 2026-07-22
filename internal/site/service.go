@@ -14,15 +14,15 @@ import (
 
 // Service defines the business-logic contract for site operations.
 type Service interface {
-	ListAreas(tenancyId int) ([]SysArea, error)
+	ListAreas(tenantId int) ([]SysArea, error)
 	GetArea(id int) (*SysArea, error)
 	CreateArea(a *SysArea) error
 	UpdateArea(a *SysArea) error
 	DeleteArea(id int) error
-	ListSites(licenseId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error)
-	ListSiteBasicInfo(licenseId int) ([]SiteBasicInfo, error)
-	CreateSite(site *SiteInfo, licenseId int) error
-	UpdateSite(id string, site *SiteInfo, licenseId int) error
+	ListSites(tenantId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error)
+	ListSiteBasicInfo(tenantId int) ([]SiteBasicInfo, error)
+	CreateSite(site *SiteInfo, tenantId int) error
+	UpdateSite(id string, site *SiteInfo, tenantId int) error
 	DeleteSite(id string) error
 	GetSystemConfig() (*SystemConfig, error)
 	UpdateSystemConfig(configJSON string) error
@@ -42,8 +42,8 @@ func NewService(db *gorm.DB) Service {
 
 // ---------- SysArea ----------
 
-func (s *service) ListAreas(tenancyId int) ([]SysArea, error) {
-	return s.repo.FindAreas(tenancyId)
+func (s *service) ListAreas(tenantId int) ([]SysArea, error) {
+	return s.repo.FindAreas(tenantId)
 }
 
 func (s *service) GetArea(id int) (*SysArea, error) {
@@ -73,7 +73,7 @@ func (s *service) DeleteArea(id int) error {
 // ---------- SiteInfo ----------
 
 // ListSites returns a paginated list of sites with area path resolved.
-func (s *service) ListSites(licenseId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error) {
+func (s *service) ListSites(tenantId int, search string, page, pageSize int) ([]SiteInfoVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -82,13 +82,13 @@ func (s *service) ListSites(licenseId int, search string, page, pageSize int) ([
 	}
 	offset := (page - 1) * pageSize
 
-	sites, total, err := s.repo.FindSites(licenseId, search, offset, pageSize)
+	sites, total, err := s.repo.FindSites(tenantId, search, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Load all areas for area path resolution
-	allAreas, err := s.repo.FindAreas(licenseId)
+	allAreas, err := s.repo.FindAreas(tenantId)
 	if err != nil {
 		logger.Warnf("ListSites: failed to load areas: %v", err)
 	}
@@ -112,25 +112,25 @@ func (s *service) ListSites(licenseId int, search string, page, pageSize int) ([
 }
 
 // ListSiteBasicInfo returns lightweight site info for dropdowns.
-func (s *service) ListSiteBasicInfo(licenseId int) ([]SiteBasicInfo, error) {
-	return s.repo.FindAllSites(licenseId)
+func (s *service) ListSiteBasicInfo(tenantId int) ([]SiteBasicInfo, error) {
+	return s.repo.FindAllSites(tenantId)
 }
 
 // CreateSite creates a new site with UUID and duplicate name check.
-func (s *service) CreateSite(site *SiteInfo, licenseId int) error {
+func (s *service) CreateSite(site *SiteInfo, tenantId int) error {
 	if site.SiteName == nil || *site.SiteName == "" {
 		return apperror.ErrInvalidInput.WithMessage("site name is required")
 	}
 
 	// Check for duplicate name within the same license
-	existing, _ := s.repo.FindSiteByNameAndLicense(*site.SiteName, licenseId)
+	existing, _ := s.repo.FindSiteByNameAndLicense(*site.SiteName, tenantId)
 	if existing != nil {
 		return apperror.ErrConflict.WithMessage("site name already exists")
 	}
 
 	// Generate UUID
 	site.Id = uuid.New().String()
-	site.LicenseId = &licenseId
+	site.TenantId = &tenantId
 	now := time.Now()
 	site.CreationTime = &now
 
@@ -138,7 +138,7 @@ func (s *service) CreateSite(site *SiteInfo, licenseId int) error {
 }
 
 // UpdateSite updates an existing site with duplicate name check.
-func (s *service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
+func (s *service) UpdateSite(id string, site *SiteInfo, tenantId int) error {
 	if site.SiteName == nil || *site.SiteName == "" {
 		return apperror.ErrInvalidInput.WithMessage("site name is required")
 	}
@@ -151,7 +151,7 @@ func (s *service) UpdateSite(id string, site *SiteInfo, licenseId int) error {
 
 	// Check for duplicate name (exclude current site)
 	if *site.SiteName != *existing.SiteName {
-		dup, _ := s.repo.FindSiteByNameAndLicense(*site.SiteName, licenseId)
+		dup, _ := s.repo.FindSiteByNameAndLicense(*site.SiteName, tenantId)
 		if dup != nil {
 			return apperror.ErrConflict.WithMessage("site name already exists")
 		}

@@ -12,16 +12,6 @@ import (
 	"nmsappsrv/internal/config"
 )
 
-// fakeStore is a minimal LicenseStore for tests.
-type fakeStore struct {
-	last *License
-}
-
-func (f *fakeStore) UpsertActiveLicense(l *License) error {
-	f.last = l
-	return nil
-}
-
 // signTestLicense builds and signs a license with the embedded dev private key,
 // binding it to the given fingerprint. Returns the envelope bytes to upload.
 func signTestLicense(t *testing.T, fp string, expiry time.Time) []byte {
@@ -57,14 +47,13 @@ func signTestLicense(t *testing.T, fp string, expiry time.Time) []byte {
 	return raw
 }
 
-func newTestEnforcer(t *testing.T, cfg config.LicenseConfig) (*Enforcer, *fakeStore) {
+func newTestEnforcer(t *testing.T, cfg config.LicenseConfig) *Enforcer {
 	t.Helper()
-	store := &fakeStore{}
-	enf, err := NewEnforcer(cfg, store)
+	enf, err := NewEnforcer(cfg)
 	if err != nil {
 		t.Fatalf("new enforcer: %v", err)
 	}
-	return enf, store
+	return enf
 }
 
 func TestEnforcerVerifyStoreAndLoad(t *testing.T) {
@@ -76,7 +65,7 @@ func TestEnforcerVerifyStoreAndLoad(t *testing.T) {
 		MaxClockFile:               filepath.Join(dir, ".maxclock"),
 		MachineFingerprintOverride: fp,
 	}
-	enf, store := newTestEnforcer(t, cfg)
+	enf := newTestEnforcer(t, cfg)
 
 	raw := signTestLicense(t, fp, time.Now().Add(24*time.Hour))
 	if _, err := enf.VerifyAndStore(raw, "license.lic"); err != nil {
@@ -92,13 +81,10 @@ func TestEnforcerVerifyStoreAndLoad(t *testing.T) {
 	if lic.Subject != "Acme Corp" {
 		t.Fatalf("subject = %q", lic.Subject)
 	}
-	if store.last == nil || store.last.Status == nil || *store.last.Status != "active" {
-		t.Fatal("DB store was not updated with active status")
-	}
 
 	// Simulate a restart: a fresh enforcer on the same InstallDir should
 	// re-verify from disk and become valid again.
-	enf2, _ := newTestEnforcer(t, cfg)
+	enf2 := newTestEnforcer(t, cfg)
 	if err := enf2.LoadPersisted(); err != nil {
 		t.Fatalf("LoadPersisted: %v", err)
 	}
@@ -116,7 +102,7 @@ func TestEnforcerRejectsExpired(t *testing.T) {
 		MaxClockFile:               filepath.Join(dir, ".maxclock"),
 		MachineFingerprintOverride: fp,
 	}
-	enf, _ := newTestEnforcer(t, cfg)
+	enf := newTestEnforcer(t, cfg)
 	raw := signTestLicense(t, fp, time.Now().Add(-time.Hour)) // already expired
 	if _, err := enf.VerifyAndStore(raw, "expired.lic"); err == nil {
 		t.Fatal("expected expired license to be rejected")
@@ -134,7 +120,7 @@ func TestEnforcerRejectsMachineMismatch(t *testing.T) {
 		MaxClockFile:               filepath.Join(dir, ".maxclock"),
 		MachineFingerprintOverride: "fp-expected",
 	}
-	enf, _ := newTestEnforcer(t, cfg)
+	enf := newTestEnforcer(t, cfg)
 	// Sign for a different fingerprint than the one this host verifies with.
 	raw := signTestLicense(t, "fp-other", time.Now().Add(time.Hour))
 	if _, err := enf.VerifyAndStore(raw, "mismatch.lic"); err == nil {
@@ -151,7 +137,7 @@ func TestEnforcerDisabledWhenNotRequired(t *testing.T) {
 		MaxClockFile:               filepath.Join(dir, ".maxclock"),
 		MachineFingerprintOverride: fp,
 	}
-	enf, _ := newTestEnforcer(t, cfg)
+	enf := newTestEnforcer(t, cfg)
 	if enf.Required() {
 		t.Fatal("Required() should report false when configured disabled")
 	}

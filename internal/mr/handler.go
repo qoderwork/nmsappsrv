@@ -19,8 +19,8 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
-func tenancyID(c *gin.Context) int {
-	if v, ok := c.Get("tenancy_id"); ok {
+func tenantID(c *gin.Context) int {
+	if v, ok := c.Get("tenant_id"); ok {
 		switch t := v.(type) {
 		case int:
 			return t
@@ -87,8 +87,8 @@ type csvReq struct {
 	EndTime   string `json:"endTime"`
 }
 
-// GenerateCSV handles POST /generateMRCSVForNR. tenancyId comes from the auth
-// context (Java's SecurityUtil.getTenancyId()).
+// GenerateCSV handles POST /generateMRCSVForNR. tenantId comes from the auth
+// context (Java's SecurityUtil.getTenantId()).
 func (h *Handler) GenerateCSV(c *gin.Context) {
 	var req csvReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -101,7 +101,7 @@ func (h *Handler) GenerateCSV(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "startTime and endTime are required")
 		return
 	}
-	fileName, err := h.svc.GenerateCSV(tenancyID(c), start, end)
+	fileName, err := h.svc.GenerateCSV(tenantID(c), start, end)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return

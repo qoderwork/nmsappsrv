@@ -62,7 +62,7 @@ func (m *mockRepository) UpdateUserFields(id int, fields map[string]interface{})
 	panic("not implemented")
 }
 
-func (m *mockRepository) FindRoles(licenseId int) ([]Role, error) {
+func (m *mockRepository) FindRoles(tenantId int) ([]Role, error) {
 	panic("not implemented")
 }
 func (m *mockRepository) FindRolesByIds(roleIds []string) ([]Role, error) {
@@ -94,7 +94,7 @@ func (m *mockRepository) CreatePasswordHistory(h *PasswordHistory) error {
 func (m *mockRepository) FindRecentPasswords(username string, limit int) ([]PasswordHistory, error) {
 	panic("not implemented")
 }
-func (m *mockRepository) CountUsersByLicenseId(licenseId int) (int64, error) {
+func (m *mockRepository) CountUsersByTenantId(tenantId int) (int64, error) {
 	panic("not implemented")
 }
 func (m *mockRepository) FindUsersByCreatorId(creatorId int) ([]SysUser, error) {

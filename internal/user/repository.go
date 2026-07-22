@@ -18,7 +18,7 @@ type Repository interface {
 	UpdateUser(u *SysUser) error
 	DeleteUser(id int) error
 	UpdateUserFields(id int, fields map[string]interface{}) error
-	FindRoles(licenseId int) ([]Role, error)
+	FindRoles(tenantId int) ([]Role, error)
 	FindRolesByIds(roleIds []string) ([]Role, error)
 	CreateRole(role *Role) error
 	UpdateRole(role *Role) error
@@ -30,7 +30,7 @@ type Repository interface {
 	CreateLoginLog(log *LoginLog) error
 	CreatePasswordHistory(h *PasswordHistory) error
 	FindRecentPasswords(username string, limit int) ([]PasswordHistory, error)
-	CountUsersByLicenseId(licenseId int) (int64, error)
+	CountUsersByTenantId(tenantId int) (int64, error)
 	FindUsersByCreatorId(creatorId int) ([]SysUser, error)
 	UpdateLastLoginTime(username string, t time.Time) error
 }
@@ -75,7 +75,7 @@ func (r *repository) FindUserByID(id int) (*SysUser, error) {
 //   - excludes admin user (admin should not appear in user list)
 //   - non-admin users can only see users they created (via createUserName filter)
 //   - excludes deleted users
-// Note: Java does NOT filter by license_id in listUser
+// Note: Java does NOT filter by tenant_id in listUser
 func (r *repository) FindUsers(offset, limit int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 	var users []SysUser
 	var total int64
@@ -136,9 +136,9 @@ func (r *repository) UpdateUserFields(id int, fields map[string]interface{}) err
 // ---------------------------------------------------------------------------
 
 // FindRoles returns all roles for the given license.
-func (r *repository) FindRoles(licenseId int) ([]Role, error) {
+func (r *repository) FindRoles(tenantId int) ([]Role, error) {
 	var roles []Role
-	if err := r.db.Where("tenancy_id = ?", licenseId).Find(&roles).Error; err != nil {
+	if err := r.db.Where("tenant_id = ?", tenantId).Find(&roles).Error; err != nil {
 		return nil, err
 	}
 	return roles, nil
@@ -263,10 +263,10 @@ func (r *repository) FindRecentPasswords(username string, limit int) ([]Password
 // Query helpers
 // ---------------------------------------------------------------------------
 
-// CountUsersByLicenseId returns the number of users for a license.
-func (r *repository) CountUsersByLicenseId(licenseId int) (int64, error) {
+// CountUsersByTenantId returns the number of users for a license.
+func (r *repository) CountUsersByTenantId(tenantId int) (int64, error) {
 	var count int64
-	if err := r.db.Model(&SysUser{}).Where("license_id = ?", licenseId).Count(&count).Error; err != nil {
+	if err := r.db.Model(&SysUser{}).Where("tenant_id = ?", tenantId).Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil

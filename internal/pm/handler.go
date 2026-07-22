@@ -26,8 +26,8 @@ func NewHandler(db *gorm.DB) *Handler {
 // ---------- PerformanceKpi ----------
 
 func (h *Handler) ListKPIs(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	items, err := h.svc.ListKPIs(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	items, err := h.svc.ListKPIs(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -94,8 +94,8 @@ func (h *Handler) DeleteKPI(c *gin.Context) {
 // ---------- PerformanceKpiSet ----------
 
 func (h *Handler) ListKPISets(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	items, err := h.svc.ListKPISets(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	items, err := h.svc.ListKPISets(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -132,8 +132,8 @@ func (h *Handler) DeleteKPISet(c *gin.Context) {
 // ---------- PerformanceKpiTemplate ----------
 
 func (h *Handler) ListKPITemplates(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	items, err := h.svc.ListKPITemplates(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	items, err := h.svc.ListKPITemplates(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -220,7 +220,7 @@ func (h *Handler) DeleteKPITemplate(c *gin.Context) {
 // ---------- PMFileLog ----------
 
 func (h *Handler) ListPMFileLogs(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	if page < 1 {
@@ -229,7 +229,7 @@ func (h *Handler) ListPMFileLogs(c *gin.Context) {
 	if pageSize < 1 {
 		pageSize = 20
 	}
-	items, total, err := h.svc.ListPMFileLogs(tenancyId, page, pageSize)
+	items, total, err := h.svc.ListPMFileLogs(tenantId, page, pageSize)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -240,8 +240,8 @@ func (h *Handler) ListPMFileLogs(c *gin.Context) {
 // ---------- KpiAlarmTemplate ----------
 
 func (h *Handler) ListKPIAlarms(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	items, err := h.svc.ListKPIAlarmTemplates(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	items, err := h.svc.ListKPIAlarmTemplates(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -333,10 +333,10 @@ func (h *Handler) DeleteKPIAlarm(c *gin.Context) {
 // ---------- Dashboard ----------
 
 func (h *Handler) GetDashboardData(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	startTime := c.Query("start_time")
 	endTime := c.Query("end_time")
-	items, err := h.svc.GetDashboardData(tenancyId, startTime, endTime)
+	items, err := h.svc.GetDashboardData(tenantId, startTime, endTime)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -347,10 +347,10 @@ func (h *Handler) GetDashboardData(c *gin.Context) {
 // ---------- PDCPTraffic ----------
 
 func (h *Handler) GetPDCPTraffic(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	startTime := c.Query("start_time")
 	endTime := c.Query("end_time")
-	items, err := h.svc.GetPDCPTraffic(tenancyId, startTime, endTime)
+	items, err := h.svc.GetPDCPTraffic(tenantId, startTime, endTime)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -361,8 +361,8 @@ func (h *Handler) GetPDCPTraffic(c *gin.Context) {
 // ---------- Dashboard: Device Online Info ----------
 
 func (h *Handler) GetDeviceOnlineInfo(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	info, err := h.svc.GetDeviceOnlineInfo(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	info, err := h.svc.GetDeviceOnlineInfo(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -373,9 +373,9 @@ func (h *Handler) GetDeviceOnlineInfo(c *gin.Context) {
 // ---------- Dashboard: Product Type & Device Count ----------
 
 func (h *Handler) GetProductTypeAndDeviceCount(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	mode := c.DefaultQuery("mode", "")
-	items, err := h.svc.GetProductTypeAndDeviceCount(tenancyId, mode)
+	items, err := h.svc.GetProductTypeAndDeviceCount(tenantId, mode)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -387,7 +387,7 @@ func (h *Handler) GetProductTypeAndDeviceCount(c *gin.Context) {
 // Body: {"startTime": RFC3339, "endTime": RFC3339, "elementId"?: int,
 //        "templateId"?: int}. Mirrors Java exportPMExcel.
 func (h *Handler) ExportPMExcel(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	var body struct {
 		StartTime  string `json:"startTime"`
 		EndTime    string `json:"endTime"`
@@ -398,7 +398,7 @@ func (h *Handler) ExportPMExcel(c *gin.Context) {
 		utils.Error(c, 400, "invalid request body")
 		return
 	}
-	data, filename, err := h.svc.ExportPMExcel(tenancyId, body.StartTime, body.EndTime)
+	data, filename, err := h.svc.ExportPMExcel(tenantId, body.StartTime, body.EndTime)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -458,14 +458,14 @@ func (h *Handler) DownloadPMFile(c *gin.Context) {
 // ListKPIMeas handles POST /pm/kpi-meas
 // Body: {page, pageSize, searchText}. Mirrors Java listKPIMeas.
 func (h *Handler) ListKPIMeas(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	var body struct {
 		Page       int    `json:"page"`
 		PageSize   int    `json:"pageSize"`
 		SearchText string `json:"searchText"`
 	}
 	_ = c.ShouldBindJSON(&body) // optional body; defaults handled in service
-	items, total, err := h.svc.ListKPIMeas(tenancyId, body.SearchText, body.Page, body.PageSize)
+	items, total, err := h.svc.ListKPIMeas(tenantId, body.SearchText, body.Page, body.PageSize)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -503,13 +503,13 @@ func (h *Handler) UpdateMeasTaskSwitch(c *gin.Context) {
 // AddReplenishTask handles POST /pm/replenish-tasks
 // Body: PMReplenishTask JSON. Mirrors Java addReplenishTask.
 func (h *Handler) AddReplenishTask(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	var t PMReplenishTask
 	if err := c.ShouldBindJSON(&t); err != nil {
 		utils.Error(c, 400, "invalid request body")
 		return
 	}
-	t.TenancyId = &tenancyId
+	t.TenantId = &tenantId
 	if err := h.svc.AddReplenishTask(&t); err != nil {
 		utils.HandleError(c, err)
 		return
@@ -520,14 +520,14 @@ func (h *Handler) AddReplenishTask(c *gin.Context) {
 // ListReplenishTask handles POST /pm/replenish-tasks/list
 // Body: {page, pageSize, name?}. Mirrors Java listReplenishTask.
 func (h *Handler) ListReplenishTask(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	var body struct {
 		Page     int    `json:"page"`
 		PageSize int    `json:"pageSize"`
 		Name     string `json:"name"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	items, total, err := h.svc.ListReplenishTask(tenancyId, body.Name, body.Page, body.PageSize)
+	items, total, err := h.svc.ListReplenishTask(tenantId, body.Name, body.Page, body.PageSize)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

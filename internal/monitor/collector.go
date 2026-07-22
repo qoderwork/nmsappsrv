@@ -108,16 +108,16 @@ func (c *Collector) resolveElements(t MonitorTask) ([]int64, error) {
 	if t.ExecutionScope != nil {
 		scope = *t.ExecutionScope
 	}
-	licenseID := 0
-	if t.LicenseId != nil {
-		licenseID = *t.LicenseId
+	tenantID := 0
+	if t.TenantId != nil {
+		tenantID = *t.TenantId
 	}
 	switch scope {
 	case 0:
 		var ids []int64
 		q := c.db.Table("cpe_element").Select("ne_neid").Where("deleted = ?", false)
-		if licenseID != 0 {
-			q = q.Where("license_id = ?", licenseID)
+		if tenantID != 0 {
+			q = q.Where("tenant_id = ?", tenantID)
 		}
 		if err := q.Pluck("ne_neid", &ids).Error; err != nil {
 			return nil, err

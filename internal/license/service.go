@@ -9,7 +9,7 @@ type Service interface {
 	GetLicense(id int) (*License, error)
 	ListLicenses() ([]License, error)
 	UpdateLicense(l *License) error
-	GetSASConfig(licenseId int) (*SASConfig, error)
+	GetSASConfig(tenantId int) (*SASConfig, error)
 	SaveSASConfig(cfg *SASConfig) error
 	ListEntraEndpoints() ([]EntraEndpoint, error)
 	CreateEntraEndpoint(e *EntraEndpoint) error
@@ -56,8 +56,8 @@ func (s *service) UpdateLicense(l *License) error {
 // ---------------------------------------------------------------------------
 
 // GetSASConfig returns the SAS configuration for the given license.
-func (s *service) GetSASConfig(licenseId int) (*SASConfig, error) {
-	return s.repo.FindSASConfig(licenseId)
+func (s *service) GetSASConfig(tenantId int) (*SASConfig, error) {
+	return s.repo.FindSASConfig(tenantId)
 }
 
 // SaveSASConfig creates or updates a SAS configuration.

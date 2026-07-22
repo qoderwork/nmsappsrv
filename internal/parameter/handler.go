@@ -122,9 +122,9 @@ func (h *Handler) ListParameterLogs(c *gin.Context) {
 
 // ListParameterSets handles GET /
 func (h *Handler) ListParameterSets(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListParameterSets(licenseId)
+	data, err := h.svc.ListParameterSets(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list parameter sets")
 		return
@@ -182,10 +182,10 @@ func (h *Handler) DeleteParameterSet(c *gin.Context) {
 
 // ListParameterTemplates handles GET /
 func (h *Handler) ListParameterTemplates(c *gin.Context) {
-	tenancyIdStr := c.DefaultQuery("tenancy_id", "0")
-	tenancyId, _ := strconv.Atoi(tenancyIdStr)
+	tenantIdStr := c.DefaultQuery("tenant_id", "0")
+	tenantId, _ := strconv.Atoi(tenantIdStr)
 
-	data, err := h.svc.ListParameterTemplates(tenancyId)
+	data, err := h.svc.ListParameterTemplates(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list parameter templates")
 		return
@@ -369,8 +369,8 @@ func (h *Handler) BatchParameterConfigurationDirect(c *gin.Context) {
 		return
 	}
 	username := middleware.GetUsername(c)
-	tenancyId := getTenancyId(c)
-	if err := h.svc.BatchParameterConfigurationDirect(&req, username, tenancyId); err != nil {
+	tenantId := getTenantId(c)
+	if err := h.svc.BatchParameterConfigurationDirect(&req, username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -381,8 +381,8 @@ func (h *Handler) BatchParameterConfigurationDirect(c *gin.Context) {
 func (h *Handler) ListBatchConfigurations(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := getTenancyId(c)
-	data, total, err := h.svc.ListBatchConfigurations(tenancyId, page, pageSize)
+	tenantId := getTenantId(c)
+	data, total, err := h.svc.ListBatchConfigurations(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list batch configurations")
 		return
@@ -428,9 +428,9 @@ func (h *Handler) ExportParameterTemplate(c *gin.Context) {
 	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
 }
 
-// getTenancyId extracts tenancy_id from gin context as int.
-func getTenancyId(c *gin.Context) int {
-	v, ok := c.Get("tenancy_id")
+// getTenantId extracts tenant_id from gin context as int.
+func getTenantId(c *gin.Context) int {
+	v, ok := c.Get("tenant_id")
 	if !ok {
 		return 0
 	}

@@ -19,13 +19,13 @@ import (
 
 // Service defines the business-logic contract for MNormal file operations.
 type Service interface {
-	InitUpload(licenseId int, username string, req *InitUploadRequest) (*InitUploadResponse, error)
+	InitUpload(tenantId int, username string, req *InitUploadRequest) (*InitUploadResponse, error)
 	UploadChunk(fileId string, chunkIndex int, chunkMd5 string, data io.Reader) error
 	CheckChunk(fileId string, chunkIndex int) (bool, error)
 	Assemble(fileId string) error
-	Upload(licenseId int, username string, fileName string, data io.Reader, size int64) (string, error)
+	Upload(tenantId int, username string, fileName string, data io.Reader, size int64) (string, error)
 	Delete(fileId string) error
-	List(licenseId int, req *ListRequest) ([]MNormalFile, int64, error)
+	List(tenantId int, req *ListRequest) ([]MNormalFile, int64, error)
 	Detail(fileId string) (*MNormalFile, error)
 	DownloadToDevice(fileId string, elementIds []int64, opSender OperationSender) error
 	DownloadResults(fileId string, page, pageSize int) ([]MNormalFileDownloadLog, int64, error)
@@ -70,7 +70,7 @@ func (s *service) assembledPath(fileId string) string {
 }
 
 // InitUpload creates a new MNormal file record and returns the fileId.
-func (s *service) InitUpload(licenseId int, username string, req *InitUploadRequest) (*InitUploadResponse, error) {
+func (s *service) InitUpload(tenantId int, username string, req *InitUploadRequest) (*InitUploadResponse, error) {
 	fileId := uuid.New().String()
 	now := time.Now()
 	status := 1 // uploading
@@ -82,7 +82,7 @@ func (s *service) InitUpload(licenseId int, username string, req *InitUploadRequ
 		FileMd5:    &req.FileMd5,
 		ChunkCount: &chunkCount,
 		Status:     &status,
-		LicenseId:  &licenseId,
+		TenantId:  &tenantId,
 		CreateTime: &now,
 		UpdateTime: &now,
 		Username:   &username,
@@ -203,7 +203,7 @@ func (s *service) Assemble(fileId string) error {
 }
 
 // Upload handles a whole-file upload (no chunking).
-func (s *service) Upload(licenseId int, username string, fileName string, data io.Reader, size int64) (string, error) {
+func (s *service) Upload(tenantId int, username string, fileName string, data io.Reader, size int64) (string, error) {
 	fileId := uuid.New().String()
 	now := time.Now()
 	status := 3 // complete
@@ -214,7 +214,7 @@ func (s *service) Upload(licenseId int, username string, fileName string, data i
 		FileSize:   &size,
 		ChunkCount: &chunkCount,
 		Status:     &status,
-		LicenseId:  &licenseId,
+		TenantId:  &tenantId,
 		CreateTime: &now,
 		UpdateTime: &now,
 		Username:   &username,
@@ -258,7 +258,7 @@ func (s *service) Delete(fileId string) error {
 }
 
 // List returns a paginated list of MNormal files.
-func (s *service) List(licenseId int, req *ListRequest) ([]MNormalFile, int64, error) {
+func (s *service) List(tenantId int, req *ListRequest) ([]MNormalFile, int64, error) {
 	page := req.Page
 	if page < 1 {
 		page = 1
@@ -268,7 +268,7 @@ func (s *service) List(licenseId int, req *ListRequest) ([]MNormalFile, int64, e
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindFiles(licenseId, req.FileName, offset, pageSize)
+	return s.repo.FindFiles(tenantId, req.FileName, offset, pageSize)
 }
 
 // Detail returns the file metadata.

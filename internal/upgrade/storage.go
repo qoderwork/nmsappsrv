@@ -20,12 +20,12 @@ func uploadBaseDir() string {
 	return "./data/upgrade-files"
 }
 
-// saveUpgradeFile persists the given bytes under <uploadDir>/<tenancyId>/<uuid>_<name>
+// saveUpgradeFile persists the given bytes under <uploadDir>/<tenantId>/<uuid>_<name>
 // and returns the absolute on-disk path. The path is what gets stored in
 // upgrade_file.file_path and later served to devices via the file-server endpoint.
-func saveUpgradeFile(tenancyId int, name string, data []byte) (string, error) {
+func saveUpgradeFile(tenantId int, name string, data []byte) (string, error) {
 	dir := uploadBaseDir()
-	tenantDir := filepath.Join(dir, strconv.Itoa(tenancyId))
+	tenantDir := filepath.Join(dir, strconv.Itoa(tenantId))
 	if err := os.MkdirAll(tenantDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create upgrade storage dir: %w", err)
 	}

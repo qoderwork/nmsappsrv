@@ -33,9 +33,9 @@ func NewHandler(db *gorm.DB) *Handler {
 func (h *Handler) ListUpgradeFiles(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId, _ := strconv.Atoi(c.DefaultQuery("tenancy_id", "0"))
+	tenantId, _ := strconv.Atoi(c.DefaultQuery("tenant_id", "0"))
 
-	data, total, err := h.svc.ListUpgradeFiles(tenancyId, page, pageSize)
+	data, total, err := h.svc.ListUpgradeFiles(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list upgrade files")
 		return
@@ -68,10 +68,10 @@ func (h *Handler) UploadUpgradeFile(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
-	storedPath, err := saveUpgradeFile(tenancyId, fileHeader.Filename, data)
+	storedPath, err := saveUpgradeFile(tenantId, fileHeader.Filename, data)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to persist upgrade file: "+err.Error())
 		return
@@ -93,7 +93,7 @@ func (h *Handler) UploadUpgradeFile(c *gin.Context) {
 		FileType:         &fileType,
 		FileSize:         int64Ptr(int64(len(data))),
 		OriginalFileName: &fileName,
-		TenancyId:        &tenancyId,
+		TenantId:        &tenantId,
 		User:             &username,
 		UploadTime:       &now,
 	}
@@ -128,7 +128,7 @@ func (h *Handler) DeleteUpgradeFile(c *gin.Context) {
 func (h *Handler) ListUpgradeTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	filter := UpgradeTaskFilter{
 		SearchText: c.Query("searchText"),
@@ -138,7 +138,7 @@ func (h *Handler) ListUpgradeTasks(c *gin.Context) {
 		DeviceType: c.Query("deviceType"),
 	}
 
-	data, total, err := h.svc.ListUpgradeTasks(tenancyId, filter, page, pageSize)
+	data, total, err := h.svc.ListUpgradeTasks(tenantId, filter, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list upgrade tasks")
 		return
@@ -223,9 +223,9 @@ func (h *Handler) CreateRebootTask(c *gin.Context) {
 func (h *Handler) ListRebootTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListRebootTasks(tenancyId, page, pageSize)
+	data, total, err := h.svc.ListRebootTasks(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list reboot tasks")
 		return
@@ -256,9 +256,9 @@ func (h *Handler) CreateRollbackTask(c *gin.Context) {
 func (h *Handler) ListRollbackTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListRollbackTasks(tenancyId, page, pageSize)
+	data, total, err := h.svc.ListRollbackTasks(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list rollback tasks")
 		return
@@ -428,9 +428,9 @@ func (h *Handler) ManualConfirmationUpgrade(c *gin.Context) {
 
 // ListUpgradeTaskStatusCount handles POST /upgrade-tasks/status-count
 func (h *Handler) ListUpgradeTaskStatusCount(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListUpgradeTaskStatusCount(tenancyId)
+	data, err := h.svc.ListUpgradeTaskStatusCount(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to get status count")
 		return
@@ -657,10 +657,10 @@ func (h *Handler) UploadUpgradeFileByPiecemeal(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
-	if err := h.svc.UploadUpgradeFileByPiecemeal(&req, chunkData, tenancyId, username); err != nil {
+	if err := h.svc.UploadUpgradeFileByPiecemeal(&req, chunkData, tenantId, username); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

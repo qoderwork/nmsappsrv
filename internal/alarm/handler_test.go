@@ -21,7 +21,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockService struct {
-	listAlarmsFn            func(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
+	listAlarmsFn            func(tenantId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
 	getAlarmFn              func(id int64) (*Alarm, error)
 	clearAlarmFn            func(id int64) error
 	batchClearAlarmsFn      func(alarmIds []int64, clearUser string) (int64, []int64, error)
@@ -29,26 +29,26 @@ type mockService struct {
 	getByElementTypeAlarmIdFn func(elementId int64, alarmType int, alarmId string) (*Alarm, error)
 	getByAlarmIdFn            func(alarmType int, alarmId string) (*Alarm, error)
 	checkAlarmSuppressionFn func(alarm *Alarm) (bool, string)
-	listAlarmLibraryFn      func(tenancyId int) ([]AlarmLibrary, error)
-	importAlarmLibraryFn    func(tenancyId int, items []AlarmLibrary) (int, error)
-	listAlarmTemplatesFn    func(tenancyId int) ([]AlarmTemplate, error)
+	listAlarmLibraryFn      func(tenantId int) ([]AlarmLibrary, error)
+	importAlarmLibraryFn    func(tenantId int, items []AlarmLibrary) (int, error)
+	listAlarmTemplatesFn    func(tenantId int) ([]AlarmTemplate, error)
 	createAlarmTemplateFn   func(t *AlarmTemplate) error
 	updateAlarmTemplateFn   func(t *AlarmTemplate) error
-	listAlarmFiltersFn      func(licenseId int) ([]AlarmFilter, error)
+	listAlarmFiltersFn      func(tenantId int) ([]AlarmFilter, error)
 	createAlarmFilterFn     func(f *AlarmFilter) error
 	updateAlarmFilterFn     func(f *AlarmFilter) error
 	deleteAlarmFilterFn     func(id int) error
 	confirmAlarmFn          func(id int64) error
 	unconfirmAlarmFn        func(id int64) error
-	getSeverityCountFn      func(licenseId int) ([]SeverityCount, error)
+	getSeverityCountFn      func(tenantId int) ([]SeverityCount, error)
 	getAlarmSyncConfigFn    func() (*AlarmSyncConfig, error)
 	updateAlarmSyncConfigFn func(config *AlarmSyncConfig) error
 	addCommentForAlarmFn    func(id int64, comment string) error
 }
 
-func (m *mockService) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
+func (m *mockService) ListAlarms(tenantId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
 	if m.listAlarmsFn != nil {
-		return m.listAlarmsFn(licenseId, severity, alarmType, page, pageSize)
+		return m.listAlarmsFn(tenantId, severity, alarmType, page, pageSize)
 	}
 	panic("mockService.ListAlarms not implemented")
 }
@@ -102,16 +102,16 @@ func (m *mockService) CheckAlarmSuppression(alarm *Alarm) (bool, string) {
 	panic("mockService.CheckAlarmSuppression not implemented")
 }
 
-func (m *mockService) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
+func (m *mockService) ListAlarmLibrary(tenantId int) ([]AlarmLibrary, error) {
 	if m.listAlarmLibraryFn != nil {
-		return m.listAlarmLibraryFn(tenancyId)
+		return m.listAlarmLibraryFn(tenantId)
 	}
 	panic("mockService.ListAlarmLibrary not implemented")
 }
 
-func (m *mockService) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
+func (m *mockService) ListAlarmTemplates(tenantId int) ([]AlarmTemplate, error) {
 	if m.listAlarmTemplatesFn != nil {
-		return m.listAlarmTemplatesFn(tenancyId)
+		return m.listAlarmTemplatesFn(tenantId)
 	}
 	panic("mockService.ListAlarmTemplates not implemented")
 }
@@ -130,9 +130,9 @@ func (m *mockService) UpdateAlarmTemplate(t *AlarmTemplate) error {
 	panic("mockService.UpdateAlarmTemplate not implemented")
 }
 
-func (m *mockService) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+func (m *mockService) ListAlarmFilters(tenantId int) ([]AlarmFilter, error) {
 	if m.listAlarmFiltersFn != nil {
-		return m.listAlarmFiltersFn(licenseId)
+		return m.listAlarmFiltersFn(tenantId)
 	}
 	panic("mockService.ListAlarmFilters not implemented")
 }
@@ -172,16 +172,16 @@ func (m *mockService) UnconfirmAlarm(id int64) error {
 	panic("mockService.UnconfirmAlarm not implemented")
 }
 
-func (m *mockService) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
+func (m *mockService) GetSeverityCount(tenantId int) ([]SeverityCount, error) {
 	if m.getSeverityCountFn != nil {
-		return m.getSeverityCountFn(licenseId)
+		return m.getSeverityCountFn(tenantId)
 	}
 	panic("mockService.GetSeverityCount not implemented")
 }
 
-func (m *mockService) ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error) {
+func (m *mockService) ImportAlarmLibrary(tenantId int, items []AlarmLibrary) (int, error) {
 	if m.importAlarmLibraryFn != nil {
-		return m.importAlarmLibraryFn(tenancyId, items)
+		return m.importAlarmLibraryFn(tenantId, items)
 	}
 	panic("mockService.ImportAlarmLibrary not implemented")
 }
@@ -243,7 +243,7 @@ func (m *mockService) UpdateAlarmTemplateEmailNotification(id int, enable bool) 
 	return nil
 }
 
-func (m *mockService) QueryAlarmStatisticResult(licenseId int) (*AlarmStatisticResult, error) {
+func (m *mockService) QueryAlarmStatisticResult(tenantId int) (*AlarmStatisticResult, error) {
 	return &AlarmStatisticResult{}, nil
 }
 
@@ -251,11 +251,11 @@ func (m *mockService) DeleteAlarmLibrary(id int) error {
 	return nil
 }
 
-func (m *mockService) ListActiveAlarmProbableCause(licenseId int) ([]string, error) {
+func (m *mockService) ListActiveAlarmProbableCause(tenantId int) ([]string, error) {
 	return nil, nil
 }
 
-func (m *mockService) GetAlarmEventType(licenseId int) ([]string, error) {
+func (m *mockService) GetAlarmEventType(tenantId int) ([]string, error) {
 	return nil, nil
 }
 
@@ -515,7 +515,7 @@ func TestHandler_UnconfirmAlarm_Success(t *testing.T) {
 
 func TestHandler_GetSeverityCount_Success(t *testing.T) {
 	svc := &mockService{
-		getSeverityCountFn: func(licenseId int) ([]SeverityCount, error) {
+		getSeverityCountFn: func(tenantId int) ([]SeverityCount, error) {
 			return []SeverityCount{
 				{Severity: "Critical", AlarmCount: 3},
 				{Severity: "Major", AlarmCount: 0},

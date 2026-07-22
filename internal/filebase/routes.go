@@ -67,11 +67,11 @@ func RegisterRoutes(router *gin.Engine, sysSvc *systemsettings.SystemSettingsSer
 		rg.PUT("/capture", h.UploadCapture)
 		rg.POST("/capture", h.UploadCapture)
 
-		// ---- config upload (per tenancyId/elementId) ----
-		rg.PUT("/upload/config/:tenancyId/:elementId/:fileName", h.UploadConfigNamed)
-		rg.POST("/upload/config/:tenancyId/:elementId/:fileName", h.UploadConfigNamed)
-		rg.PUT("/upload/config/:tenancyId/:elementId", h.UploadConfig)
-		rg.POST("/upload/config/:tenancyId/:elementId", h.UploadConfig)
+		// ---- config upload (per tenantId/elementId) ----
+		rg.PUT("/upload/config/:tenantId/:elementId/:fileName", h.UploadConfigNamed)
+		rg.POST("/upload/config/:tenantId/:elementId/:fileName", h.UploadConfigNamed)
+		rg.PUT("/upload/config/:tenantId/:elementId", h.UploadConfig)
+		rg.POST("/upload/config/:tenantId/:elementId", h.UploadConfig)
 
 		// ---- mml execute-result upload (per elementId) ----
 		rg.PUT("/mml/:elementId", h.UploadMml)

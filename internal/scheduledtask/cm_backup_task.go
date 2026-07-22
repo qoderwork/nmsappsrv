@@ -14,7 +14,7 @@ import (
 
 // CMBackupTask CM配置备份（每天00:00）
 // 按租户导出 enb 设备配置（Common + AMF）为 CSV 文件
-// CSV 路径：{basePath}/{tenancyId}/CM/{date}/
+// CSV 路径：{basePath}/{tenantId}/CM/{date}/
 // 文件名：CM_{timestamp}_{sn}.csv
 type CMBackupTask struct {
 	db         *gorm.DB
@@ -64,7 +64,7 @@ func (t *CMBackupTask) ExportCM() {
 	var tenancies []struct {
 		Id int `gorm:"column:id"`
 	}
-	if err := t.db.Table("license").Select("id").Find(&tenancies).Error; err != nil {
+	if err := t.db.Table("tenant").Select("id").Find(&tenancies).Error; err != nil {
 		logger.Errorf("CMBackupTask: failed to query tenancies: %v", err)
 		return
 	}
@@ -75,7 +75,7 @@ func (t *CMBackupTask) ExportCM() {
 }
 
 // exportForTenancy 导出指定租户的 CM 配置
-func (t *CMBackupTask) exportForTenancy(licenseId int) {
+func (t *CMBackupTask) exportForTenancy(tenantId int) {
 	// 查询该租户下的所有 enb 设备
 	var devices []struct {
 		ElementId    int64  `gorm:"column:ne_neid"`
@@ -84,11 +84,11 @@ func (t *CMBackupTask) exportForTenancy(licenseId int) {
 	}
 	if err := t.db.Table("cpe_element").
 		Select("ne_neid, serial_number, device_name").
-		Where("license_id = ? AND deleted = ?", licenseId, false).
+		Where("tenant_id = ? AND deleted = ?", tenantId, false).
 		Where("device_type = ?", "enb").
 		Where("serial_number IS NOT NULL AND serial_number != ''").
 		Find(&devices).Error; err != nil {
-		logger.Errorf("CMBackupTask: failed to query devices for license %d: %v", licenseId, err)
+		logger.Errorf("CMBackupTask: failed to query devices for license %d: %v", tenantId, err)
 		return
 	}
 
@@ -96,23 +96,23 @@ func (t *CMBackupTask) exportForTenancy(licenseId int) {
 		return
 	}
 
-	// 创建导出目录: {exportPath}/{licenseId}/CM/{date}/
+	// 创建导出目录: {exportPath}/{tenantId}/CM/{date}/
 	date := time.Now().Format("20060102")
-	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", licenseId), "CM", date)
+	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", tenantId), "CM", date)
 	if err := os.MkdirAll(exportDir, 0755); err != nil {
 		logger.Errorf("CMBackupTask: failed to create export directory %s: %v", exportDir, err)
 		return
 	}
 
 	for _, device := range devices {
-		t.exportForDevice(licenseId, device.ElementId, device.SerialNumber, device.DeviceName, exportDir)
+		t.exportForDevice(tenantId, device.ElementId, device.SerialNumber, device.DeviceName, exportDir)
 	}
 
-	logger.Infof("CMBackupTask: exported CM config for %d devices in license %d", len(devices), licenseId)
+	logger.Infof("CMBackupTask: exported CM config for %d devices in license %d", len(devices), tenantId)
 }
 
 // exportForDevice 导出单个设备的 CM 配置
-func (t *CMBackupTask) exportForDevice(licenseId int, elementId int64, serialNumber, deviceName, exportDir string) {
+func (t *CMBackupTask) exportForDevice(tenantId int, elementId int64, serialNumber, deviceName, exportDir string) {
 	// 查询设备的参数值
 	paramValues := t.getParamValues(elementId)
 

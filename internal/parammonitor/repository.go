@@ -22,7 +22,7 @@ type Repository interface {
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[ParameterMonitorConfig], error)
 
 	// Module-specific methods.
-	ListConfigs(licenseId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error)
+	ListConfigs(tenantId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error)
 	SetConfigParameters(configId int, parameterIds []string) error
 	GetConfigParameters(configId int) ([]string, error)
 	GetParameterByIds(ids []string) (map[string]string, error)
@@ -61,11 +61,11 @@ func NewRepository(db *gorm.DB) Repository {
 // ---------------------------------------------------------------------------
 
 // ListConfigs returns paginated monitor configs for the given license.
-func (r *repository) ListConfigs(licenseId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error) {
+func (r *repository) ListConfigs(tenantId int, page, pageSize int) ([]ParameterMonitorConfig, int64, error) {
 	var configs []ParameterMonitorConfig
 	var total int64
 
-	query := r.db.Where("license_id = ?", licenseId)
+	query := r.db.Where("tenant_id = ?", tenantId)
 	query.Model(&ParameterMonitorConfig{}).Count(&total)
 
 	offset := (page - 1) * pageSize

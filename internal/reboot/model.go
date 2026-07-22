@@ -15,7 +15,7 @@ type RebootTask struct {
 	EndTime        *time.Time `gorm:"column:end_time" json:"endTime"`
 	ExecuteMode    int        `gorm:"column:execute_mode" json:"executeMode"` // 1=immediate 2=wait 3=scheduled
 	TriggerTime    *time.Time `gorm:"column:trigger_time" json:"triggerTime"`
-	TenancyId      int        `gorm:"column:tenancy_id" json:"tenancyId"`
+	TenantId      int        `gorm:"column:tenant_id" json:"tenantId"`
 	ElementIds     string     `gorm:"column:element_ids;type:longtext" json:"elementIds"`
 	DeviceType     string     `gorm:"column:device_type;type:varchar(50)" json:"deviceType"`
 	Scope          string     `gorm:"column:scope;type:varchar(50)" json:"scope"` // element / deviceGroup

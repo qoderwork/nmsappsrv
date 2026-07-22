@@ -25,18 +25,18 @@ import (
 // Service defines the business-logic contract for device management.
 type Service interface {
 	GetDevice(id int64) (*CpeElement, error)
-	ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
-	CreateDevice(elem *CpeElement, licenseId int) error
+	ListDevices(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error)
+	CreateDevice(elem *CpeElement, tenantId int) error
 	UpdateDevice(elem *CpeElement) error
 	DeleteDevice(id int64) error
-	ListGroups(licenseId int) ([]DeviceGroup, error)
-	CreateGroup(g *DeviceGroup, licenseId int) error
+	ListGroups(tenantId int) ([]DeviceGroup, error)
+	CreateGroup(g *DeviceGroup, tenantId int) error
 	UpdateGroup(g *DeviceGroup) error
 	DeleteGroup(id string) error
-	ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error)
-	SetLicenseIdNullByLicenseId(licenseId int) error
-	DeleteDefaultGroupsByLicenseId(licenseId int) error
-	CreateDefaultGroup(licenseId int) error
+	ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, tenantId int) (*ImportDeviceResult, error)
+	SetTenantIdNullByTenantId(tenantId int) error
+	DeleteDefaultGroupsByTenantId(tenantId int) error
+	CreateDefaultGroup(tenantId int) error
 }
 
 // service contains the business logic for device management.
@@ -75,7 +75,7 @@ func (s *service) GetDevice(id int64) (*CpeElement, error) {
 
 // ListDevices returns a paginated device list. The page number (1-based) is
 // converted to an offset before querying.
-func (s *service) ListDevices(licenseId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
+func (s *service) ListDevices(tenantId int, keyword string, page, pageSize int) ([]CpeElement, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -83,7 +83,7 @@ func (s *service) ListDevices(licenseId int, keyword string, page, pageSize int)
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	elems, total, err := s.repo.FindPage(licenseId, keyword, offset, pageSize)
+	elems, total, err := s.repo.FindPage(tenantId, keyword, offset, pageSize)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_DEVICES_FAILED", 500, "failed to list devices")
 	}
@@ -91,9 +91,9 @@ func (s *service) ListDevices(licenseId int, keyword string, page, pageSize int)
 }
 
 // CreateDevice applies sensible defaults and persists a new device.
-func (s *service) CreateDevice(elem *CpeElement, licenseId int) error {
-	if licenseId > 0 {
-		elem.LicenseId = &licenseId
+func (s *service) CreateDevice(elem *CpeElement, tenantId int) error {
+	if tenantId > 0 {
+		elem.TenantId = &tenantId
 	}
 	elem.LoadedBasicInfo = false
 	elem.IsInitialized = false
@@ -131,15 +131,15 @@ func (s *service) DeleteDevice(id int64) error {
 // ---------------------------------------------------------------------------
 
 // ListGroups returns all groups for the given license.
-func (s *service) ListGroups(licenseId int) ([]DeviceGroup, error) {
-	return s.repo.FindGroups(licenseId)
+func (s *service) ListGroups(tenantId int) ([]DeviceGroup, error) {
+	return s.repo.FindGroups(tenantId)
 }
 
 // CreateGroup generates a random 32-char hex ID when none is supplied, then
 // persists the group.
-func (s *service) CreateGroup(g *DeviceGroup, licenseId int) error {
-	if licenseId > 0 {
-		g.LicenseId = &licenseId
+func (s *service) CreateGroup(g *DeviceGroup, tenantId int) error {
+	if tenantId > 0 {
+		g.TenantId = &tenantId
 	}
 	if g.Id == "" {
 		g.Id = generateHexID()
@@ -170,25 +170,25 @@ func (s *service) DeleteGroup(id string) error {
 	return s.repo.DeleteGroup(id)
 }
 
-// SetLicenseIdNullByLicenseId sets license_id to NULL for all devices with the given license_id.
-func (s *service) SetLicenseIdNullByLicenseId(licenseId int) error {
-	return s.repo.SetLicenseIdNullByLicenseId(licenseId)
+// SetTenantIdNullByTenantId sets tenant_id to NULL for all devices with the given tenant_id.
+func (s *service) SetTenantIdNullByTenantId(tenantId int) error {
+	return s.repo.SetTenantIdNullByTenantId(tenantId)
 }
 
-// DeleteDefaultGroupsByLicenseId deletes all default device groups for the given license.
-func (s *service) DeleteDefaultGroupsByLicenseId(licenseId int) error {
-	return s.repo.DeleteDefaultGroupsByLicenseId(licenseId)
+// DeleteDefaultGroupsByTenantId deletes all default device groups for the given license.
+func (s *service) DeleteDefaultGroupsByTenantId(tenantId int) error {
+	return s.repo.DeleteDefaultGroupsByTenantId(tenantId)
 }
 
 // CreateDefaultGroup creates a default "Default" device group for the given license.
-func (s *service) CreateDefaultGroup(licenseId int) error {
+func (s *service) CreateDefaultGroup(tenantId int) error {
 	now := time.Now()
 	g := &DeviceGroup{
 		GroupName:    strPtr("Default"),
 		DefaultGroup: true,
 		CreationTime: &now,
 	}
-	return s.CreateGroup(g, licenseId)
+	return s.CreateGroup(g, tenantId)
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +264,7 @@ func ParseImportExcel(r io.Reader) ([]ImportDeviceRow, error) {
 
 // ImportDevices processes the import rows with Add/Modify/Delete operations.
 // It uses a Redis distributed lock to prevent race conditions.
-func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, licenseId int) (*ImportDeviceResult, error) {
+func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, deviceGroupId string, tenantId int) (*ImportDeviceResult, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("no device data to import")
 	}
@@ -336,7 +336,7 @@ func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 		}
 	}
 	if addCount > 0 {
-		if err := s.checkDeviceQuota(licenseId, "", addCount); err != nil {
+		if err := s.checkDeviceQuota(tenantId, "", addCount); err != nil {
 			return nil, err
 		}
 	}
@@ -368,7 +368,7 @@ func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 				IsInitialized:        false,
 				Deleted:              false,
 				CreationTime:         &now,
-				LicenseId:            intPtr(licenseId),
+				TenantId:            intPtr(tenantId),
 			}
 			if err := s.repo.Create(elem); err != nil {
 				logger.Errorf("import add device %s error: %v", row.SerialNumber, err)
@@ -431,8 +431,8 @@ func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 			}
 		}
 		// Tenant-level default groups.
-		if licenseId > 0 {
-			tenantGroups, err := s.repo.FindDefaultGroups(licenseId)
+		if tenantId > 0 {
+			tenantGroups, err := s.repo.FindDefaultGroups(tenantId)
 			if err == nil {
 				for _, g := range tenantGroups {
 					_ = s.repo.AddElementsToGroup(g.Id, result.AddedIds)
@@ -450,8 +450,8 @@ func (s *service) ImportDevices(rows []ImportDeviceRow, deviceType string, devic
 
 // checkDeviceQuota verifies that adding `count` more devices won't exceed the license quota.
 // Returns an error if the quota would be exceeded.
-func (s *service) checkDeviceQuota(licenseId int, deviceType string, count int) error {
-	if licenseId <= 0 || count <= 0 {
+func (s *service) checkDeviceQuota(tenantId int, deviceType string, count int) error {
+	if tenantId <= 0 || count <= 0 {
 		return nil
 	}
 
@@ -465,14 +465,14 @@ func (s *service) checkDeviceQuota(licenseId int, deviceType string, count int) 
 	}
 
 	// Read quota from license table
-	quota, err := s.repo.GetLicenseQuota(licenseId, deviceType)
+	quota, err := s.repo.GetLicenseQuota(tenantId, deviceType)
 	// If we can't read quota, skip check
 	if err != nil || quota <= 0 {
 		return nil
 	}
 
 	// Count existing devices of this type for this license
-	existing, err := s.repo.CountNonDeleted(licenseId, deviceType)
+	existing, err := s.repo.CountNonDeleted(tenantId, deviceType)
 	if err != nil {
 		existing = 0
 	}

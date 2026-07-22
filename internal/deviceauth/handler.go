@@ -24,8 +24,8 @@ func NewHandler(db *gorm.DB) *Handler {
 
 // GetConfig returns the current device auth configuration.
 func (h *Handler) GetConfig(c *gin.Context) {
-	licenseId, _ := c.Get("license_id")
-	lid, _ := licenseId.(string)
+	tenantId, _ := c.Get("tenant_id")
+	lid, _ := tenantId.(string)
 
 	cfg, err := h.svc.GetConfig(lid)
 	if err != nil {
@@ -46,8 +46,8 @@ func (h *Handler) SaveConfig(c *gin.Context) {
 		return
 	}
 
-	licenseId, _ := c.Get("license_id")
-	lid, _ := licenseId.(string)
+	tenantId, _ := c.Get("tenant_id")
+	lid, _ := tenantId.(string)
 
 	if err := h.svc.SaveConfig(&cfg, lid); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
@@ -59,8 +59,8 @@ func (h *Handler) SaveConfig(c *gin.Context) {
 // GetAuthInfo returns the auth challenge info for the current tenant.
 // Used by the frontend to know what auth type is configured.
 func (h *Handler) GetAuthInfo(c *gin.Context) {
-	licenseId, _ := c.Get("license_id")
-	lid, _ := licenseId.(string)
+	tenantId, _ := c.Get("tenant_id")
+	lid, _ := tenantId.(string)
 
 	cfg, err := h.svc.GetConfig(lid)
 	if err != nil {

@@ -33,8 +33,8 @@ type Repository interface {
 	UpdateParameterAttributes(pa *ParameterAttributes) error
 	CreateParameterLog(log *ParameterLog) error
 	FindParameterLogs(elementId int64, keyword string, offset, limit int) ([]ParameterLog, int64, error)
-	FindParameterSets(licenseId int) ([]ParameterSet, error)
-	FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
+	FindParameterSets(tenantId int) ([]ParameterSet, error)
+	FindParameterTemplates(tenantId int) ([]ParameterTemplate, error)
 	FindParameterTemplate(id int64) (*ParameterTemplate, []TemplateParameter, error)
 	CreateParameterTemplate(t *ParameterTemplate) error
 	UpdateParameterTemplate(t *ParameterTemplate) error
@@ -45,7 +45,7 @@ type Repository interface {
 	FindParameterBackupLogsWithPage(elementId int64, keyword string, page, pageSize int) ([]ParameterBackupLog, int64, error)
 	CreateBatchConfigLog(log *misc.BatchConfigurationLog) error
 	CreateBatchConfigDeviceLog(log *misc.BatchConfigurationDeviceLog) error
-	FindBatchConfigLogs(tenancyId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error)
+	FindBatchConfigLogs(tenantId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error)
 	BatchConfigProgress(taskId int64) (total int64, success int64, err error)
 	BatchConfigDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
 	InsertEventLog(eventType string, elementId int64, user string, status int, commandTrackData string) (int64, error)
@@ -195,9 +195,9 @@ func (r *repository) FindParameterLogs(elementId int64, keyword string, offset, 
 // ---------------------------------------------------------------------------
 
 // FindParameterSets returns all parameter sets for the given license.
-func (r *repository) FindParameterSets(licenseId int) ([]ParameterSet, error) {
+func (r *repository) FindParameterSets(tenantId int) ([]ParameterSet, error) {
 	var sets []ParameterSet
-	if err := r.db.Where("license_id = ?", licenseId).Find(&sets).Error; err != nil {
+	if err := r.db.Where("tenant_id = ?", tenantId).Find(&sets).Error; err != nil {
 		return nil, err
 	}
 	return sets, nil
@@ -208,9 +208,9 @@ func (r *repository) FindParameterSets(licenseId int) ([]ParameterSet, error) {
 // ---------------------------------------------------------------------------
 
 // FindParameterTemplates returns all parameter templates for the given tenancy.
-func (r *repository) FindParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
+func (r *repository) FindParameterTemplates(tenantId int) ([]ParameterTemplate, error) {
 	var templates []ParameterTemplate
-	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&templates).Error; err != nil {
+	if err := r.db.Where("tenant_id = ?", tenantId).Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	return templates, nil
@@ -356,11 +356,11 @@ func (r *repository) CreateBatchConfigDeviceLog(log *misc.BatchConfigurationDevi
 }
 
 // FindBatchConfigLogs returns a paginated list of batch configuration logs.
-func (r *repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error) {
+func (r *repository) FindBatchConfigLogs(tenantId int, offset, limit int) ([]misc.BatchConfigurationLog, int64, error) {
 	var logs []misc.BatchConfigurationLog
 	var total int64
 
-	query := r.db.Model(&misc.BatchConfigurationLog{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&misc.BatchConfigurationLog{}).Where("tenant_id = ?", tenantId)
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindBatchConfigLogs count error: %v", err)

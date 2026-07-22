@@ -15,7 +15,7 @@ type NMSBackupAndRevertTask struct {
 	CreateTime  *time.Time `gorm:"column:create_time" json:"create_time"`
 	UpdateTime  *time.Time `gorm:"column:update_time" json:"update_time"`
 	User        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
-	LicenseId   *int       `gorm:"column:tenancy_id" json:"license_id"`
+	TenantId   *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	NmsBackupId *int       `gorm:"column:nms_backup_id" json:"nms_backup_id"` // FK to nms_backup_and_revert.id
 }
 

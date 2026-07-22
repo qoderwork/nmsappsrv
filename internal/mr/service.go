@@ -161,7 +161,7 @@ type ExportMRVO struct {
 // GenerateCSV aggregates MR data per element/cell for [start,end] and writes an
 // xlsx report (Java's ExportMRVO columns) to MRCCSExportDir. Returns the file
 // name (without path), matching Java generateMRCSVForNR which returns fileName.
-func (s *Service) GenerateCSV(licenseID int, start, end time.Time) (string, error) {
+func (s *Service) GenerateCSV(tenantID int, start, end time.Time) (string, error) {
 	var elements []struct {
 		NeNeid       int64
 		DeviceName   *string
@@ -169,7 +169,7 @@ func (s *Service) GenerateCSV(licenseID int, start, end time.Time) (string, erro
 	}
 	if err := s.db.Table("cpe_element").
 		Select("ne_neid, device_name, serial_number").
-		Where("license_id = ?", licenseID).Find(&elements).Error; err != nil {
+		Where("tenant_id = ?", tenantID).Find(&elements).Error; err != nil {
 		return "", err
 	}
 

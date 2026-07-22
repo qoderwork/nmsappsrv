@@ -101,7 +101,7 @@ func (f *fakeRepo) BulkCreateCbsdInfos(infos []CbsdInfo) error { return nil }
 func (f *fakeRepo) FindSasConfigs(lic int) ([]SasConfig, error) {
 	var out []SasConfig
 	for _, c := range f.configs {
-		if c.LicenseId == lic {
+		if c.TenantId == lic {
 			out = append(out, c)
 		}
 	}
@@ -160,9 +160,9 @@ func sasTestServer(t *testing.T) (*httptest.Server, *int) {
 func TestGrantSetsGranted(t *testing.T) {
 	srv, _ := sasTestServer(t)
 	repo := newFakeRepo()
-	repo.configs = []SasConfig{{LicenseId: 1, SasUrl: srv.URL, Enabled: true}}
+	repo.configs = []SasConfig{{TenantId: 1, SasUrl: srv.URL, Enabled: true}}
 	repo.byID["c1"] = &CbsdInfo{
-		Id: "c1", CbsdID: strPtr("CBSD-1"), LicenseId: intPtr(1),
+		Id: "c1", CbsdID: strPtr("CBSD-1"), TenantId: intPtr(1),
 		LowFrequency: int64Ptr(3550), HighFrequency: int64Ptr(3570), MaxEirp: float64Ptr(30),
 	}
 	svc := newService(repo)
@@ -184,9 +184,9 @@ func TestGrantSetsGranted(t *testing.T) {
 func TestRelinquishmentResets(t *testing.T) {
 	srv, _ := sasTestServer(t)
 	repo := newFakeRepo()
-	repo.configs = []SasConfig{{LicenseId: 1, SasUrl: srv.URL, Enabled: true}}
+	repo.configs = []SasConfig{{TenantId: 1, SasUrl: srv.URL, Enabled: true}}
 	repo.byID["c1"] = &CbsdInfo{
-		Id: "c1", CbsdID: strPtr("CBSD-1"), LicenseId: intPtr(1),
+		Id: "c1", CbsdID: strPtr("CBSD-1"), TenantId: intPtr(1),
 		OperationState:    strPtr(OpStateGranted),
 		GrantID:           strPtr("G0"),
 		GrantExpireTime:   strPtr("2099-01-01T00:00:00Z"),
@@ -211,10 +211,10 @@ func TestRelinquishmentResets(t *testing.T) {
 func TestSasHeartbeatCodes(t *testing.T) {
 	srv, hbCode := sasTestServer(t)
 	repo := newFakeRepo()
-	repo.configs = []SasConfig{{LicenseId: 1, SasUrl: srv.URL, Enabled: true}}
+	repo.configs = []SasConfig{{TenantId: 1, SasUrl: srv.URL, Enabled: true}}
 	newSvc := func() Service {
 		repo.byID["c1"] = &CbsdInfo{
-			Id: "c1", CbsdID: strPtr("CBSD-1"), LicenseId: intPtr(1),
+			Id: "c1", CbsdID: strPtr("CBSD-1"), TenantId: intPtr(1),
 			OperationState: strPtr(OpStateGranted), GrantID: strPtr("G0"),
 		}
 		return newService(repo)
@@ -250,10 +250,10 @@ func TestSasHeartbeatCodes(t *testing.T) {
 func TestMaintainGrantExpired(t *testing.T) {
 	srv, _ := sasTestServer(t)
 	repo := newFakeRepo()
-	repo.configs = []SasConfig{{LicenseId: 1, SasUrl: srv.URL, Enabled: true}}
+	repo.configs = []SasConfig{{TenantId: 1, SasUrl: srv.URL, Enabled: true}}
 	past := time.Now().Add(-time.Hour).Format(time.RFC3339)
 	repo.byStates = []CbsdInfo{{
-		Id: "c1", CbsdID: strPtr("CBSD-1"), LicenseId: intPtr(1),
+		Id: "c1", CbsdID: strPtr("CBSD-1"), TenantId: intPtr(1),
 		OperationState:    strPtr(OpStateGranted),
 		GrantExpireTime:   strPtr(past),
 		TransmitExpireTime: strPtr(past),
@@ -297,11 +297,11 @@ func TestMaintainGrantExpired(t *testing.T) {
 func TestMaintainTransmitExpired(t *testing.T) {
 	srv, _ := sasTestServer(t)
 	repo := newFakeRepo()
-	repo.configs = []SasConfig{{LicenseId: 1, SasUrl: srv.URL, Enabled: true}}
+	repo.configs = []SasConfig{{TenantId: 1, SasUrl: srv.URL, Enabled: true}}
 	past := time.Now().Add(-time.Hour).Format(time.RFC3339)
 	future := time.Now().Add(time.Hour).Format(time.RFC3339)
 	repo.byStates = []CbsdInfo{{
-		Id: "c1", CbsdID: strPtr("CBSD-1"), LicenseId: intPtr(1),
+		Id: "c1", CbsdID: strPtr("CBSD-1"), TenantId: intPtr(1),
 		OperationState:    strPtr(OpStateAuthorized),
 		GrantExpireTime:   strPtr(future),
 		TransmitExpireTime: strPtr(past),
@@ -336,10 +336,10 @@ func TestMaintainTransmitExpired(t *testing.T) {
 func TestMaintainNoTransition(t *testing.T) {
 	srv, _ := sasTestServer(t)
 	repo := newFakeRepo()
-	repo.configs = []SasConfig{{LicenseId: 1, SasUrl: srv.URL, Enabled: true}}
+	repo.configs = []SasConfig{{TenantId: 1, SasUrl: srv.URL, Enabled: true}}
 	future := time.Now().Add(time.Hour).Format(time.RFC3339)
 	repo.byStates = []CbsdInfo{{
-		Id: "c1", CbsdID: strPtr("CBSD-1"), LicenseId: intPtr(1),
+		Id: "c1", CbsdID: strPtr("CBSD-1"), TenantId: intPtr(1),
 		OperationState:    strPtr(OpStateGranted),
 		GrantExpireTime:   strPtr(future),
 		TransmitExpireTime: strPtr(future),

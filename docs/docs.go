@@ -414,7 +414,7 @@ const docTemplate = `{
                 "latitude": {
                     "type": "string"
                 },
-                "license_id": {
+                "tenant_id": {
                     "type": "integer"
                 },
                 "loaded_basic_info": {

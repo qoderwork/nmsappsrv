@@ -9,11 +9,11 @@ import (
 
 // Service defines the business-logic contract for blacklist management.
 type Service interface {
-	AddDeviceToBlackList(req *AddDeviceToBlackListRequest, licenseId int, username string) (int, error)
+	AddDeviceToBlackList(req *AddDeviceToBlackListRequest, tenantId int, username string) (int, error)
 	DeleteDeviceFromBlackList(id int, username string) error
 	BatchDeleteDeviceFromBlackList(ids []int, username string) error
-	ListBlackList(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error)
-	ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error)
+	ListBlackList(tenantId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error)
+	ListOperationLogs(tenantId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error)
 	LoadAllToRedis() error
 }
 
@@ -33,9 +33,9 @@ func newService(repo Repository) Service {
 }
 
 // AddDeviceToBlackList adds a device to the blacklist.
-func (s *service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, licenseId int, username string) (int, error) {
+func (s *service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, tenantId int, username string) (int, error) {
 	// Duplicate check
-	existing, _ := s.repo.FindBySNAndDeviceType(licenseId, req.SN, req.DeviceType)
+	existing, _ := s.repo.FindBySNAndDeviceType(tenantId, req.SN, req.DeviceType)
 	if existing != nil {
 		return 0, fmt.Errorf("device already in blacklist")
 	}
@@ -44,7 +44,7 @@ func (s *service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, license
 		SN:         req.SN,
 		Username:   username,
 		AddTime:    time.Now(),
-		LicenseId:  licenseId,
+		TenantId:  tenantId,
 		DeviceType: req.DeviceType,
 		Reason:     req.Reason,
 	}
@@ -60,7 +60,7 @@ func (s *service) AddDeviceToBlackList(req *AddDeviceToBlackListRequest, license
 		OperatorUsername: username,
 		OperationTime:    time.Now(),
 		OperationReason:  req.Reason,
-		LicenseId:        licenseId,
+		TenantId:        tenantId,
 	})
 
 	// Set Redis key
@@ -88,7 +88,7 @@ func (s *service) DeleteDeviceFromBlackList(id int, username string) error {
 		OperatorUsername: username,
 		OperationTime:    time.Now(),
 		OperationReason:  entry.Reason,
-		LicenseId:        entry.LicenseId,
+		TenantId:        entry.TenantId,
 	})
 
 	// Delete Redis key
@@ -122,7 +122,7 @@ func (s *service) BatchDeleteDeviceFromBlackList(ids []int, username string) err
 			OperatorUsername: username,
 			OperationTime:    time.Now(),
 			OperationReason:  entry.Reason,
-			LicenseId:        entry.LicenseId,
+			TenantId:        entry.TenantId,
 		})
 		DeleteRedisBlackListKey(entry.DeviceType, entry.SN)
 	}
@@ -131,13 +131,13 @@ func (s *service) BatchDeleteDeviceFromBlackList(ids []int, username string) err
 }
 
 // ListBlackList returns paginated blacklist entries.
-func (s *service) ListBlackList(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
-	return s.repo.List(licenseId, query)
+func (s *service) ListBlackList(tenantId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
+	return s.repo.List(tenantId, query)
 }
 
 // ListOperationLogs returns paginated operation logs.
-func (s *service) ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
-	return s.repo.ListOperationLogs(licenseId, query)
+func (s *service) ListOperationLogs(tenantId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
+	return s.repo.ListOperationLogs(tenantId, query)
 }
 
 // LoadAllToRedis loads all blacklist entries into Redis (call at startup).

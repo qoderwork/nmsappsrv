@@ -101,7 +101,7 @@ func (s *Service) ExportPM() {
 			var temp []PMFileInfo
 			err := s.db.Table(tableName).
 				Select("file_name, ne_id").
-				Where("tenancy_id = ? AND start_time >= ? AND start_time < ?",
+				Where("tenant_id = ? AND start_time >= ? AND start_time < ?",
 					tenancy.Id, startTime, endTime).
 				Scan(&temp).Error
 			if err != nil {

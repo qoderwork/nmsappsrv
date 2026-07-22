@@ -42,7 +42,7 @@ type CbsdInfo struct {
 	PreferredFrequency   *string    `gorm:"column:preferred_frequency;type:varchar(255)" json:"preferred_frequency"`
 	MeasReportConfig     *string    `gorm:"column:meas_report_config;type:longtext" json:"meas_report_config"`
 	LastRegistrationTime *time.Time `gorm:"column:last_registration_time" json:"last_registration_time"`
-	LicenseId            *int       `gorm:"column:license_id;uniqueIndex:idx_cbsd_unique" json:"license_id"`
+	TenantId            *int       `gorm:"column:tenant_id;uniqueIndex:idx_cbsd_unique" json:"tenant_id"`
 	PreferredBandwidth   *int       `gorm:"column:preferred_bandwidth" json:"preferred_bandwidth"`
 	GroupIds               *string    `gorm:"column:group_ids;type:varchar(255)" json:"group_ids"`
 	UpdateTime             *time.Time `gorm:"column:update_time" json:"update_time"`
@@ -66,7 +66,7 @@ type CBSDCertFileSendTask struct {
 	EndTime        *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode    *int       `gorm:"column:execute_mode" json:"execute_mode"`
 	TriggerTime    *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenancyId      *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	ElementIds     *string    `gorm:"column:element_ids;type:longtext" json:"element_ids"`
 	DeviceType     *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 }
@@ -108,7 +108,7 @@ type SasConfig struct {
 	CertPath    string    `gorm:"column:cert_path;type:varchar(500)" json:"cert_path"`
 	KeyPath     string    `gorm:"column:key_path;type:varchar(500)" json:"key_path"`
 	Enabled     bool      `gorm:"column:enabled" json:"enabled"`
-	LicenseId   int       `gorm:"column:license_id" json:"license_id"`
+	TenantId   int       `gorm:"column:tenant_id" json:"tenant_id"`
 	CreateTime  time.Time `gorm:"column:create_time" json:"create_time"`
 	UpdateTime  time.Time `gorm:"column:update_time" json:"update_time"`
 }

@@ -16,17 +16,17 @@ import (
 
 // Service defines the business-logic contract for upgrade management.
 type Service interface {
-	ListUpgradeFiles(tenancyId int, page, pageSize int) ([]UpgradeFile, int64, error)
+	ListUpgradeFiles(tenantId int, page, pageSize int) ([]UpgradeFile, int64, error)
 	UploadUpgradeFile(f *UpgradeFile) error
 	DeleteUpgradeFile(id int) error
-	ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error)
+	ListUpgradeTasks(tenantId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error)
 	GetUpgradeTask(id int) (*UpgradeTask, error)
 	CreateUpgradeTask(t *UpgradeTask) error
 	ListUpgradeLogs(taskId int, page, pageSize int) ([]UpgradeLog, int64, error)
 	CreateRebootTask(t *RebootTask) error
-	ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTask, int64, error)
+	ListRebootTasks(tenantId int, page, pageSize int) ([]RebootTask, int64, error)
 	CreateRollbackTask(t *RollbackTask) error
-	ListRollbackTasks(tenancyId int, page, pageSize int) ([]RollbackTask, int64, error)
+	ListRollbackTasks(tenantId int, page, pageSize int) ([]RollbackTask, int64, error)
 	StartUpgradeTask(id int) error
 	StartRollbackTask(id int) error
 
@@ -40,7 +40,7 @@ type Service interface {
 	ListRollbackResults(taskId int, page, pageSize int) ([]UpgradeResultVo, int64, error)
 
 	// Statistics
-	ListUpgradeTaskStatusCount(tenancyId int) ([]StatusCountItem, error)
+	ListUpgradeTaskStatusCount(tenantId int) ([]StatusCountItem, error)
 	ListUpgradeDeviceResultCount(taskId int) ([]DeviceResultCountItem, error)
 
 	// AutoUpgradeTask CRUD
@@ -53,7 +53,7 @@ type Service interface {
 	DownloadUpgradeFile(id int) (*UpgradeFile, error)
 	ViewUpgradeFile(id int) (*UpgradeFile, error)
 	UpdateUpgradeFile(f *UpgradeFile) error
-	UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenancyId int, user string) error
+	UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenantId int, user string) error
 
 	// View / manual confirmation
 	ViewRollbackTask(id int) (*ViewRollbackTaskVO, error)
@@ -80,7 +80,7 @@ func newService(repo Repository) Service {
 // ---------------------------------------------------------------------------
 
 // ListUpgradeFiles returns a paginated list of upgrade files.
-func (s *service) ListUpgradeFiles(tenancyId int, page, pageSize int) ([]UpgradeFile, int64, error) {
+func (s *service) ListUpgradeFiles(tenantId int, page, pageSize int) ([]UpgradeFile, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -88,7 +88,7 @@ func (s *service) ListUpgradeFiles(tenancyId int, page, pageSize int) ([]Upgrade
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindUpgradeFiles(tenancyId, offset, pageSize)
+	return s.repo.FindUpgradeFiles(tenantId, offset, pageSize)
 }
 
 // UploadUpgradeFile persists a new upgrade file record.
@@ -106,7 +106,7 @@ func (s *service) DeleteUpgradeFile(id int) error {
 // ---------------------------------------------------------------------------
 
 // ListUpgradeTasks returns a paginated list of upgrade task VOs with computed fields.
-func (s *service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error) {
+func (s *service) ListUpgradeTasks(tenantId int, filter UpgradeTaskFilter, page, pageSize int) ([]UpgradeTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -114,7 +114,7 @@ func (s *service) ListUpgradeTasks(tenancyId int, filter UpgradeTaskFilter, page
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	tasks, total, err := s.repo.FindUpgradeTasks(tenancyId, filter, offset, pageSize)
+	tasks, total, err := s.repo.FindUpgradeTasks(tenantId, filter, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -239,7 +239,7 @@ func (s *service) CreateUpgradeTask(t *UpgradeTask) error {
 			IsDownloaded: boolPtrVal(false),
 			Success:      boolPtrVal(false),
 			RetryTimes:   intPtr(0),
-			TenancyId:    t.TenancyId,
+			TenantId:    t.TenantId,
 			DeviceType:   t.DeviceType,
 			UpgradeType:  t.UpgradeType,
 		}
@@ -302,7 +302,7 @@ func (s *service) CreateRebootTask(t *RebootTask) error {
 }
 
 // ListRebootTasks returns a paginated list of reboot tasks.
-func (s *service) ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTask, int64, error) {
+func (s *service) ListRebootTasks(tenantId int, page, pageSize int) ([]RebootTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -310,7 +310,7 @@ func (s *service) ListRebootTasks(tenancyId int, page, pageSize int) ([]RebootTa
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindRebootTasks(tenancyId, offset, pageSize)
+	return s.repo.FindRebootTasks(tenantId, offset, pageSize)
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +367,7 @@ func (s *service) CreateRollbackTask(t *RollbackTask) error {
 			IsDownloaded: boolPtrVal(false),
 			Success:      boolPtrVal(false),
 			RetryTimes:   intPtr(0),
-			TenancyId:    t.TenancyId,
+			TenantId:    t.TenantId,
 		}
 		if err := s.repo.CreateUpgradeLog(logEntry); err != nil {
 			logger.Errorf("CreateRollbackTask: create log for element %d: %v", eid, err)
@@ -398,7 +398,7 @@ func (s *service) CreateRollbackTask(t *RollbackTask) error {
 }
 
 // ListRollbackTasks returns a paginated list of rollback tasks.
-func (s *service) ListRollbackTasks(tenancyId int, page, pageSize int) ([]RollbackTask, int64, error) {
+func (s *service) ListRollbackTasks(tenantId int, page, pageSize int) ([]RollbackTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -406,7 +406,7 @@ func (s *service) ListRollbackTasks(tenancyId int, page, pageSize int) ([]Rollba
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindRollbackTasks(tenancyId, offset, pageSize)
+	return s.repo.FindRollbackTasks(tenantId, offset, pageSize)
 }
 
 // ViewRollbackTaskVO mirrors Java ViewRollbackTaskVO.
@@ -585,7 +585,7 @@ func (s *service) StartUpgradeTask(id int) error {
 			IsDownloaded: boolPtrVal(false),
 			Success:      boolPtrVal(false),
 			RetryTimes:   intPtr(0),
-			TenancyId:    task.TenancyId,
+			TenantId:    task.TenantId,
 			DeviceType:   task.DeviceType,
 			UpgradeType:  task.UpgradeType,
 		}
@@ -650,7 +650,7 @@ func (s *service) StartRollbackTask(id int) error {
 			IsDownloaded: boolPtrVal(false),
 			Success:      boolPtrVal(false),
 			RetryTimes:   intPtr(0),
-			TenancyId:    task.TenancyId,
+			TenantId:    task.TenantId,
 		}
 		if err := s.repo.CreateUpgradeLog(logEntry); err != nil {
 			logger.Errorf("StartRollbackTask: create log for element %d: %v", eid, err)
@@ -843,8 +843,8 @@ func (s *service) ListRollbackResults(taskId int, page, pageSize int) ([]Upgrade
 // ---------------------------------------------------------------------------
 
 // ListUpgradeTaskStatusCount returns per-status counts of upgrade tasks.
-func (s *service) ListUpgradeTaskStatusCount(tenancyId int) ([]StatusCountItem, error) {
-	return s.repo.CountUpgradeTaskStatusCounts(tenancyId)
+func (s *service) ListUpgradeTaskStatusCount(tenantId int) ([]StatusCountItem, error) {
+	return s.repo.CountUpgradeTaskStatusCounts(tenantId)
 }
 
 // ListUpgradeDeviceResultCount returns per-result counts for a task.
@@ -916,7 +916,7 @@ func (s *service) UpdateUpgradeFile(f *UpgradeFile) error {
 // Each chunk is cached in Redis; once every chunk has arrived the chunks are
 // reassembled, persisted to local storage, and the absolute path is recorded so
 // the worker can hand a device-reachable URL to TR-069 Download.
-func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenancyId int, user string) error {
+func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chunkData []byte, tenantId int, user string) error {
 	ctx := context.Background()
 
 	// Store chunk in Redis with a key based on uploadId and chunk index
@@ -948,7 +948,7 @@ func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chun
 			}
 		}
 
-		storedPath, err := saveUpgradeFile(tenancyId, req.FileName, buf.Bytes())
+		storedPath, err := saveUpgradeFile(tenantId, req.FileName, buf.Bytes())
 		if err != nil {
 			return fmt.Errorf("failed to persist assembled file: %w", err)
 		}
@@ -963,7 +963,7 @@ func (s *service) UploadUpgradeFileByPiecemeal(req *PiecemealUploadRequest, chun
 			UploadTime:       &now,
 			ProductType:      &req.ProductType,
 			OriginalFileName: &req.FileName,
-			TenancyId:        &tenancyId,
+			TenantId:        &tenantId,
 			User:             &user,
 		}
 		if err := s.repo.Create(file); err != nil {

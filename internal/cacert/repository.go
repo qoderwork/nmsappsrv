@@ -24,7 +24,7 @@ type Repository interface {
 	ListCaFiles(ctx context.Context, page, pageSize int) ([]CaFile, int64, error)
 	DeleteCaFiles(ctx context.Context, ids []int) error
 	ListAllCaFiles(ctx context.Context) ([]CaFile, error)
-	ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]CaTask, int64, error)
+	ListCaTasks(ctx context.Context, page, pageSize int, tenantId *int) ([]CaTask, int64, error)
 	CreateCaTask(ctx context.Context, task *CaTask) error
 	GetCaTaskByID(ctx context.Context, id int) (*CaTask, error)
 	DeleteCaTasks(ctx context.Context, ids []int) error
@@ -91,14 +91,14 @@ func (r *repository) ListAllCaFiles(ctx context.Context) ([]CaFile, error) {
 
 // ---------- CaTask ----------
 
-// ListCaTasks returns paginated CA task list, optionally filtered by tenancyId
-func (r *repository) ListCaTasks(ctx context.Context, page, pageSize int, tenancyId *int) ([]CaTask, int64, error) {
+// ListCaTasks returns paginated CA task list, optionally filtered by tenantId
+func (r *repository) ListCaTasks(ctx context.Context, page, pageSize int, tenantId *int) ([]CaTask, int64, error) {
 	var tasks []CaTask
 	var total int64
 
 	q := r.db.WithContext(ctx).Model(&CaTask{})
-	if tenancyId != nil {
-		q = q.Where("tenancy_id = ?", *tenancyId)
+	if tenantId != nil {
+		q = q.Where("tenant_id = ?", *tenantId)
 	}
 	q.Count(&total)
 

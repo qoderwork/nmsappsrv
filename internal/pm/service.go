@@ -27,7 +27,7 @@ import (
 
 // Service defines the business-logic contract for PM operations.
 type Service interface {
-	ListKPIs(tenancyId int) ([]PerformanceKpi, error)
+	ListKPIs(tenantId int) ([]PerformanceKpi, error)
 	GetKPI(id string) (*PerformanceKpi, error)
 	CreateKPI(k *PerformanceKpi) error
 	UpdateKPI(k *PerformanceKpi) error
@@ -35,10 +35,10 @@ type Service interface {
 	// ListAllKPIs returns every KPI across all tenancies (admin-style lookup).
 	// Mirrors Java listAllKPI. Use with care -- no tenancy scoping.
 	ListAllKPIs() ([]PerformanceKpi, error)
-	ListKPISets(tenancyId int) ([]PerformanceKpiSet, error)
+	ListKPISets(tenantId int) ([]PerformanceKpiSet, error)
 	CreateKPISet(set *PerformanceKpiSet) error
 	DeleteKPISet(id int) error
-	ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error)
+	ListKPITemplates(tenantId int) ([]PerformanceKpiTemplate, error)
 	CreateKPITemplate(t *PerformanceKpiTemplate) error
 	UpdateKPITemplate(t *PerformanceKpiTemplate) error
 	DeleteKPITemplate(id int) error
@@ -47,8 +47,8 @@ type Service interface {
 	// suggested filename. The handler sets Content-Disposition and writes
 	// the body. Mirrors Java downloadKPITemplate.
 	DownloadKPITemplate(id int) ([]byte, string, error)
-	ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog, int64, error)
-	ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error)
+	ListPMFileLogs(tenantId int, page, pageSize int) ([]PMFileLog, int64, error)
+	ListKPIAlarmTemplates(tenantId int) ([]KpiAlarmTemplate, error)
 	CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	DeleteKPIAlarmTemplate(id int) error
@@ -57,14 +57,14 @@ type Service interface {
 	// template. Mirrors Java updateKPIAlarmTemplateStatus (the Java endpoint
 	// is a status-only update distinct from the full update).
 	UpdateKPIAlarmTemplateStatus(id int, enable bool) error
-	GetDashboardData(tenancyId int, startTime, endTime string) ([]DashboardPmStatisticData, error)
-	GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error)
-	GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error)
-	GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error)
+	GetDashboardData(tenantId int, startTime, endTime string) ([]DashboardPmStatisticData, error)
+	GetPDCPTraffic(tenantId int, startTime, endTime string) ([]PDCPTraffic, error)
+	GetDeviceOnlineInfo(tenantId int) (*DeviceOnlineInfoVO, error)
+	GetProductTypeAndDeviceCount(tenantId int, mode string) ([]ProductTypeAndCount, error)
 	// ExportPMExcel serialises the dashboard PM data for the license in the
 	// given date range as an xlsx workbook. Mirrors Java exportPMExcel
 	// (Java uses Apache POI; Go uses excelize). Enforces the Java 7-day cap.
-	ExportPMExcel(tenancyId int, startTime, endTime string) ([]byte, string, error)
+	ExportPMExcel(tenantId int, startTime, endTime string) ([]byte, string, error)
 	// ImportKPIsFromXLSX parses an uploaded xlsx workbook (mirror of Java
 	// importKPI) and bulk-inserts the rows. `version` is the KPI-set version
 	// (mirrors Java's "version" form field); used to set Type / update time
@@ -81,7 +81,7 @@ type Service interface {
 	// Java listKPIMeas (which queries NeElement where device_type='enb').
 	// The Go side has no separate meas_task table -- the meas task is a
 	// per-device TR-069 FAP.PerfMgmt.Config.1.* parameter block.
-	ListKPIMeas(tenancyId int, searchText string, page, pageSize int) ([]MeasDeviceVo, int64, error)
+	ListKPIMeas(tenantId int, searchText string, page, pageSize int) ([]MeasDeviceVo, int64, error)
 	// UpdateMeasTaskSwitch sends a SetParameterValues to the device to
 	// enable/disable the TR-069 FAP.PerfMgmt.Config.1.* measurement block.
 	// Mirrors Java updateMeasTaskSwitch. The SPV is dispatched via the
@@ -92,7 +92,7 @@ type Service interface {
 	AddReplenishTask(t *PMReplenishTask) error
 	// ListReplenishTask returns paginated replenish tasks for the license.
 	// Mirrors Java listReplenishTask.
-	ListReplenishTask(tenancyId int, name string, page, pageSize int) ([]PMReplenishTask, int64, error)
+	ListReplenishTask(tenantId int, name string, page, pageSize int) ([]PMReplenishTask, int64, error)
 	// ViewReplenishTask returns a single replenish task. Mirrors Java
 	// viewReplenishTask.
 	ViewReplenishTask(id int) (*PMReplenishTask, error)
@@ -151,8 +151,8 @@ func (s *service) IsReplenishDeviceDone(taskId int, elementId int64) bool {
 
 // ---------- PerformanceKpi ----------
 
-func (s *service) ListKPIs(tenancyId int) ([]PerformanceKpi, error) {
-	data, err := s.repo.FindKPIs(tenancyId)
+func (s *service) ListKPIs(tenantId int) ([]PerformanceKpi, error) {
+	data, err := s.repo.FindKPIs(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPIS_FAILED", 500, "failed to list KPIs")
 	}
@@ -198,8 +198,8 @@ func (s *service) DeleteKPI(id string) error {
 
 // ---------- PerformanceKpiSet ----------
 
-func (s *service) ListKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
-	data, err := s.repo.FindKPISets(tenancyId)
+func (s *service) ListKPISets(tenantId int) ([]PerformanceKpiSet, error) {
+	data, err := s.repo.FindKPISets(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPI_SETS_FAILED", 500, "failed to list KPI sets")
 	}
@@ -222,8 +222,8 @@ func (s *service) DeleteKPISet(id int) error {
 
 // ---------- PerformanceKpiTemplate ----------
 
-func (s *service) ListKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
-	data, err := s.repo.FindKPITemplates(tenancyId)
+func (s *service) ListKPITemplates(tenantId int) ([]PerformanceKpiTemplate, error) {
+	data, err := s.repo.FindKPITemplates(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPI_TEMPLATES_FAILED", 500, "failed to list KPI templates")
 	}
@@ -274,9 +274,9 @@ func (s *service) DeleteKPITemplate(id int) error {
 
 // ---------- PMFileLog ----------
 
-func (s *service) ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog, int64, error) {
+func (s *service) ListPMFileLogs(tenantId int, page, pageSize int) ([]PMFileLog, int64, error) {
 	offset := (page - 1) * pageSize
-	data, total, err := s.repo.FindPMFileLogs(tenancyId, offset, pageSize)
+	data, total, err := s.repo.FindPMFileLogs(tenantId, offset, pageSize)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_PM_FILE_LOGS_FAILED", 500, "failed to list PM file logs")
 	}
@@ -285,8 +285,8 @@ func (s *service) ListPMFileLogs(tenancyId int, page, pageSize int) ([]PMFileLog
 
 // ---------- KpiAlarmTemplate ----------
 
-func (s *service) ListKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
-	data, err := s.repo.FindKPIAlarmTemplates(tenancyId)
+func (s *service) ListKPIAlarmTemplates(tenantId int) ([]KpiAlarmTemplate, error) {
+	data, err := s.repo.FindKPIAlarmTemplates(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_KPI_ALARM_TEMPLATES_FAILED", 500, "failed to list KPI alarm templates")
 	}
@@ -331,7 +331,7 @@ func (s *service) DeleteKPIAlarmTemplate(id int) error {
 
 // ---------- Dashboard ----------
 
-func (s *service) GetDashboardData(tenancyId int, startTime, endTime string) ([]DashboardPmStatisticData, error) {
+func (s *service) GetDashboardData(tenantId int, startTime, endTime string) ([]DashboardPmStatisticData, error) {
 	st, err := time.Parse(time.RFC3339, startTime)
 	if err != nil {
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid start_time format, expected RFC3339")
@@ -340,7 +340,7 @@ func (s *service) GetDashboardData(tenancyId int, startTime, endTime string) ([]
 	if err != nil {
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid end_time format, expected RFC3339")
 	}
-	data, err := s.repo.FindDashboardData(tenancyId, st, et)
+	data, err := s.repo.FindDashboardData(tenantId, st, et)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_DASHBOARD_DATA_FAILED", 500, "failed to get dashboard data")
 	}
@@ -349,7 +349,7 @@ func (s *service) GetDashboardData(tenancyId int, startTime, endTime string) ([]
 
 // ---------- PDCPTraffic ----------
 
-func (s *service) GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PDCPTraffic, error) {
+func (s *service) GetPDCPTraffic(tenantId int, startTime, endTime string) ([]PDCPTraffic, error) {
 	st, err := time.Parse(time.RFC3339, startTime)
 	if err != nil {
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid start_time format, expected RFC3339")
@@ -358,7 +358,7 @@ func (s *service) GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PD
 	if err != nil {
 		return nil, apperror.ErrInvalidInput.WithMessage("invalid end_time format, expected RFC3339")
 	}
-	data, err := s.repo.FindPDCPTraffic(tenancyId, st, et)
+	data, err := s.repo.FindPDCPTraffic(tenantId, st, et)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_PDPC_TRAFFIC_FAILED", 500, "failed to get PDPC traffic data")
 	}
@@ -368,8 +368,8 @@ func (s *service) GetPDCPTraffic(tenancyId int, startTime, endTime string) ([]PD
 // ---------- Dashboard: Device Online Info ----------
 
 // GetDeviceOnlineInfo 统计 gNB/eNB/CPE 各自在线/离线设备数
-func (s *service) GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error) {
-	rows, err := s.repo.FindAllActiveElements(tenancyId)
+func (s *service) GetDeviceOnlineInfo(tenantId int) (*DeviceOnlineInfoVO, error) {
+	rows, err := s.repo.FindAllActiveElements(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_DEVICE_ONLINE_INFO_FAILED", 500, "failed to get device online info")
 	}
@@ -410,14 +410,14 @@ func (s *service) GetDeviceOnlineInfo(tenancyId int) (*DeviceOnlineInfoVO, error
 }
 
 // GetProductTypeAndDeviceCount 按产品型号统计设备数量及在线情况
-// mode: "all" 查全部租户, 否则按 tenancyId 过滤
-func (s *service) GetProductTypeAndDeviceCount(tenancyId int, mode string) ([]ProductTypeAndCount, error) {
+// mode: "all" 查全部租户, 否则按 tenantId 过滤
+func (s *service) GetProductTypeAndDeviceCount(tenantId int, mode string) ([]ProductTypeAndCount, error) {
 	var rows []elementRow
 	var err error
 	if mode == "all" {
 		rows, err = s.repo.FindAllActiveElementsAllTenants()
 	} else {
-		rows, err = s.repo.FindAllActiveElements(tenancyId)
+		rows, err = s.repo.FindAllActiveElements(tenantId)
 	}
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_PRODUCT_TYPE_COUNT_FAILED", 500, "failed to get product type and device count")
@@ -470,7 +470,7 @@ func strVal(s *string) string {
 // ExportPMExcel serialises the dashboard PM data for the license in the
 // given date range as an xlsx workbook. Mirrors Java exportPMExcel
 // (Java uses Apache POI; Go uses excelize). Enforces the Java 7-day cap.
-func (s *service) ExportPMExcel(tenancyId int, startTime, endTime string) ([]byte, string, error) {
+func (s *service) ExportPMExcel(tenantId int, startTime, endTime string) ([]byte, string, error) {
 	st, et, err := parseTimeRange(startTime, endTime)
 	if err != nil {
 		return nil, "", apperror.Wrap(err, "EXPORT_PM_EXCEL_BAD_RANGE", 400, "invalid time range")
@@ -478,14 +478,14 @@ func (s *service) ExportPMExcel(tenancyId int, startTime, endTime string) ([]byt
 	if et.Sub(st) > 7*24*time.Hour {
 		return nil, "", apperror.New("EXPORT_PM_EXCEL_RANGE_TOO_LARGE", 400, "time range must be <= 7 days")
 	}
-	rows, err := s.repo.FindDashboardData(tenancyId, st, et)
+	rows, err := s.repo.FindDashboardData(tenantId, st, et)
 	if err != nil {
 		return nil, "", apperror.Wrap(err, "EXPORT_PM_EXCEL_FAILED", 500, "failed to load dashboard data")
 	}
 	f := excelize.NewFile()
 	defer f.Close()
 	sheet := f.GetSheetName(f.GetActiveSheetIndex())
-	header := []string{"id", "time", "pdcp_ul_rate", "pdcp_dl_rate", "cell_available_rate", "tenancy_id"}
+	header := []string{"id", "time", "pdcp_ul_rate", "pdcp_dl_rate", "cell_available_rate", "tenant_id"}
 	for i, h := range header {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		_ = f.SetCellValue(sheet, cell, h)
@@ -501,7 +501,7 @@ func (s *service) ExportPMExcel(tenancyId int, startTime, endTime string) ([]byt
 			optFloat(r.PdcpUlRate),
 			optFloat(r.PdcpDlRate),
 			optFloat(r.CellAvailableRate),
-			optInt(r.TenancyId),
+			optInt(r.TenantId),
 		}
 		for colIdx, v := range values {
 			cell, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+2)
@@ -714,7 +714,7 @@ func optInt(p *int) string {
 // ListKPIMeas returns paginated eNB devices for the license, optionally
 // filtered by a name/serial search text. Mirrors Java listKPIMeas
 // (queries NeElement where device_type='enb').
-func (s *service) ListKPIMeas(tenancyId int, searchText string, page, pageSize int) ([]MeasDeviceVo, int64, error) {
+func (s *service) ListKPIMeas(tenantId int, searchText string, page, pageSize int) ([]MeasDeviceVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -722,7 +722,7 @@ func (s *service) ListKPIMeas(tenancyId int, searchText string, page, pageSize i
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	items, total, err := s.repo.FindENBDevicesForMeas(tenancyId, searchText, offset, pageSize)
+	items, total, err := s.repo.FindENBDevicesForMeas(tenantId, searchText, offset, pageSize)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_KPI_MEAS_FAILED", 500, "failed to list KPI meas devices")
 	}
@@ -806,7 +806,7 @@ func (s *service) AddReplenishTask(t *PMReplenishTask) error {
 
 // ListReplenishTask returns paginated replenish tasks for the license.
 // Mirrors Java listReplenishTask.
-func (s *service) ListReplenishTask(tenancyId int, name string, page, pageSize int) ([]PMReplenishTask, int64, error) {
+func (s *service) ListReplenishTask(tenantId int, name string, page, pageSize int) ([]PMReplenishTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -814,7 +814,7 @@ func (s *service) ListReplenishTask(tenancyId int, name string, page, pageSize i
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	items, total, err := s.repo.FindReplenishTasks(tenancyId, name, offset, pageSize)
+	items, total, err := s.repo.FindReplenishTasks(tenantId, name, offset, pageSize)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_REPLENISH_TASK_FAILED", 500, "failed to list replenish tasks")
 	}

@@ -77,13 +77,13 @@ func (h *ACSHandler) HandleACS(c *gin.Context) {
 // configured per-tenant via Redis, aligned with Java's AuthenticateInterceptor.
 //
 // Java behavior (AuthenticateInterceptor.preHandle):
-//   - Read ACSAuthenticationDTO from Redis "device_authentication_{tenancyId}".
+//   - Read ACSAuthenticationDTO from Redis "device_authentication_{tenantId}".
 //   - If config missing, disabled, or algorithm=="Null" → allow through.
 //   - Otherwise use acsUsername/acsPassword (ACS-level credentials) to validate
 //     the CPE's Authorization header.
 //
 // The Go port loads the same config via deviceauth.Service (which reads Redis
-// "device_authentication_{licenseId}" with a DB fallback). ACS-level credentials
+// "device_authentication_{tenantId}" with a DB fallback). ACS-level credentials
 // are used — NOT per-device connection_request_username/password — matching Java.
 func (h *ACSHandler) ACSAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -100,8 +100,8 @@ func (h *ACSHandler) ACSAuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Load tenant-level auth config (mirrors Java AuthenticateInterceptor).
-		licenseId, _ := c.Get("license_id")
-		lid, _ := licenseId.(string)
+		tenantId, _ := c.Get("tenant_id")
+		lid, _ := tenantId.(string)
 		if lid == "" {
 			// No tenant context — allow through (backward compatible)
 			c.Next()

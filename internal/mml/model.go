@@ -38,7 +38,7 @@ type MmlSet struct {
 	Id        int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	ParentId  *int    `gorm:"column:parent_id" json:"parent_id"`
-	LicenseId *int    `gorm:"column:license_id" json:"license_id"`
+	TenantId *int    `gorm:"column:tenant_id" json:"tenant_id"`
 	Version   *string `gorm:"column:version;type:varchar(255)" json:"version"`
 }
 

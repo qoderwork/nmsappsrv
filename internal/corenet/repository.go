@@ -21,7 +21,7 @@ type Repository interface {
 	FindAll(query *gorm.DB) ([]CoreNetwork, error)
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[CoreNetwork], error)
-	FindCoreNetworks(tenancyId int) ([]CoreNetwork, error)
+	FindCoreNetworks(tenantId int) ([]CoreNetwork, error)
 	FindCoreNetworkData(coreNetworkId int) (*CoreNetworkData, error)
 	SaveCoreNetworkData(data *CoreNetworkData) error
 	DeleteCoreNetworkData(coreNetworkId int) error
@@ -51,9 +51,9 @@ func NewRepository(db *gorm.DB) Repository {
 }
 
 // FindCoreNetworks returns all core networks for the given tenancy.
-func (r *repository) FindCoreNetworks(tenancyId int) ([]CoreNetwork, error) {
+func (r *repository) FindCoreNetworks(tenantId int) ([]CoreNetwork, error) {
 	var networks []CoreNetwork
-	if err := r.db.Where("tenancy_id = ? AND (deleted = ? OR deleted IS NULL)", tenancyId, false).Find(&networks).Error; err != nil {
+	if err := r.db.Where("tenant_id = ? AND (deleted = ? OR deleted IS NULL)", tenantId, false).Find(&networks).Error; err != nil {
 		logger.Errorf("FindCoreNetworks error: %v", err)
 		return nil, err
 	}

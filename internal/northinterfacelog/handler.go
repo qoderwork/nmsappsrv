@@ -79,7 +79,7 @@ func (h *Handler) ListLogs(c *gin.Context) {
 		pageSize = 20
 	}
 
-	f := ListFilter{TenancyID: middleware.GetLicenseId(c)}
+	f := ListFilter{TenancyID: middleware.GetTenantId(c)}
 	if searchText != "" {
 		f.SearchText = searchText
 	}

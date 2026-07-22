@@ -32,33 +32,33 @@ type Repository interface {
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[TBGDevice], error)
 
 	// Module-specific queries
-	ListDevices(licenseId int, offset, limit int) ([]device.CpeElement, int64, error)
-	GetDeviceById(id int64, licenseId int) (*device.CpeElement, error)
-	GetDeviceBySN(sn string, licenseId int) (*device.CpeElement, error)
+	ListDevices(tenantId int, offset, limit int) ([]device.CpeElement, int64, error)
+	GetDeviceById(id int64, tenantId int) (*device.CpeElement, error)
+	GetDeviceBySN(sn string, tenantId int) (*device.CpeElement, error)
 	CreateDevice(d *device.CpeElement) error
 	UpdateDevice(d *device.CpeElement) error
-	SoftDeleteDevice(id int64, licenseId int) error
-	CountDevices(licenseId int) (int64, error)
+	SoftDeleteDevice(id int64, tenantId int) error
+	CountDevices(tenantId int) (int64, error)
 	GetDeviceParams(elementId int64) ([]RestParameterVo, error)
 	SetDeviceParams(elementId int64, params []RestParameterVo) error
 	PresetDeviceParams(elementId int64, params []RestParameterVo) (string, error)
-	ListAlarms(licenseId int, offset, limit int) ([]alarm.Alarm, int64, error)
-	GetAlarmsByElementIds(elementIds []int64, licenseId int) ([]alarm.Alarm, error)
-	ClearAlarms(alarmIds []int64, licenseId int) error
-	SyncAlarms(elementIds []int64, licenseId int) ([]alarm.Alarm, error)
+	ListAlarms(tenantId int, offset, limit int) ([]alarm.Alarm, int64, error)
+	GetAlarmsByElementIds(elementIds []int64, tenantId int) ([]alarm.Alarm, error)
+	ClearAlarms(alarmIds []int64, tenantId int) error
+	SyncAlarms(elementIds []int64, tenantId int) ([]alarm.Alarm, error)
 	CreateUpgradeFile(record map[string]interface{}) (int64, error)
-	ListUpgradeFiles(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error)
-	DeleteUpgradeFile(id int, licenseId int) error
+	ListUpgradeFiles(tenantId int, offset, limit int) ([]map[string]interface{}, int64, error)
+	DeleteUpgradeFile(id int, tenantId int) error
 	CreateUpgradeTask(record map[string]interface{}) (int64, error)
 	GetUpgradeTask(id int) (map[string]interface{}, error)
-	ListUpgradeTasks(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error)
+	ListUpgradeTasks(tenantId int, offset, limit int) ([]map[string]interface{}, int64, error)
 	GetRequestStatus(requestId string) (*RequestStatusVo, error)
-	ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, int64, error)
+	ListTBGs(tenantId int, offset, limit int) ([]TBGDevice, int64, error)
 	GetTBGBySN(sn string) (*TBGDevice, error)
 	GetTBGByWanMac(mac string) (*TBGDevice, error)
 	CreateTBGs(tbgs []TBGDevice) error
 	DeleteTBGsBySNs(sns []string) error
-	ListAllNonDeletedDevices(licenseId int) ([]device.CpeElement, error)
+	ListAllNonDeletedDevices(tenantId int) ([]device.CpeElement, error)
 	GetDeviceByElementId(elementId int64) (*device.CpeElement, error)
 	GetACSConfig() (string, error)
 	UpdateACSConfig(value string) error
@@ -83,29 +83,29 @@ func NewRepository(db *gorm.DB) Repository {
 // Device operations (cpe_element)
 // ============================
 
-func (r *repository) ListDevices(licenseId int, offset, limit int) ([]device.CpeElement, int64, error) {
+func (r *repository) ListDevices(tenantId int, offset, limit int) ([]device.CpeElement, int64, error) {
 	var devices []device.CpeElement
 	var total int64
 
-	query := r.db.Model(&device.CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	query := r.db.Model(&device.CpeElement{}).Where("tenant_id = ? AND deleted = ?", tenantId, false)
 	query.Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("ne_neid ASC").Find(&devices).Error
 	return devices, total, err
 }
 
-func (r *repository) GetDeviceById(id int64, licenseId int) (*device.CpeElement, error) {
+func (r *repository) GetDeviceById(id int64, tenantId int) (*device.CpeElement, error) {
 	var d device.CpeElement
-	err := r.db.Where("ne_neid = ? AND license_id = ? AND deleted = ?", id, licenseId, false).First(&d).Error
+	err := r.db.Where("ne_neid = ? AND tenant_id = ? AND deleted = ?", id, tenantId, false).First(&d).Error
 	if err != nil {
 		return nil, err
 	}
 	return &d, nil
 }
 
-func (r *repository) GetDeviceBySN(sn string, licenseId int) (*device.CpeElement, error) {
+func (r *repository) GetDeviceBySN(sn string, tenantId int) (*device.CpeElement, error) {
 	var d device.CpeElement
-	err := r.db.Where("serial_number = ? AND license_id = ? AND deleted = ?", sn, licenseId, false).First(&d).Error
+	err := r.db.Where("serial_number = ? AND tenant_id = ? AND deleted = ?", sn, tenantId, false).First(&d).Error
 	if err != nil {
 		return nil, err
 	}
@@ -120,16 +120,16 @@ func (r *repository) UpdateDevice(d *device.CpeElement) error {
 	return r.db.Save(d).Error
 }
 
-func (r *repository) SoftDeleteDevice(id int64, licenseId int) error {
+func (r *repository) SoftDeleteDevice(id int64, tenantId int) error {
 	return r.db.Model(&device.CpeElement{}).
-		Where("ne_neid = ? AND license_id = ?", id, licenseId).
+		Where("ne_neid = ? AND tenant_id = ?", id, tenantId).
 		Update("deleted", true).Error
 }
 
-func (r *repository) CountDevices(licenseId int) (int64, error) {
+func (r *repository) CountDevices(tenantId int) (int64, error) {
 	var count int64
 	err := r.db.Model(&device.CpeElement{}).
-		Where("license_id = ? AND deleted = ?", licenseId, false).
+		Where("tenant_id = ? AND deleted = ?", tenantId, false).
 		Count(&count).Error
 	return count, err
 }
@@ -238,34 +238,34 @@ func (r *repository) PresetDeviceParams(elementId int64, params []RestParameterV
 // Alarm operations
 // ============================
 
-func (r *repository) ListAlarms(licenseId int, offset, limit int) ([]alarm.Alarm, int64, error) {
+func (r *repository) ListAlarms(tenantId int, offset, limit int) ([]alarm.Alarm, int64, error) {
 	var alarms []alarm.Alarm
 	var total int64
 
-	query := r.db.Model(&alarm.Alarm{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&alarm.Alarm{}).Where("tenant_id = ?", tenantId)
 	query.Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&alarms).Error
 	return alarms, total, err
 }
 
-func (r *repository) GetAlarmsByElementIds(elementIds []int64, licenseId int) ([]alarm.Alarm, error) {
+func (r *repository) GetAlarmsByElementIds(elementIds []int64, tenantId int) ([]alarm.Alarm, error) {
 	var alarms []alarm.Alarm
-	err := r.db.Where("element_id IN ? AND license_id = ?", elementIds, licenseId).
+	err := r.db.Where("element_id IN ? AND tenant_id = ?", elementIds, tenantId).
 		Order("id DESC").Find(&alarms).Error
 	return alarms, err
 }
 
-func (r *repository) ClearAlarms(alarmIds []int64, licenseId int) error {
+func (r *repository) ClearAlarms(alarmIds []int64, tenantId int) error {
 	clearedStatus := 0
 	return r.db.Model(&alarm.Alarm{}).
-		Where("id IN ? AND license_id = ?", alarmIds, licenseId).
+		Where("id IN ? AND tenant_id = ?", alarmIds, tenantId).
 		Update("alarm_status", &clearedStatus).Error
 }
 
-func (r *repository) SyncAlarms(elementIds []int64, licenseId int) ([]alarm.Alarm, error) {
+func (r *repository) SyncAlarms(elementIds []int64, tenantId int) ([]alarm.Alarm, error) {
 	var alarms []alarm.Alarm
-	err := r.db.Where("element_id IN ? AND license_id = ?", elementIds, licenseId).
+	err := r.db.Where("element_id IN ? AND tenant_id = ?", elementIds, tenantId).
 		Order("event_time DESC").Find(&alarms).Error
 	return alarms, err
 }
@@ -284,20 +284,20 @@ func (r *repository) CreateUpgradeFile(record map[string]interface{}) (int64, er
 	return id, nil
 }
 
-func (r *repository) ListUpgradeFiles(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error) {
+func (r *repository) ListUpgradeFiles(tenantId int, offset, limit int) ([]map[string]interface{}, int64, error) {
 	var files []map[string]interface{}
 	var total int64
 
-	query := r.db.Table("upgrade_file").Where("tenancy_id = ?", licenseId)
+	query := r.db.Table("upgrade_file").Where("tenant_id = ?", tenantId)
 	query.Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&files).Error
 	return files, total, err
 }
 
-func (r *repository) DeleteUpgradeFile(id int, licenseId int) error {
+func (r *repository) DeleteUpgradeFile(id int, tenantId int) error {
 	return r.db.Table("upgrade_file").
-		Where("id = ? AND tenancy_id = ?", id, licenseId).
+		Where("id = ? AND tenant_id = ?", id, tenantId).
 		Delete(nil).Error
 }
 
@@ -321,11 +321,11 @@ func (r *repository) GetUpgradeTask(id int) (map[string]interface{}, error) {
 	return task, err
 }
 
-func (r *repository) ListUpgradeTasks(licenseId int, offset, limit int) ([]map[string]interface{}, int64, error) {
+func (r *repository) ListUpgradeTasks(tenantId int, offset, limit int) ([]map[string]interface{}, int64, error) {
 	var tasks []map[string]interface{}
 	var total int64
 
-	query := r.db.Table("upgrade_task").Where("tenancy_id = ?", licenseId)
+	query := r.db.Table("upgrade_task").Where("tenant_id = ?", tenantId)
 	query.Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&tasks).Error
@@ -389,8 +389,8 @@ func (r *repository) GetRequestStatus(requestId string) (*RequestStatusVo, error
 // TBG operations
 // ============================
 
-func (r *repository) ListTBGs(licenseId int, offset, limit int) ([]TBGDevice, int64, error) {
-	query := r.DB.Model(&TBGDevice{}).Where("license_id = ?", licenseId)
+func (r *repository) ListTBGs(tenantId int, offset, limit int) ([]TBGDevice, int64, error) {
+	query := r.DB.Model(&TBGDevice{}).Where("tenant_id = ?", tenantId)
 	result, err := r.FindPage(query, "id ASC", offset, limit)
 	if err != nil {
 		return nil, 0, err
@@ -429,9 +429,9 @@ func (r *repository) DeleteTBGsBySNs(sns []string) error {
 // ============================
 
 // ListAllNonDeletedDevices returns all non-deleted devices with basic info for online status check
-func (r *repository) ListAllNonDeletedDevices(licenseId int) ([]device.CpeElement, error) {
+func (r *repository) ListAllNonDeletedDevices(tenantId int) ([]device.CpeElement, error) {
 	var devices []device.CpeElement
-	err := r.db.Where("license_id = ? AND deleted = ?", licenseId, false).
+	err := r.db.Where("tenant_id = ? AND deleted = ?", tenantId, false).
 		Select("ne_neid, serial_number, device_name").
 		Find(&devices).Error
 	return devices, err

@@ -26,9 +26,9 @@ func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{svc: NewService(db)}
 }
 
-// getTenancyId extracts tenancy_id from gin context as int.
-func getTenancyId(c *gin.Context) int {
-	v, ok := c.Get("tenancy_id")
+// getTenantId extracts tenant_id from gin context as int.
+func getTenantId(c *gin.Context) int {
+	v, ok := c.Get("tenant_id")
 	if !ok {
 		return 0
 	}
@@ -44,9 +44,9 @@ func getTenancyId(c *gin.Context) int {
 func (h *Handler) ListCBSD(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListCbsdInfos(licenseId, page, pageSize)
+	data, total, err := h.svc.ListCbsdInfos(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list CBSD infos")
 		return
@@ -61,9 +61,9 @@ func (h *Handler) GetCBSD(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "serial_number is required")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	info, err := h.svc.GetCbsdInfo(sn, licenseId)
+	info, err := h.svc.GetCbsdInfo(sn, tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusNotFound, "CBSD not found")
 		return
@@ -79,8 +79,8 @@ func (h *Handler) RegisterCBSD(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	if err := h.svc.RegisterCbsd(&info, licenseId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.RegisterCbsd(&info, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to register CBSD")
 		return
 	}
@@ -150,9 +150,9 @@ func (h *Handler) CreateCertFileSendTask(c *gin.Context) {
 func (h *Handler) ListCertFileSendTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := getTenancyId(c)
+	tenantId := getTenantId(c)
 
-	data, total, err := h.svc.ListCertFileSendTasks(tenancyId, page, pageSize)
+	data, total, err := h.svc.ListCertFileSendTasks(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list cert file send tasks")
 		return
@@ -209,8 +209,8 @@ func (h *Handler) SpectrumInquiry(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	result, err := h.svc.SpectrumInquiry(licenseId, &req)
+	tenantId := middleware.GetTenantId(c)
+	result, err := h.svc.SpectrumInquiry(tenantId, &req)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("spectrum inquiry failed: %v", err))
 		return
@@ -298,8 +298,8 @@ func (h *Handler) ImportCBSDs(c *gin.Context) {
 		records = records[1:]
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	count, err := h.svc.ImportCBSDs(licenseId, records)
+	tenantId := middleware.GetTenantId(c)
+	count, err := h.svc.ImportCBSDs(tenantId, records)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, fmt.Sprintf("import failed: %v", err))
 		return
@@ -320,9 +320,9 @@ func (h *Handler) DownloadCBSDTemplate(c *gin.Context) {
 
 // ListCBSDStatusCount handles POST /cbsd/status-count
 func (h *Handler) ListCBSDStatusCount(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListCBSDStatusCount(licenseId)
+	data, err := h.svc.ListCBSDStatusCount(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to get CBSD status count")
 		return
@@ -336,9 +336,9 @@ func (h *Handler) ListCBSDStatusCount(c *gin.Context) {
 
 // ListSasConfig handles GET /cbsd/sas-config
 func (h *Handler) ListSasConfig(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListSasConfig(licenseId)
+	data, err := h.svc.ListSasConfig(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list SAS config")
 		return

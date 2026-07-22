@@ -12,7 +12,7 @@ type BatchAddObjectTask struct {
 	Id        int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	User      *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 	Time      *time.Time `gorm:"column:time" json:"time"`
-	TenancyId *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (BatchAddObjectTask) TableName() string { return "batch_add_object_task" }
@@ -120,7 +120,7 @@ type BatchConfigurationLog struct {
 	Id            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name          *string    `gorm:"column:name;type:varchar(255)" json:"name"`
 	OperationTime *time.Time `gorm:"column:operation_time" json:"operation_time"`
-	TenancyId     *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId     *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	User          *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 	DeviceCount   *int       `gorm:"column:device_count" json:"device_count"`
 }
@@ -144,7 +144,7 @@ type BatchProcessFile struct {
 	FileName    *string    `gorm:"column:file_name;type:varchar(255)" json:"file_name"`
 	UploadTime  *time.Time `gorm:"column:upload_time" json:"upload_time"`
 	UploadUser  *string    `gorm:"column:upload_user;type:varchar(255)" json:"upload_user"`
-	LicenseId   *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId   *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (BatchProcessFile) TableName() string { return "batch_process_file" }
@@ -156,7 +156,7 @@ type BatchProcessFileSendLog struct {
 	CommandTrackId *int64     `gorm:"column:command_track_id" json:"command_track_id"`
 	SendTime       *time.Time `gorm:"column:send_time" json:"send_time"`
 	DownloadTime   *time.Time `gorm:"column:download_time" json:"download_time"`
-	LicenseId      *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	Status         *int       `gorm:"column:status" json:"status"`
 	FaultInfo      *string    `gorm:"column:fault_info;type:text" json:"fault_info"`
 	FileName       *string    `gorm:"column:file_name;type:varchar(255)" json:"file_name"`
@@ -176,7 +176,7 @@ type BackupOrRestoreTask struct {
 	EndTime             *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode         *int       `gorm:"column:execute_mode" json:"execute_mode"`
 	TriggerTime         *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenancyId           *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId           *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	TaskType            *string    `gorm:"column:task_type;type:varchar(255)" json:"task_type"`
 	ExecuteOnAllDevice  *bool      `gorm:"column:execute_on_all_device" json:"execute_on_all_device"`
 	ElementIds          *string    `gorm:"column:element_ids;type:text" json:"element_ids"`
@@ -300,7 +300,7 @@ type MRUploadTask struct {
 	Period     *int       `gorm:"column:period" json:"period"`
 	StartTime  *time.Time `gorm:"column:start_time" json:"start_time"`
 	EndTime    *time.Time `gorm:"column:end_time" json:"end_time"`
-	TenancyId  *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
 }
 
@@ -538,7 +538,7 @@ type NorthReport struct {
 	Deleted    *int       `gorm:"column:deleted" json:"deleted"`
 	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
 	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
-	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (NorthReport) TableName() string { return "north_report" }
@@ -554,7 +554,7 @@ type NorthInterfaceLog struct {
 	ElementId      *int64     `gorm:"column:element_id" json:"element_id"`
 	PresetTaskId   *int       `gorm:"column:preset_task_id" json:"preset_task_id"`
 	Info           *string    `gorm:"column:info;type:text" json:"info"`
-	TenancyId      *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (NorthInterfaceLog) TableName() string { return "north_interface_log" }
@@ -568,7 +568,7 @@ type Radius struct {
 	Host         *string `gorm:"column:host;type:varchar(255)" json:"host"`
 	Port         *int    `gorm:"column:port" json:"port"`
 	AuthProtocol *string `gorm:"column:auth_protocol;type:varchar(255)" json:"auth_protocol"`
-	TenancyId    *int    `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId    *int    `gorm:"column:tenant_id" json:"tenant_id"`
 	SharedSecret *string `gorm:"column:shared_secret;type:varchar(255)" json:"shared_secret"`
 }
 
@@ -609,7 +609,7 @@ type SSHLabel struct {
 	Id        int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	Content   *string `gorm:"column:content;type:text" json:"content"`
-	LicenseId *int    `gorm:"column:license_id" json:"license_id"`
+	TenantId *int    `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (SSHLabel) TableName() string { return "ssh_label" }
@@ -625,7 +625,7 @@ type SystemOperatorLog struct {
 	FailureReason    *string    `gorm:"column:failure_reason;type:text" json:"failure_reason"`
 	OperationStartTime *time.Time `gorm:"column:operation_start_time" json:"operation_start_time"`
 	OperationEndTime *time.Time `gorm:"column:operation_end_time" json:"operation_end_time"`
-	TenancyId        *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId        *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (SystemOperatorLog) TableName() string { return "system_operator_log" }
@@ -637,7 +637,7 @@ type ConfigUploadLog struct {
 	ElementId       *int64     `gorm:"column:element_id" json:"element_id"`
 	UploadTime      *time.Time `gorm:"column:upload_time" json:"upload_time"`
 	Loc             *string    `gorm:"column:loc;type:varchar(255)" json:"loc"`
-	LicenseId       *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId       *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	OpenStationFile *bool      `gorm:"column:open_station_file" json:"open_station_file"`
 	DeviceUpload    bool       `gorm:"column:device_upload;default:true" json:"device_upload"`
 }
@@ -662,7 +662,7 @@ type ErrorInfo struct {
 	Id        int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	ErrorCode *string `gorm:"column:error_code;type:varchar(255)" json:"error_code"`
 	ErrorInfo *string `gorm:"column:error_info;type:longtext" json:"error_info"`
-	TenancyId *int    `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId *int    `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (ErrorInfo) TableName() string { return "error_info" }
@@ -673,7 +673,7 @@ type RemoteUpload struct {
 	Name      *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	Loc       *string `gorm:"column:loc;type:varchar(255)" json:"loc"`
 	Version   *string `gorm:"column:version;type:varchar(255)" json:"version"`
-	LicenseId *int    `gorm:"column:license_id" json:"license_id"`
+	TenantId *int    `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (RemoteUpload) TableName() string { return "remote_upload" }
@@ -715,7 +715,7 @@ type TBG struct {
 	Name       *string    `gorm:"column:name;type:varchar(255)" json:"name"`
 	IP         *string    `gorm:"column:ip;type:varchar(255)" json:"ip"`
 	Port       *int       `gorm:"column:port" json:"port"`
-	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
 	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
 }
@@ -730,7 +730,7 @@ type PSAPID struct {
 	Address    *string    `gorm:"column:address;type:varchar(255)" json:"address"`
 	Latitude   *float64   `gorm:"column:latitude" json:"latitude"`
 	Longitude  *float64   `gorm:"column:longitude" json:"longitude"`
-	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
 }
 
@@ -752,7 +752,7 @@ type SpatialFileMarket struct {
 	Id        int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	Code      *string `gorm:"column:code;type:varchar(255)" json:"code"`
-	LicenseId *int    `gorm:"column:license_id" json:"license_id"`
+	TenantId *int    `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (SpatialFileMarket) TableName() string { return "spatial_file_market" }
@@ -795,7 +795,7 @@ type ListPSAPIDRequest struct {
 
 // SyncPSAPIDRequest is the JSON body for POST /psap-id/sync.
 type SyncPSAPIDRequest struct {
-	LicenseId int `json:"licenseId"`
+	TenantId int `json:"tenantId"`
 }
 
 // MarketCoordinateRequest is the JSON body for POST /spatial-file/market-coordinates.

@@ -75,9 +75,9 @@ func (s *service) AddTenancy(req *AddTenancyRequest) (int, error) {
 		return 0, err
 	}
 
-	// Set licenseId = string(id)
+	// Set tenantCode = string(id)
 	idStr := fmt.Sprintf("%d", t.Id)
-	t.LicenseId = &idStr
+	t.TenantCode = &idStr
 	if err := s.repo.Save(t); err != nil {
 		return 0, err
 	}
@@ -165,7 +165,7 @@ func (s *service) ListTenancies(query *ListTenancyQuery) ([]TenancyVO, int64, er
 		result = append(result, TenancyVO{
 			Id:                   t.Id,
 			LicenseName:          strOrEmpty(t.LicenseName),
-			LicenseId:            strOrEmpty(t.LicenseId),
+			TenantCode:           strOrEmpty(t.TenantCode),
 			ExpiryDate:           millisFromTime(t.ExpiryDate),
 			EnbQuantity:          t.EnbQuantity,
 			UserQuantity:         t.UserQuantity,
@@ -191,13 +191,13 @@ func (s *service) DeleteTenancy(id int) error {
 		return err
 	}
 
-	// Post-processing: set device license_id to null
-	if err := s.deviceSvc.SetLicenseIdNullByLicenseId(id); err != nil {
-		logger.Warnf("Failed to set license_id null for devices of tenancy %d: %v", id, err)
+	// Post-processing: set device tenant_id to null
+	if err := s.deviceSvc.SetTenantIdNullByTenantId(id); err != nil {
+		logger.Warnf("Failed to set tenant_id null for devices of tenancy %d: %v", id, err)
 	}
 
 	// Post-processing: delete default device groups
-	if err := s.deviceSvc.DeleteDefaultGroupsByLicenseId(id); err != nil {
+	if err := s.deviceSvc.DeleteDefaultGroupsByTenantId(id); err != nil {
 		logger.Warnf("Failed to delete default device groups for tenancy %d: %v", id, err)
 	}
 
@@ -217,7 +217,7 @@ func (s *service) ViewTenancy(id int) (*ViewTenancyResponse, error) {
 	return &ViewTenancyResponse{
 		Id:                   t.Id,
 		LicenseName:          strOrEmpty(t.LicenseName),
-		LicenseId:            strOrEmpty(t.LicenseId),
+		TenantCode:           strOrEmpty(t.TenantCode),
 		ExpiryDate:           millisFromTime(t.ExpiryDate),
 		EnbQuantity:          t.EnbQuantity,
 		UserQuantity:         t.UserQuantity,

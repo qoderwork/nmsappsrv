@@ -46,7 +46,7 @@ func (r *Repository) List(f ListFilter, page, pageSize int) ([]NorthInterfaceLog
 
 	q := r.db.Model(&NorthInterfaceLog{})
 	if f.TenancyID != 0 {
-		q = q.Where("tenancy_id = ?", f.TenancyID)
+		q = q.Where("tenant_id = ?", f.TenancyID)
 	}
 	if f.StartTime != nil {
 		q = q.Where("operation_time >= ?", f.StartTime)

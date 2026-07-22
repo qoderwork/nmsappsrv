@@ -336,7 +336,7 @@ func (c *TPlatformClient) raiseTplatformAlarm() {
 		Severity:        strPtr("Critical"),
 		SpecificProblem: strPtr("T-Platform is unreachable"),
 		UpdateTime:      &now,
-		// ElementId / LicenseId left nil: a system-level alarm, not per device.
+		// ElementId / TenantId left nil: a system-level alarm, not per device.
 	}
 	if err := c.alarmSvc.CreateAlarm(al); err != nil {
 		logger.Warnf("t-platform: raise t_platform_unavailable alarm failed: %v", err)

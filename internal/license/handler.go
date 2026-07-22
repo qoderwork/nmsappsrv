@@ -109,7 +109,7 @@ func (h *Handler) SaveSASConfig(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	cfg.LicenseId = &id
+	cfg.TenantId = &id
 
 	if err := h.svc.SaveSASConfig(&cfg); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to save sas config")

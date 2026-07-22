@@ -16,12 +16,12 @@ import (
 
 type mockRepository struct {
 	findByIDFn                    func(id int64) (*CpeElement, error)
-	findPageFn                    func(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error)
+	findPageFn                    func(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error)
 	findBySerialNumberFn          func(sn string) (*CpeElement, error)
 	createFn                      func(elem *CpeElement) error
 	updateFn                      func(elem *CpeElement) error
 	softDeleteFn                  func(id int64) error
-	findGroupsFn                  func(licenseId int) ([]DeviceGroup, error)
+	findGroupsFn                  func(tenantId int) ([]DeviceGroup, error)
 	findGroupByIDFn               func(id string) (*DeviceGroup, error)
 	createGroupFn                 func(g *DeviceGroup) error
 	updateGroupFn                 func(g *DeviceGroup) error
@@ -30,11 +30,11 @@ type mockRepository struct {
 	removeElementFromGroupFn      func(groupId string, elementId int64) error
 	findBySerialNumbersFn         func(serials []string) map[string]*CpeElement
 	countAllNonDeletedFn          func() int64
-	countNonDeletedByDeviceTypeFn func(deviceType string, licenseId int, generation string) int64
-	findDefaultGroupsFn           func(licenseId int) ([]DeviceGroup, error)
+	countNonDeletedByDeviceTypeFn func(deviceType string, tenantId int, generation string) int64
+	findDefaultGroupsFn           func(tenantId int) ([]DeviceGroup, error)
 	addElementsToGroupFn          func(groupId string, elementIds []int64) error
-	getLicenseQuotaFn            func(licenseId int, deviceType string) (int, error)
-	countNonDeletedFn            func(licenseId int, deviceType string) (int64, error)
+	getLicenseQuotaFn            func(tenantId int, deviceType string) (int, error)
+	countNonDeletedFn            func(tenantId int, deviceType string) (int64, error)
 	getLocationEncryptionKeyFn   func() (string, error)
 }
 
@@ -45,9 +45,9 @@ func (m *mockRepository) FindByID(id int64) (*CpeElement, error) {
 	return nil, nil
 }
 
-func (m *mockRepository) FindPage(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
+func (m *mockRepository) FindPage(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
 	if m.findPageFn != nil {
-		return m.findPageFn(licenseId, keyword, offset, limit)
+		return m.findPageFn(tenantId, keyword, offset, limit)
 	}
 	return nil, 0, nil
 }
@@ -80,9 +80,9 @@ func (m *mockRepository) SoftDelete(id int64) error {
 	return nil
 }
 
-func (m *mockRepository) FindGroups(licenseId int) ([]DeviceGroup, error) {
+func (m *mockRepository) FindGroups(tenantId int) ([]DeviceGroup, error) {
 	if m.findGroupsFn != nil {
-		return m.findGroupsFn(licenseId)
+		return m.findGroupsFn(tenantId)
 	}
 	return nil, nil
 }
@@ -143,16 +143,16 @@ func (m *mockRepository) CountAllNonDeleted() int64 {
 	return 0
 }
 
-func (m *mockRepository) CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64 {
+func (m *mockRepository) CountNonDeletedByDeviceType(deviceType string, tenantId int, generation string) int64 {
 	if m.countNonDeletedByDeviceTypeFn != nil {
-		return m.countNonDeletedByDeviceTypeFn(deviceType, licenseId, generation)
+		return m.countNonDeletedByDeviceTypeFn(deviceType, tenantId, generation)
 	}
 	return 0
 }
 
-func (m *mockRepository) FindDefaultGroups(licenseId int) ([]DeviceGroup, error) {
+func (m *mockRepository) FindDefaultGroups(tenantId int) ([]DeviceGroup, error) {
 	if m.findDefaultGroupsFn != nil {
-		return m.findDefaultGroupsFn(licenseId)
+		return m.findDefaultGroupsFn(tenantId)
 	}
 	return nil, nil
 }
@@ -164,16 +164,16 @@ func (m *mockRepository) AddElementsToGroup(groupId string, elementIds []int64) 
 	return nil
 }
 
-func (m *mockRepository) GetLicenseQuota(licenseId int, deviceType string) (int, error) {
+func (m *mockRepository) GetLicenseQuota(tenantId int, deviceType string) (int, error) {
 	if m.getLicenseQuotaFn != nil {
-		return m.getLicenseQuotaFn(licenseId, deviceType)
+		return m.getLicenseQuotaFn(tenantId, deviceType)
 	}
 	return 0, nil
 }
 
-func (m *mockRepository) CountNonDeleted(licenseId int, deviceType string) (int64, error) {
+func (m *mockRepository) CountNonDeleted(tenantId int, deviceType string) (int64, error) {
 	if m.countNonDeletedFn != nil {
-		return m.countNonDeletedFn(licenseId, deviceType)
+		return m.countNonDeletedFn(tenantId, deviceType)
 	}
 	return 0, nil
 }
@@ -185,11 +185,11 @@ func (m *mockRepository) GetLocationEncryptionKey() (string, error) {
 	return "", nil
 }
 
-func (m *mockRepository) SetLicenseIdNullByLicenseId(licenseId int) error {
+func (m *mockRepository) SetTenantIdNullByTenantId(tenantId int) error {
 	return nil
 }
 
-func (m *mockRepository) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+func (m *mockRepository) DeleteDefaultGroupsByTenantId(tenantId int) error {
 	return nil
 }
 
@@ -242,9 +242,9 @@ func TestService_ListDevices(t *testing.T) {
 	elems := []CpeElement{{NeNeid: 1, SerialNumber: &sn}}
 
 	repo := &mockRepository{
-		findPageFn: func(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
+		findPageFn: func(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
 			// page 1, pageSize 20 -> offset 0, limit 20
-			assert.Equal(t, 1, licenseId)
+			assert.Equal(t, 1, tenantId)
 			assert.Equal(t, "", keyword)
 			assert.Equal(t, 0, offset)
 			assert.Equal(t, 20, limit)
@@ -261,7 +261,7 @@ func TestService_ListDevices(t *testing.T) {
 
 func TestService_ListDevices_Page2(t *testing.T) {
 	repo := &mockRepository{
-		findPageFn: func(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
+		findPageFn: func(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
 			// page 2, pageSize 10 -> offset 10, limit 10
 			assert.Equal(t, 10, offset)
 			assert.Equal(t, 10, limit)
@@ -276,7 +276,7 @@ func TestService_ListDevices_Page2(t *testing.T) {
 
 func TestService_ListDevices_DefaultsInvalidPage(t *testing.T) {
 	repo := &mockRepository{
-		findPageFn: func(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
+		findPageFn: func(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
 			// page < 1 defaults to 1 -> offset 0
 			// pageSize < 1 defaults to 20
 			assert.Equal(t, 0, offset)
@@ -322,8 +322,8 @@ func TestService_CreateDevice(t *testing.T) {
 	assert.False(t, capturedElem.IsInitialized)
 	assert.False(t, capturedElem.Deleted)
 	// Verify the tenant license id is injected from the auth context.
-	assert.NotNil(t, capturedElem.LicenseId)
-	assert.Equal(t, 7, *capturedElem.LicenseId)
+	assert.NotNil(t, capturedElem.TenantId)
+	assert.Equal(t, 7, *capturedElem.TenantId)
 }
 
 func TestService_CreateDevice_RepoError(t *testing.T) {

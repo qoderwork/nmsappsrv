@@ -24,8 +24,8 @@ func NewHandler(db *gorm.DB) *Handler {
 // ---------- MonitorTask ----------
 
 func (h *Handler) ListMonitorTasks(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	items, err := h.svc.ListMonitorTasks(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	items, err := h.svc.ListMonitorTasks(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

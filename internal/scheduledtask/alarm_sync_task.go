@@ -37,7 +37,7 @@ func (t *AlarmSyncTask) SyncAlarms() {
 		Id int `gorm:"column:id"`
 	}
 	var tenancies []tenancyRow
-	if err := t.db.Table("license").Select("id").Find(&tenancies).Error; err != nil {
+	if err := t.db.Table("tenant").Select("id").Find(&tenancies).Error; err != nil {
 		logger.Errorf("AlarmSyncTask: query tenancies failed: %v", err)
 		return
 	}
@@ -58,7 +58,7 @@ func (t *AlarmSyncTask) SyncAlarms() {
 	}
 }
 
-func (t *AlarmSyncTask) syncAlarmsForTenancy(ctx context.Context, tenancyId int) int {
+func (t *AlarmSyncTask) syncAlarmsForTenancy(ctx context.Context, tenantId int) int {
 	type enbElementRow struct {
 		NeNeid       int64  `gorm:"column:ne_neid"`
 		SerialNumber string `gorm:"column:serial_number"`
@@ -66,9 +66,9 @@ func (t *AlarmSyncTask) syncAlarmsForTenancy(ctx context.Context, tenancyId int)
 	var elements []enbElementRow
 	if err := t.db.Table("cpe_element").
 		Select("ne_neid, serial_number").
-		Where("deleted = ? AND serial_number IS NOT NULL AND serial_number != '' AND device_type = ? AND license_id = ?", false, "enb", tenancyId).
+		Where("deleted = ? AND serial_number IS NOT NULL AND serial_number != '' AND device_type = ? AND tenant_id = ?", false, "enb", tenantId).
 		Find(&elements).Error; err != nil {
-		logger.Errorf("AlarmSyncTask: query enb devices for tenancy %d failed: %v", tenancyId, err)
+		logger.Errorf("AlarmSyncTask: query enb devices for tenancy %d failed: %v", tenantId, err)
 		return 0
 	}
 
@@ -116,8 +116,8 @@ func (t *AlarmSyncTask) syncAlarmsForTenancy(ctx context.Context, tenancyId int)
 	return syncCount
 }
 
-func (t *AlarmSyncTask) loadAlarmSyncConfig(tenancyId int) *alarmSyncConfig {
-	configKey := fmt.Sprintf("alarm_sync_%d", tenancyId)
+func (t *AlarmSyncTask) loadAlarmSyncConfig(tenantId int) *alarmSyncConfig {
+	configKey := fmt.Sprintf("alarm_sync_%d", tenantId)
 
 	var configStr *string
 	if err := t.db.Table("system_config").

@@ -161,7 +161,7 @@ func (w *OfflineWorker) createOfflineAlarm(dev *device.CpeElement, now *time.Tim
 		UpdateTime:      now,
 		CreateTime:      now,
 		ElementId:       &dev.NeNeid,
-		LicenseId:       dev.LicenseId,
+		TenantId:       dev.TenantId,
 		SpecificProblem: stringPtr("Device offline detected by periodic check"),
 	}
 

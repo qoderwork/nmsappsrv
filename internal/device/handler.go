@@ -52,9 +52,9 @@ func (h *Handler) ListDevices(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	keyword := c.Query("keyword")
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListDevices(licenseId, keyword, page, pageSize)
+	data, total, err := h.svc.ListDevices(tenantId, keyword, page, pageSize)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -107,8 +107,8 @@ func (h *Handler) CreateDevice(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	if err := h.svc.CreateDevice(&elem, licenseId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.CreateDevice(&elem, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -205,9 +205,9 @@ func (h *Handler) EmptyCommands(c *gin.Context) {
 
 // ListGroups handles GET /device-groups
 func (h *Handler) ListGroups(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	groups, err := h.svc.ListGroups(licenseId)
+	groups, err := h.svc.ListGroups(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list groups")
 		return
@@ -223,8 +223,8 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	if err := h.svc.CreateGroup(&g, licenseId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.CreateGroup(&g, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to create group")
 		return
 	}
@@ -287,7 +287,7 @@ func (h *Handler) ImportDevices(c *gin.Context) {
 
 	deviceGroupId := c.PostForm("deviceGroupId")
 	deviceType := c.DefaultPostForm("deviceType", "gnb")
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	rows, err := ParseImportExcel(file)
 	if err != nil {
@@ -300,7 +300,7 @@ func (h *Handler) ImportDevices(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.ImportDevices(rows, deviceType, deviceGroupId, licenseId)
+	result, err := h.svc.ImportDevices(rows, deviceType, deviceGroupId, tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return

@@ -29,9 +29,9 @@ func (h *Handler) AddResetTask(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
-	id, err := h.svc.AddResetTask(&req, tenancyId, username)
+	id, err := h.svc.AddResetTask(&req, tenantId, username)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -84,7 +84,7 @@ func (h *Handler) CancelResetTask(c *gin.Context) {
 
 // ListResetTasks handles GET /reset-tasks
 func (h *Handler) ListResetTasks(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	query := ListResetTaskQuery{
 		TaskName:   c.Query("taskName"),
 		DeviceType: c.Query("deviceType"),
@@ -101,7 +101,7 @@ func (h *Handler) ListResetTasks(c *gin.Context) {
 	if v, err := strconv.Atoi(c.DefaultQuery("pageSize", "20")); err == nil {
 		query.PageSize = v
 	}
-	data, total, err := h.svc.ListTasks(tenancyId, query)
+	data, total, err := h.svc.ListTasks(tenantId, query)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return

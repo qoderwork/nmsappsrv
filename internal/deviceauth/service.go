@@ -16,7 +16,7 @@ import (
 const (
 	// configDBKey is the per-tenant system_config id prefix. The tenant
 	// license id is appended so each tenant owns an isolated config row,
-	// matching Java nms-serv (device_config_<tenancyId>).
+	// matching Java nms-serv (device_config_<tenantId>).
 	configDBKey = "device_auth_config_"
 	// legacyConfigDBKey is the pre-multi-tenancy global key. Kept only as a
 	// read-only fallback so existing single-tenant deployments keep working
@@ -28,8 +28,8 @@ const (
 
 // Service defines the business-logic contract for device auth configuration.
 type Service interface {
-	GetConfig(licenseId string) (*DeviceAuthConfig, error)
-	SaveConfig(cfg *DeviceAuthConfig, licenseId string) error
+	GetConfig(tenantId string) (*DeviceAuthConfig, error)
+	SaveConfig(cfg *DeviceAuthConfig, tenantId string) error
 }
 
 // service is the concrete implementation of Service.
@@ -51,9 +51,9 @@ func newService(repo Repository) Service {
 // Checks Redis cache first, falls back to the per-tenant DB row, and finally
 // to the legacy global key (read-only) so single-tenant deployments keep
 // working during migration.
-func (s *service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
+func (s *service) GetConfig(tenantId string) (*DeviceAuthConfig, error) {
 	// Try Redis cache (already per-tenant).
-	redisKey := redisKeyPrefix + licenseId
+	redisKey := redisKeyPrefix + tenantId
 	ctx := context.Background()
 	if cached, err := redis.Get(ctx, redisKey); err == nil && cached != "" {
 		var cfg DeviceAuthConfig
@@ -63,13 +63,13 @@ func (s *service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
 	}
 
 	// Load from DB, per-tenant first.
-	sc, err := s.repo.GetConfig(configDBKey + licenseId)
+	sc, err := s.repo.GetConfig(configDBKey + tenantId)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		// Per-tenant row missing: fall back to legacy global config.
-		if licenseId == "" {
+		if tenantId == "" {
 			return nil, nil
 		}
 		legacy, lerr := s.repo.GetConfig(legacyConfigDBKey)
@@ -98,23 +98,23 @@ func (s *service) GetConfig(licenseId string) (*DeviceAuthConfig, error) {
 
 // SaveConfig persists the device auth config for a tenant to DB and
 // invalidates that tenant's Redis cache. Storage is keyed by license id so
-// tenants are isolated (mirrors Java nms-serv device_config_<tenancyId>).
-func (s *service) SaveConfig(cfg *DeviceAuthConfig, licenseId string) error {
+// tenants are isolated (mirrors Java nms-serv device_config_<tenantId>).
+func (s *service) SaveConfig(cfg *DeviceAuthConfig, tenantId string) error {
 	jsonBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 	jsonStr := string(jsonBytes)
 
-	sc := misc.SystemConfig{Id: configDBKey + licenseId, Config: &jsonStr}
+	sc := misc.SystemConfig{Id: configDBKey + tenantId, Config: &jsonStr}
 	if err := s.repo.SaveConfig(&sc); err != nil {
 		return err
 	}
 
 	// Invalidate this tenant's Redis cache only.
 	ctx := context.Background()
-	redis.Del(ctx, redisKeyPrefix+licenseId)
+	redis.Del(ctx, redisKeyPrefix+tenantId)
 
-	logger.Infof("device auth config saved for tenant %s", licenseId)
+	logger.Infof("device auth config saved for tenant %s", tenantId)
 	return nil
 }

@@ -516,7 +516,7 @@ func (ep *EventProcessor) handleAlarmGenerated(ctx context.Context, sn string, p
 	// Map PerceivedSeverity (TR-069 integer) to severity string
 	severity := mapPerceivedSeverity(perceivedSeverity)
 
-	// Look up device by serial_number to get element_id and license_id
+	// Look up device by serial_number to get element_id and tenant_id
 	var cpe device.CpeElement
 	if err := ep.db.Where("serial_number = ? AND deleted = ?", sn, false).Limit(1).Find(&cpe).Error; err != nil || cpe.NeNeid == 0 {
 		logger.Warnf("device %s: ALARM event device not found, skipping", sn)
@@ -567,7 +567,7 @@ func (ep *EventProcessor) handleAlarmGenerated(ctx context.Context, sn string, p
 		// No active alarm exists and not cleared: create new alarm record
 		newAlarm := alarm.Alarm{
 			ElementId:             &cpe.NeNeid,
-			LicenseId:             cpe.LicenseId,
+			TenantId:             cpe.TenantId,
 			AlarmIdentifier:       stringPtr(alarmIdentifier),
 			ProbableCause:         stringPtr(probableCause),
 			SpecificProblem:       stringPtr(specificProblem),

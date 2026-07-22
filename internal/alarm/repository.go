@@ -68,13 +68,13 @@ func (r *Repository) GetByAlarmId(alarmType int, alarmId string) (*Alarm, error)
 
 // FindAlarms returns a paginated list of alarms with optional severity and
 // alarm_type filters. The total count is returned for pagination metadata.
-func (r *Repository) FindAlarms(licenseId int, severity string, alarmType int, offset, limit int) ([]Alarm, int64, error) {
+func (r *Repository) FindAlarms(tenantId int, severity string, alarmType int, offset, limit int) ([]Alarm, int64, error) {
 	var alarms []Alarm
 	var total int64
 
 	query := r.db.Model(&Alarm{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 
 	if severity != "" {
@@ -142,12 +142,12 @@ func (r *Repository) BatchClearAlarms(ids []int64, clearUser string, clearedTime
 
 // FindActiveAlarmFilters returns all enabled alarm filters for the given
 // license. These are used to check whether a new alarm should be suppressed.
-func (r *Repository) FindActiveAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+func (r *Repository) FindActiveAlarmFilters(tenantId int) ([]AlarmFilter, error) {
 	var filters []AlarmFilter
 	enabled := true
 	q := r.db.Where("enable = ?", enabled)
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	if err := q.Find(&filters).Error; err != nil {
 		return nil, err
@@ -192,9 +192,9 @@ func (r *Repository) FindAlarmFilterAlarms(filterId int) ([]string, error) {
 // ---------------------------------------------------------------------------
 
 // FindAlarmLibrary returns all alarm library entries for the given tenancy.
-func (r *Repository) FindAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
+func (r *Repository) FindAlarmLibrary(tenantId int) ([]AlarmLibrary, error) {
 	var libs []AlarmLibrary
-	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&libs).Error; err != nil {
+	if err := r.db.Where("tenant_id = ?", tenantId).Find(&libs).Error; err != nil {
 		return nil, err
 	}
 	return libs, nil
@@ -205,9 +205,9 @@ func (r *Repository) FindAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 // ---------------------------------------------------------------------------
 
 // FindAlarmTemplates returns all alarm templates for the given tenancy.
-func (r *Repository) FindAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
+func (r *Repository) FindAlarmTemplates(tenantId int) ([]AlarmTemplate, error) {
 	var templates []AlarmTemplate
-	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&templates).Error; err != nil {
+	if err := r.db.Where("tenant_id = ?", tenantId).Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	return templates, nil
@@ -228,12 +228,12 @@ func (r *Repository) UpdateAlarmTemplate(t *AlarmTemplate) error {
 // ---------------------------------------------------------------------------
 
 // FindAlarmFilters returns all alarm filters for the given license.
-// If licenseId is 0 (platform admin), returns filters across all tenants.
-func (r *Repository) FindAlarmFilters(licenseId int) ([]AlarmFilter, error) {
+// If tenantId is 0 (platform admin), returns filters across all tenants.
+func (r *Repository) FindAlarmFilters(tenantId int) ([]AlarmFilter, error) {
 	var filters []AlarmFilter
 	q := r.db.Model(&AlarmFilter{})
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	if err := q.Find(&filters).Error; err != nil {
 		return nil, err
@@ -269,7 +269,7 @@ func (r *Repository) SetAlarmStatus(id int64, status int, updateTime time.Time) 
 // CountBySeverity returns the per-severity count of ACTIVE alarms
 // (alarm_type = AlarmTypeActive). It mirrors nms-serv getCountOfSeverity,
 // which groups only active alarms by severity.
-func (r *Repository) CountBySeverity(licenseId int) (map[string]int64, error) {
+func (r *Repository) CountBySeverity(tenantId int) (map[string]int64, error) {
 	type statRow struct {
 		Severity string
 		Cnt      int64
@@ -278,8 +278,8 @@ func (r *Repository) CountBySeverity(licenseId int) (map[string]int64, error) {
 	query := r.db.Model(&Alarm{}).
 		Select("severity, COUNT(*) as cnt").
 		Where("alarm_type = ?", AlarmTypeActive)
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Group("severity").Scan(&rows).Error; err != nil {
 		logger.Errorf("CountBySeverity error: %v", err)
@@ -325,17 +325,17 @@ func (r *Repository) FindAlarmStatisticTopN(topN int, startTime, endTime *time.T
 
 // BulkCreateAlarmLibrary inserts multiple alarm library entries in a single
 // transaction, using upsert (ON DUPLICATE KEY UPDATE) semantics based on the
-// unique index (tenancy_id, alarm_identifier).
+// unique index (tenant_id, alarm_identifier).
 func (r *Repository) BulkCreateAlarmLibrary(items []AlarmLibrary) error {
 	if len(items) == 0 {
 		return nil
 	}
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		for i := range items {
-			// Try to find existing entry by tenancy_id + alarm_identifier.
+			// Try to find existing entry by tenant_id + alarm_identifier.
 			var existing AlarmLibrary
-			err := tx.Where("tenancy_id = ? AND alarm_identifier = ?",
-				items[i].TenancyId, items[i].AlarmIdentifier).First(&existing).Error
+			err := tx.Where("tenant_id = ? AND alarm_identifier = ?",
+				items[i].TenantId, items[i].AlarmIdentifier).First(&existing).Error
 			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					if createErr := tx.Create(&items[i]).Error; createErr != nil {
@@ -452,7 +452,7 @@ func (r *Repository) UpdateAlarmTemplateEmailNotification(id int, enable bool) e
 		Update("enable_email_notification", enable).Error
 }
 
-// AlarmStatistic aggregates by licenseId.
+// AlarmStatistic aggregates by tenantId.
 type AlarmStatistic struct {
 	Total     int64
 	Active    int64
@@ -462,10 +462,10 @@ type AlarmStatistic struct {
 	BySource  map[string]int64
 }
 
-// FindAlarmStatistic aggregates the alarm table by licenseId. Mirrors Java
+// FindAlarmStatistic aggregates the alarm table by tenantId. Mirrors Java
 // queryAlarmStatisticResult. Counts split by alarm_type (1=active, 2=history),
 // severity, and alarm_source.
-func (r *Repository) FindAlarmStatistic(licenseId int) (*AlarmStatistic, error) {
+func (r *Repository) FindAlarmStatistic(tenantId int) (*AlarmStatistic, error) {
 	out := &AlarmStatistic{
 		BySeverity: map[string]int64{},
 		ByType:     map[string]int64{},
@@ -473,8 +473,8 @@ func (r *Repository) FindAlarmStatistic(licenseId int) (*AlarmStatistic, error) 
 	}
 	// Totals.
 	totalsQ := r.db.Model(&Alarm{})
-	if licenseId > 0 {
-		totalsQ = totalsQ.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		totalsQ = totalsQ.Where("tenant_id = ?", tenantId)
 	}
 	if err := totalsQ.Count(new(int64)).Error; err != nil {
 		return nil, err
@@ -489,8 +489,8 @@ func (r *Repository) FindAlarmStatistic(licenseId int) (*AlarmStatistic, error) 
 	var rows []row
 	groupQ := r.db.Model(&Alarm{}).
 		Select("alarm_type, severity, alarm_source, COUNT(*) AS cnt")
-	if licenseId > 0 {
-		groupQ = groupQ.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		groupQ = groupQ.Where("tenant_id = ?", tenantId)
 	}
 	if err := groupQ.Group("alarm_type, severity, alarm_source").
 		Scan(&rows).Error; err != nil {
@@ -530,12 +530,12 @@ func (r *Repository) DeleteAlarmLibrary(id int) error {
 // FindActiveProbableCauses returns the distinct probable_cause values for
 // active alarms (alarm_type=1) in the given license. Mirrors Java
 // listActiveAlarmProbableCause.
-func (r *Repository) FindActiveProbableCauses(licenseId int) ([]string, error) {
+func (r *Repository) FindActiveProbableCauses(tenantId int) ([]string, error) {
 	var causes []string
 	q := r.db.Model(&Alarm{}).
 		Where("alarm_type = ? AND probable_cause IS NOT NULL AND probable_cause <> ''", AlarmTypeActive)
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	err := q.Distinct("probable_cause").
 		Pluck("probable_cause", &causes).Error
@@ -544,12 +544,12 @@ func (r *Repository) FindActiveProbableCauses(licenseId int) ([]string, error) {
 
 // FindAlarmEventTypes returns the distinct event_type values for the given
 // license. Mirrors Java getAlarmEventType.
-func (r *Repository) FindAlarmEventTypes(licenseId int) ([]string, error) {
+func (r *Repository) FindAlarmEventTypes(tenantId int) ([]string, error) {
 	var types []string
 	q := r.db.Model(&Alarm{}).
 		Where("event_type IS NOT NULL AND event_type <> ''")
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	err := q.Distinct("event_type").
 		Pluck("event_type", &types).Error

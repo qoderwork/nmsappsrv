@@ -29,9 +29,9 @@ func (h *ShutdownHandler) AddShutdownTask(c *gin.Context) {
 	}
 
 	username := middleware.GetUsername(c)
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	taskId, err := h.svc.CreateShutdownTask(&req, username, tenancyId)
+	taskId, err := h.svc.CreateShutdownTask(&req, username, tenantId)
 	if err != nil {
 		logger.Errorf("Failed to create shutdown task: %v", err)
 		utils.Error(c, 500, "Failed to create shutdown task")
@@ -49,9 +49,9 @@ func (h *ShutdownHandler) ListShutdownTasks(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	tasks, total, err := h.svc.ListShutdownTasks(req.Page, req.PageSize, tenancyId)
+	tasks, total, err := h.svc.ListShutdownTasks(req.Page, req.PageSize, tenantId)
 	if err != nil {
 		logger.Errorf("Failed to list shutdown tasks: %v", err)
 		utils.Error(c, 500, "Failed to list shutdown tasks")

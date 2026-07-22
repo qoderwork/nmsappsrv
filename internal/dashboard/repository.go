@@ -12,14 +12,14 @@ import (
 
 // Repository defines the data-access contract for Dashboard module.
 type Repository interface {
-	ListDevicesByMode(ctx context.Context, mode string, tenancyId *int) ([]map[string]interface{}, error)
-	ListAllDevices(ctx context.Context, tenancyId *int) ([]map[string]interface{}, error)
-	ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]map[string]interface{}, error)
+	ListDevicesByMode(ctx context.Context, mode string, tenantId *int) ([]map[string]interface{}, error)
+	ListAllDevices(ctx context.Context, tenantId *int) ([]map[string]interface{}, error)
+	ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenantId *int) ([]map[string]interface{}, error)
 	GetDeviceByIds(ctx context.Context, ids []int64) ([]map[string]interface{}, error)
 	QueryOnlineStatistics(ctx context.Context, elementIds []int64, startTime, endTime time.Time, deviceType string) ([]map[string]interface{}, error)
 	QueryDeviceGroupsByIds(ctx context.Context, groupIds []string) ([]map[string]interface{}, error)
 	QueryGroupElementIds(ctx context.Context, groupId string) ([]int64, error)
-	QueryGroupElementIdsFiltered(ctx context.Context, groupId string, licenseId *int) ([]int64, error)
+	QueryGroupElementIdsFiltered(ctx context.Context, groupId string, tenantId *int) ([]int64, error)
 	QueryDeviceStatisticForGroup(ctx context.Context, elementIds []int64, startTime, endTime time.Time) ([]map[string]interface{}, error)
 	QueryKpiMeasurements(ctx context.Context, elementIds []int64, startTime, endTime time.Time, kpiNames []string) ([]map[string]interface{}, error)
 	GetTenancyNames(ctx context.Context) (map[int]string, error)
@@ -35,16 +35,16 @@ func NewRepository(db *gorm.DB) Repository {
 	return &repository{db: db}
 }
 
-// ListDevicesByMode returns devices filtered by mode and tenancyId
-func (r *repository) ListDevicesByMode(ctx context.Context, mode string, tenancyId *int) ([]map[string]interface{}, error) {
+// ListDevicesByMode returns devices filtered by mode and tenantId
+func (r *repository) ListDevicesByMode(ctx context.Context, mode string, tenantId *int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	q := r.db.WithContext(ctx).Table("cpe_element").
 		Select("model_name, ne_neid").
 		Where("deleted = ?", false)
 
-	if tenancyId != nil {
-		q = q.Where("license_id = ?", *tenancyId)
+	if tenantId != nil {
+		q = q.Where("tenant_id = ?", *tenantId)
 	}
 
 	switch mode {
@@ -63,15 +63,15 @@ func (r *repository) ListDevicesByMode(ctx context.Context, mode string, tenancy
 }
 
 // ListAllDevices returns all non-deleted devices with type info
-func (r *repository) ListAllDevices(ctx context.Context, tenancyId *int) ([]map[string]interface{}, error) {
+func (r *repository) ListAllDevices(ctx context.Context, tenantId *int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	q := r.db.WithContext(ctx).Table("cpe_element").
 		Select("ne_neid, device_type, generation").
 		Where("deleted = ?", false)
 
-	if tenancyId != nil {
-		q = q.Where("license_id = ?", *tenancyId)
+	if tenantId != nil {
+		q = q.Where("tenant_id = ?", *tenantId)
 	}
 
 	err := q.Scan(&results).Error
@@ -79,17 +79,17 @@ func (r *repository) ListAllDevices(ctx context.Context, tenancyId *int) ([]map[
 }
 
 // ListPDCPTraffic returns PDCP traffic statistics grouped by PLMN
-func (r *repository) ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]map[string]interface{}, error) {
+func (r *repository) ListPDCPTraffic(ctx context.Context, startTime, endTime string, tenantId *int) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
 	sql := `SELECT plmn, SUM(dl_traffic), SUM(ul_traffic) FROM pdcp_traffic WHERE `
 	args := []interface{}{}
 
-	if tenancyId != nil {
-		sql += "tenancy_id = ? AND "
-		args = append(args, *tenancyId)
+	if tenantId != nil {
+		sql += "tenant_id = ? AND "
+		args = append(args, *tenantId)
 	} else {
-		sql += "tenancy_id IS NULL AND "
+		sql += "tenant_id IS NULL AND "
 	}
 
 	if startTime != "" {
@@ -164,15 +164,15 @@ func (r *repository) QueryOnlineStatistics(ctx context.Context, elementIds []int
 }
 
 // QueryGroupElementIdsFiltered returns element IDs of a device group, filtered by deleted=false and
-// (when licenseId != nil) license_id match — mirrors Java processDeviceGroupAsync element filtering.
-func (r *repository) QueryGroupElementIdsFiltered(ctx context.Context, groupId string, licenseId *int) ([]int64, error) {
+// (when tenantId != nil) tenant_id match — mirrors Java processDeviceGroupAsync element filtering.
+func (r *repository) QueryGroupElementIdsFiltered(ctx context.Context, groupId string, tenantId *int) ([]int64, error) {
 	var elementIds []int64
 	q := r.db.WithContext(ctx).Table("group_has_element ghe").
 		Joins("INNER JOIN cpe_element ce ON ce.ne_neid = ghe.element_id").
 		Where("ghe.group_id = ?", groupId).
 		Where("ce.deleted = ?", false)
-	if licenseId != nil {
-		q = q.Where("ce.license_id = ?", *licenseId)
+	if tenantId != nil {
+		q = q.Where("ce.tenant_id = ?", *tenantId)
 	}
 	err := q.Pluck("ghe.element_id", &elementIds).Error
 	return elementIds, err
@@ -215,7 +215,7 @@ func (r *repository) QueryDeviceGroupsByIds(ctx context.Context, groupIds []stri
 	var results []map[string]interface{}
 
 	err := r.db.WithContext(ctx).Table("device_group").
-		Select("id, group_name, license_id").
+		Select("id, group_name, tenant_id").
 		Where("id IN ?", groupIds).
 		Scan(&results).Error
 

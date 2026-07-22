@@ -30,10 +30,10 @@ func (h *Handler) AddRebootTask(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
-	id, err := h.svc.AddRebootTask(&req, tenancyId, username)
+	id, err := h.svc.AddRebootTask(&req, tenantId, username)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -86,7 +86,7 @@ func (h *Handler) CancelRebootTask(c *gin.Context) {
 
 // ListRebootTasks handles GET /reboot-tasks
 func (h *Handler) ListRebootTasks(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	query := ListRebootTaskQuery{
 		TaskName:   c.Query("taskName"),
 		DeviceType: c.Query("deviceType"),
@@ -104,7 +104,7 @@ func (h *Handler) ListRebootTasks(c *gin.Context) {
 		query.PageSize = v
 	}
 
-	data, total, err := h.svc.ListTasks(tenancyId, query)
+	data, total, err := h.svc.ListTasks(tenantId, query)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return

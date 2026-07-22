@@ -201,9 +201,9 @@ func (t *ParameterDeploymentTask) deployToDevice(ctx context.Context, tpl parame
 	}
 
 	now := time.Now()
-	tenancyId := 0
-	if tpl.TenancyId != nil {
-		tenancyId = *tpl.TenancyId
+	tenantId := 0
+	if tpl.TenantId != nil {
+		tenantId = *tpl.TenantId
 	}
 	result := true
 	info := fmt.Sprintf("deployed %d params from template %d", len(diffParams), tpl.Id)
@@ -213,7 +213,7 @@ func (t *ParameterDeploymentTask) deployToDevice(ctx context.Context, tpl parame
 		"result":          result,
 		"info":            info,
 		"operation_time":  now,
-		"tenancy_id":      tenancyId,
+		"tenant_id":      tenantId,
 	})
 
 	logger.Infof("ParameterDeploymentTask: deployed %d params to %s (element %d, template %d)",

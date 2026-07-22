@@ -19,11 +19,11 @@ import (
 
 // SnmpGet queues an SNMP GET operation to the Redis SNMP queue
 func (s *service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
 	// Verify device exists and get connection info
-	dev, err := s.repo.GetDeviceById(req.ElementId, licenseId)
+	dev, err := s.repo.GetDeviceById(req.ElementId, tenantId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
@@ -71,11 +71,11 @@ func (s *service) SnmpGet(c *gin.Context, req *SnmpGetRequest) error {
 
 // SnmpSet queues an SNMP SET operation to the Redis SNMP queue
 func (s *service) SnmpSet(c *gin.Context, req *SnmpSetRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
 	// Verify device exists and get connection info
-	dev, err := s.repo.GetDeviceById(req.ElementId, licenseId)
+	dev, err := s.repo.GetDeviceById(req.ElementId, tenantId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}

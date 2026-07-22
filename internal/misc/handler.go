@@ -29,9 +29,9 @@ func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
 	return &Handler{svc: NewService(db, cfg)}
 }
 
-// getTenancyId extracts tenancy_id from gin context as int.
-func getTenancyId(c *gin.Context) int {
-	v, ok := c.Get("tenancy_id")
+// getTenantId extracts tenant_id from gin context as int.
+func getTenantId(c *gin.Context) int {
+	v, ok := c.Get("tenant_id")
 	if !ok {
 		return 0
 	}
@@ -46,8 +46,8 @@ func getTenancyId(c *gin.Context) int {
 func (h *Handler) ListBackupRestoreTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := getTenancyId(c)
-	data, total, err := h.svc.ListBackupRestoreTasksVo(tenancyId, page, pageSize)
+	tenantId := getTenantId(c)
+	data, total, err := h.svc.ListBackupRestoreTasksVo(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list backup/restore tasks")
 		return
@@ -62,8 +62,8 @@ func (h *Handler) CreateBackup(c *gin.Context) {
 		return
 	}
 	username := middleware.GetUsername(c)
-	tenancyId := getTenancyId(c)
-	if err := h.svc.CreateBackupTask(&req, username, tenancyId); err != nil {
+	tenantId := getTenantId(c)
+	if err := h.svc.CreateBackupTask(&req, username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -77,8 +77,8 @@ func (h *Handler) CreateRestore(c *gin.Context) {
 		return
 	}
 	username := middleware.GetUsername(c)
-	tenancyId := getTenancyId(c)
-	if err := h.svc.CreateRestoreTask(&req, username, tenancyId); err != nil {
+	tenantId := getTenantId(c)
+	if err := h.svc.CreateRestoreTask(&req, username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -133,8 +133,8 @@ func (h *Handler) ListBackupRestoreTaskDetail(c *gin.Context) {
 func (h *Handler) ListBatchConfigLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := getTenancyId(c)
-	data, total, err := h.svc.ListBatchConfigLogs(tenancyId, page, pageSize)
+	tenantId := getTenantId(c)
+	data, total, err := h.svc.ListBatchConfigLogs(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list batch config logs")
 		return
@@ -342,8 +342,8 @@ func (h *Handler) ScanAndGenerateAOSFiles() (int, error) {
 }
 
 func (h *Handler) ListNorthReports(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	reports, err := h.svc.ListNorthReports(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	reports, err := h.svc.ListNorthReports(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list north reports")
 		return
@@ -397,8 +397,8 @@ func (h *Handler) DeleteNorthReport(c *gin.Context) {
 }
 
 func (h *Handler) ListRadius(c *gin.Context) {
-	tenancyId := getTenancyId(c)
-	list, err := h.svc.ListRadius(tenancyId)
+	tenantId := getTenantId(c)
+	list, err := h.svc.ListRadius(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list RADIUS configs")
 		return
@@ -435,8 +435,8 @@ func (h *Handler) DeleteRadius(c *gin.Context) {
 func (h *Handler) ListOperatorLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := getTenancyId(c)
-	data, total, err := h.svc.ListOperatorLogs(tenancyId, page, pageSize)
+	tenantId := getTenantId(c)
+	data, total, err := h.svc.ListOperatorLogs(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list operator logs")
 		return
@@ -486,8 +486,8 @@ func (h *Handler) BatchAddObject(c *gin.Context) {
 		return
 	}
 	username := middleware.GetUsername(c)
-	tenancyId := getTenancyId(c)
-	if err := h.svc.BatchAddObject(&req, username, tenancyId); err != nil {
+	tenantId := getTenantId(c)
+	if err := h.svc.BatchAddObject(&req, username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -497,8 +497,8 @@ func (h *Handler) BatchAddObject(c *gin.Context) {
 func (h *Handler) ListBatchAddObjectTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	tenancyId := getTenancyId(c)
-	data, total, err := h.svc.ListBatchAddObjectTasks(tenancyId, page, pageSize)
+	tenantId := getTenantId(c)
+	data, total, err := h.svc.ListBatchAddObjectTasks(tenantId, page, pageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list tasks")
 		return
@@ -547,8 +547,8 @@ func (h *Handler) ListTBG(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	data, total, err := h.svc.ListTBGs(licenseId, &req)
+	tenantId := middleware.GetTenantId(c)
+	data, total, err := h.svc.ListTBGs(tenantId, &req)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list TBG")
 		return
@@ -570,8 +570,8 @@ func (h *Handler) AddTBG(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	tbg, err := h.svc.AddTBG(licenseId, &req)
+	tenantId := middleware.GetTenantId(c)
+	tbg, err := h.svc.AddTBG(tenantId, &req)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to add TBG")
 		return
@@ -611,7 +611,7 @@ func (h *Handler) ImportTBGFile(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "file is required")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	// Open the uploaded file
 	src, err := header.Open()
@@ -652,13 +652,13 @@ func (h *Handler) ImportTBGFile(c *gin.Context) {
 			Name:       &name,
 			IP:         &ip,
 			Port:       &port,
-			LicenseId:  &licenseId,
+			TenantId:  &tenantId,
 			CreateTime: &now,
 			UpdateTime: &now,
 		})
 	}
 
-	count, err := h.svc.ImportTBGs(licenseId, tbgs)
+	count, err := h.svc.ImportTBGs(tenantId, tbgs)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to import TBG file")
 		return
@@ -692,8 +692,8 @@ func (h *Handler) ListPSAPID(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	data, total, err := h.svc.ListPSAPIDs(licenseId, &req)
+	tenantId := middleware.GetTenantId(c)
+	data, total, err := h.svc.ListPSAPIDs(tenantId, &req)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list PSAP ID")
 		return
@@ -716,8 +716,8 @@ func (h *Handler) SyncPSAPID(c *gin.Context) {
 		return
 	}
 	username := middleware.GetUsername(c)
-	licenseId := middleware.GetLicenseId(c)
-	count, err := h.svc.SyncPSAPIDs(licenseId, username)
+	tenantId := middleware.GetTenantId(c)
+	count, err := h.svc.SyncPSAPIDs(tenantId, username)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to sync PSAP ID")
 		return
@@ -739,8 +739,8 @@ func (h *Handler) ListPSAPIDSyncLogs(c *gin.Context) {
 // ---------- AOS Management — SpatialFile ----------
 
 func (h *Handler) ListSpatialFileMarkets(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	data, err := h.svc.ListSpatialFileMarkets(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	data, err := h.svc.ListSpatialFileMarkets(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list spatial file markets")
 		return

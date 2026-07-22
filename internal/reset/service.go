@@ -20,14 +20,14 @@ type Repository interface {
 	FindTaskByID(id int) (*ResetTask, error)
 	DeleteTask(id int) error
 	UpdateTask(t *ResetTask) error
-	TaskNameExists(tenancyId int, name string) bool
+	TaskNameExists(tenantId int, name string) bool
 	FindElementIdsByGroup(groupIds []string) ([]int64, error)
 	FindDueTimedTasks(before time.Time) ([]ResetTask, error)
 	FindElementInfo(elementId int64) (sn string, deviceType string, err error)
 	InsertEventLog(eventType string, elementId int64, user string, status int, faultInfo string) (int64, error)
 	CreateTaskToEventLog(taskId int, eventLogId int64, taskType string) error
 	IsDeviceInUpgrade(elementId int64) bool
-	ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
+	ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
 	ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error)
 }
 
@@ -43,12 +43,12 @@ func NewRepository(db *gorm.DB) Repository {
 
 // Service defines the business-logic contract for reset management.
 type Service interface {
-	AddResetTask(req *AddResetTaskRequest, tenancyId int, username string) (int, error)
+	AddResetTask(req *AddResetTaskRequest, tenantId int, username string) (int, error)
 	DeleteResetTask(id int) error
 	StartResetTask(id int, username string) error
 	CancelResetTask(id int) error
 	TriggerDueTimedTasks(ctx context.Context) (int, error)
-	ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
+	ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error)
 	ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error)
 }
 
@@ -93,9 +93,9 @@ func (r *repository) UpdateTask(t *ResetTask) error {
 	return r.db.Save(t).Error
 }
 
-func (r *repository) TaskNameExists(tenancyId int, name string) bool {
+func (r *repository) TaskNameExists(tenantId int, name string) bool {
 	var count int64
-	r.db.Model(&ResetTask{}).Where("tenancy_id = ? AND name = ?", tenancyId, name).Count(&count)
+	r.db.Model(&ResetTask{}).Where("tenant_id = ? AND name = ?", tenantId, name).Count(&count)
 	return count > 0
 }
 
@@ -171,7 +171,7 @@ func (r *repository) IsDeviceInUpgrade(elementId int64) bool {
 	return count > 0
 }
 
-func (r *repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
+func (r *repository) ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -182,15 +182,15 @@ func (r *repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]Reset
 
 	baseSQL := `
 		SELECT rt.id, rt.name, rt.user, rt.operation_time, rt.status,
-		       rt.start_time, rt.end_time, rt.tenancy_id,
+		       rt.start_time, rt.end_time, rt.tenant_id,
 		       COUNT(tel.id) AS total_count,
 		       SUM(CASE WHEN el.status = 3 THEN 1 ELSE 0 END) AS success_count,
 		       MAX(el.command_response_time) AS last_response_time
 		FROM reset_task rt
 		LEFT JOIN task_to_event_log tel ON tel.task_id = rt.id AND tel.task_type = 'reset'
 		LEFT JOIN event_log el ON el.id = tel.event_log_id
-		WHERE rt.tenancy_id = ?`
-	args := []interface{}{tenancyId}
+		WHERE rt.tenant_id = ?`
+	args := []interface{}{tenantId}
 
 	if query.TaskName != "" {
 		baseSQL += " AND rt.name LIKE ?"
@@ -213,8 +213,8 @@ func (r *repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]Reset
 		}
 	}
 
-	countSQL := "SELECT COUNT(*) FROM reset_task rt WHERE rt.tenancy_id = ?"
-	countArgs := []interface{}{tenancyId}
+	countSQL := "SELECT COUNT(*) FROM reset_task rt WHERE rt.tenant_id = ?"
+	countArgs := []interface{}{tenantId}
 	if query.TaskName != "" {
 		countSQL += " AND rt.name LIKE ?"
 		countArgs = append(countArgs, "%"+query.TaskName+"%")
@@ -237,7 +237,7 @@ func (r *repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]Reset
 		Status           int        `gorm:"column:status"`
 		StartTime        *time.Time `gorm:"column:start_time"`
 		EndTime          *time.Time `gorm:"column:end_time"`
-		TenancyId        int        `gorm:"column:tenancy_id"`
+		TenantId        int        `gorm:"column:tenant_id"`
 		TotalCount       int64      `gorm:"column:total_count"`
 		SuccessCount     int64      `gorm:"column:success_count"`
 		LastResponseTime *time.Time `gorm:"column:last_response_time"`
@@ -288,7 +288,7 @@ func (r *repository) ListTasks(tenancyId int, query ListResetTaskQuery) ([]Reset
 			Status:        row.Status,
 			StartTime:     row.StartTime,
 			EndTime:       row.LastResponseTime,
-			TenancyName:   tenancyNames[row.TenancyId],
+			TenancyName:   tenancyNames[row.TenantId],
 		}
 		if row.TotalCount > 0 {
 			vo.Progress = fmt.Sprintf("%d/%d", row.SuccessCount, row.TotalCount)
@@ -396,8 +396,8 @@ func (r *repository) getTenancyNames() map[int]string {
 // ---------- Service methods ----------
 
 // AddResetTask creates a new reset task and dispatches commands if immediate.
-func (s *service) AddResetTask(req *AddResetTaskRequest, tenancyId int, username string) (int, error) {
-	if s.repo.TaskNameExists(tenancyId, req.Name) {
+func (s *service) AddResetTask(req *AddResetTaskRequest, tenantId int, username string) (int, error) {
+	if s.repo.TaskNameExists(tenantId, req.Name) {
 		return 0, fmt.Errorf("task name already exists")
 	}
 	if !isValidDeviceType(req.DeviceType) {
@@ -422,7 +422,7 @@ func (s *service) AddResetTask(req *AddResetTaskRequest, tenancyId int, username
 		User:           username,
 		OperationTime:  now,
 		ExecuteMode:    req.ExecuteMode,
-		TenancyId:      tenancyId,
+		TenantId:      tenantId,
 		ElementIds:     marshalElementIds(elementIds),
 		DeviceType:     req.DeviceType,
 		Scope:          req.Scope,
@@ -489,8 +489,8 @@ func (s *service) CancelResetTask(id int) error {
 	return s.repo.UpdateTask(task)
 }
 
-func (s *service) ListTasks(tenancyId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
-	return s.repo.ListTasks(tenancyId, query)
+func (s *service) ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetTaskVO, int64, error) {
+	return s.repo.ListTasks(tenantId, query)
 }
 
 func (s *service) ListTaskResults(query ListResetTaskResultQuery) ([]ResetTaskResultVO, int64, error) {

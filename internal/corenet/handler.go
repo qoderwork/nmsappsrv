@@ -22,9 +22,9 @@ func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{svc: NewService(db)}
 }
 
-// getTenancyId extracts tenancy_id from gin context as int.
-func getTenancyId(c *gin.Context) int {
-	v, ok := c.Get("tenancy_id")
+// getTenantId extracts tenant_id from gin context as int.
+func getTenantId(c *gin.Context) int {
+	v, ok := c.Get("tenant_id")
 	if !ok {
 		return 0
 	}
@@ -38,9 +38,9 @@ func getTenancyId(c *gin.Context) int {
 
 // ListCoreNetworks handles GET /core-networks
 func (h *Handler) ListCoreNetworks(c *gin.Context) {
-	tenancyId := getTenancyId(c)
+	tenantId := getTenantId(c)
 
-	networks, err := h.svc.ListCoreNetworks(tenancyId)
+	networks, err := h.svc.ListCoreNetworks(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list core networks")
 		return

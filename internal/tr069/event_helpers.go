@@ -144,8 +144,8 @@ func (ep *EventProcessor) saveParameterValues(ctx context.Context, sn string, pa
 }
 
 // autoAssignToDefaultGroups assigns a newly created device to all default groups.
-func (ep *EventProcessor) autoAssignToDefaultGroups(elementId int64, licenseId *int) {
-	// Find platform-level default groups (licenseId=0)
+func (ep *EventProcessor) autoAssignToDefaultGroups(elementId int64, tenantId *int) {
+	// Find platform-level default groups (tenantId=0)
 	groups, err := ep.findDefaultGroupsHelper(0)
 	if err != nil {
 		logger.Warnf("failed to find platform default groups: %v", err)
@@ -153,8 +153,8 @@ func (ep *EventProcessor) autoAssignToDefaultGroups(elementId int64, licenseId *
 
 	// Find tenant-level default groups if applicable
 	var tenantGroups []device.DeviceGroup
-	if licenseId != nil && *licenseId > 0 {
-		tenantGroups, err = ep.findDefaultGroupsHelper(*licenseId)
+	if tenantId != nil && *tenantId > 0 {
+		tenantGroups, err = ep.findDefaultGroupsHelper(*tenantId)
 		if err != nil {
 			logger.Warnf("failed to find tenant default groups: %v", err)
 		}
@@ -181,13 +181,13 @@ func (ep *EventProcessor) autoAssignToDefaultGroups(elementId int64, licenseId *
 }
 
 // findDefaultGroupsHelper returns device groups marked as default for the given license scope.
-func (ep *EventProcessor) findDefaultGroupsHelper(licenseId int) ([]device.DeviceGroup, error) {
+func (ep *EventProcessor) findDefaultGroupsHelper(tenantId int) ([]device.DeviceGroup, error) {
 	var groups []device.DeviceGroup
 	q := ep.db.Where("default_group = ?", true)
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	} else {
-		q = q.Where("license_id IS NULL")
+		q = q.Where("tenant_id IS NULL")
 	}
 	if err := q.Find(&groups).Error; err != nil {
 		return nil, err
@@ -225,7 +225,7 @@ func extractHeaderIDFromXML(xmlStr string) string {
 // It reads device_config from system_config table, compares current device count vs maxDeviceCount.
 // Returns nil if creation is allowed, or an error if the limit has been reached.
 func (ep *EventProcessor) checkDeviceLimit() error {
-	// Read platform-level device config (tenancyId=0)
+	// Read platform-level device config (tenantId=0)
 	var cfg misc.SystemConfig
 	key := "device_config_0"
 	err := ep.db.Where("id = ?", key).First(&cfg).Error

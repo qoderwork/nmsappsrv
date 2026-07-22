@@ -36,7 +36,7 @@ func SetJWTSecret(secret string) {
 type Claims struct {
 	UserID    int      `json:"user_id"`
 	Username  string   `json:"username"`
-	LicenseID int      `json:"license_id"`
+	TenantID int      `json:"tenant_id"`
 	RoleNames []string `json:"role_names"`
 	SsoType   string   `json:"sso_type"`
 	jwt.RegisteredClaims
@@ -45,12 +45,12 @@ type Claims struct {
 // GenerateToken creates a signed JWT that is valid for 60 minutes.
 // It also stores the token in Redis under SECURITY_JWT_LOGIN:{username}
 // so that only the most recently issued token is valid.
-func GenerateToken(userId int, username string, licenseId int, roleNames []string, ssoType string) (string, error) {
+func GenerateToken(userId int, username string, tenantId int, roleNames []string, ssoType string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:    userId,
 		Username:  username,
-		LicenseID: licenseId,
+		TenantID: tenantId,
 		RoleNames: roleNames,
 		SsoType:   ssoType,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -150,7 +150,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Inject user info into context for downstream handlers.
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
-		c.Set("license_id", claims.LicenseID)
+		c.Set("tenant_id", claims.TenantID)
 		c.Set("role_names", claims.RoleNames)
 		c.Set("sso_type", claims.SsoType)
 
@@ -186,10 +186,10 @@ func GetUsername(c *gin.Context) string {
 	return s
 }
 
-// GetLicenseId extracts the authenticated user's license ID from the gin context.
+// GetTenantId extracts the authenticated user's license ID from the gin context.
 // Returns 0 if the value is missing or has an unexpected type.
-func GetLicenseId(c *gin.Context) int {
-	v, ok := c.Get("license_id")
+func GetTenantId(c *gin.Context) int {
+	v, ok := c.Get("tenant_id")
 	if !ok {
 		return 0
 	}

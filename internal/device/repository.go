@@ -10,12 +10,12 @@ import (
 // Repository defines the data-access contract for device entities.
 type Repository interface {
 	FindByID(id int64) (*CpeElement, error)
-	FindPage(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error)
+	FindPage(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error)
 	FindBySerialNumber(sn string) (*CpeElement, error)
 	Create(elem *CpeElement) error
 	Update(elem *CpeElement) error
 	SoftDelete(id int64) error
-	FindGroups(licenseId int) ([]DeviceGroup, error)
+	FindGroups(tenantId int) ([]DeviceGroup, error)
 	FindGroupByID(id string) (*DeviceGroup, error)
 	CreateGroup(g *DeviceGroup) error
 	UpdateGroup(g *DeviceGroup) error
@@ -24,16 +24,16 @@ type Repository interface {
 	RemoveElementFromGroup(groupId string, elementId int64) error
 	FindBySerialNumbers(serials []string) map[string]*CpeElement
 	CountAllNonDeleted() int64
-	CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64
-	FindDefaultGroups(licenseId int) ([]DeviceGroup, error)
+	CountNonDeletedByDeviceType(deviceType string, tenantId int, generation string) int64
+	FindDefaultGroups(tenantId int) ([]DeviceGroup, error)
 	AddElementsToGroup(groupId string, elementIds []int64) error
 
 	// System/license lookups previously done via a raw *gorm.DB in the service.
-	GetLicenseQuota(licenseId int, deviceType string) (int, error)
-	CountNonDeleted(licenseId int, deviceType string) (int64, error)
+	GetLicenseQuota(tenantId int, deviceType string) (int, error)
+	CountNonDeleted(tenantId int, deviceType string) (int64, error)
 	GetLocationEncryptionKey() (string, error)
-	SetLicenseIdNullByLicenseId(licenseId int) error
-	DeleteDefaultGroupsByLicenseId(licenseId int) error
+	SetTenantIdNullByTenantId(tenantId int) error
+	DeleteDefaultGroupsByTenantId(tenantId int) error
 }
 
 // repository handles database operations for device entities.
@@ -72,13 +72,13 @@ func (r *repository) FindByID(id int64) (*CpeElement, error) {
 // license. When keyword is non-empty it filters on device_name and
 // serial_number (case-insensitive LIKE). The total count is returned so the
 // caller can build pagination metadata.
-func (r *repository) FindPage(licenseId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
+func (r *repository) FindPage(tenantId int, keyword string, offset, limit int) ([]CpeElement, int64, error) {
 	var elems []CpeElement
 	var total int64
 
 	query := r.db.Model(&CpeElement{}).Where("deleted = ?", false)
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 
 	if keyword != "" {
@@ -123,12 +123,12 @@ func (r *repository) Update(elem *CpeElement) error {
 // ---------------------------------------------------------------------------
 
 // FindGroups returns all device groups for the given license.
-// If licenseId is 0 (platform admin), returns groups across all tenants.
-func (r *repository) FindGroups(licenseId int) ([]DeviceGroup, error) {
+// If tenantId is 0 (platform admin), returns groups across all tenants.
+func (r *repository) FindGroups(tenantId int) ([]DeviceGroup, error) {
 	var groups []DeviceGroup
 	q := r.db.Model(&DeviceGroup{})
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	if err := q.Find(&groups).Error; err != nil {
 		return nil, err
@@ -211,16 +211,16 @@ func (r *repository) CountAllNonDeleted() int64 {
 }
 
 // CountNonDeletedByDeviceType counts non-deleted devices of a specific type.
-// If licenseId > 0, it filters by license_id as well.
+// If tenantId > 0, it filters by tenant_id as well.
 // If generation is non-empty, it also filters by generation.
-func (r *repository) CountNonDeletedByDeviceType(deviceType string, licenseId int, generation string) int64 {
+func (r *repository) CountNonDeletedByDeviceType(deviceType string, tenantId int, generation string) int64 {
 	var count int64
 	q := r.db.Model(&CpeElement{}).Where("deleted = ?", false)
 	if deviceType != "" {
 		q = q.Where("device_type = ?", deviceType)
 	}
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	}
 	if generation != "" {
 		q = q.Where("generation = ?", generation)
@@ -230,14 +230,14 @@ func (r *repository) CountNonDeletedByDeviceType(deviceType string, licenseId in
 }
 
 // FindDefaultGroups returns device groups marked as default for the given
-// license scope. If licenseId is 0, it finds platform-level defaults.
-func (r *repository) FindDefaultGroups(licenseId int) ([]DeviceGroup, error) {
+// license scope. If tenantId is 0, it finds platform-level defaults.
+func (r *repository) FindDefaultGroups(tenantId int) ([]DeviceGroup, error) {
 	var groups []DeviceGroup
 	q := r.db.Where("default_group = ?", true)
-	if licenseId > 0 {
-		q = q.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		q = q.Where("tenant_id = ?", tenantId)
 	} else {
-		q = q.Where("license_id IS NULL")
+		q = q.Where("tenant_id IS NULL")
 	}
 	if err := q.Find(&groups).Error; err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ func (r *repository) AddElementsToGroup(groupId string, elementIds []int64) erro
 // GetLicenseQuota reads the device quota for a given device type from the
 // license (tenancy) table. The column is selected based on deviceType:
 // "enb" -> enb_quantity, "gnb" -> gnb_quantity, default -> cpe_quantity.
-func (r *repository) GetLicenseQuota(licenseId int, deviceType string) (int, error) {
+func (r *repository) GetLicenseQuota(tenantId int, deviceType string) (int, error) {
 	quotaCol := "cpe_quantity"
 	switch deviceType {
 	case "enb":
@@ -273,7 +273,7 @@ func (r *repository) GetLicenseQuota(licenseId int, deviceType string) (int, err
 		quotaCol = "gnb_quantity"
 	}
 	var quota int
-	if err := r.db.Table("license").Select(quotaCol).Where("id = ?", licenseId).Scan(&quota).Error; err != nil {
+	if err := r.db.Table("tenant").Select(quotaCol).Where("id = ?", tenantId).Scan(&quota).Error; err != nil {
 		return 0, err
 	}
 	return quota, nil
@@ -282,11 +282,11 @@ func (r *repository) GetLicenseQuota(licenseId int, deviceType string) (int, err
 // CountNonDeleted counts non-deleted devices of a given type for a license.
 // An empty deviceType counts CPE devices (device_type = 'cpe' OR NULL),
 // matching the original inline query in the service.
-func (r *repository) CountNonDeleted(licenseId int, deviceType string) (int64, error) {
+func (r *repository) CountNonDeleted(tenantId int, deviceType string) (int64, error) {
 	var existing int64
 	query := r.db.Model(&CpeElement{}).Where("deleted = ?", false)
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	switch deviceType {
 	case "enb":
@@ -302,16 +302,16 @@ func (r *repository) CountNonDeleted(licenseId int, deviceType string) (int64, e
 	return existing, nil
 }
 
-// SetLicenseIdNullByLicenseId sets license_id to NULL for all devices with the given license_id.
-func (r *repository) SetLicenseIdNullByLicenseId(licenseId int) error {
-	return r.db.Model(&CpeElement{}).Where("license_id = ?", licenseId).Update("license_id", nil).Error
+// SetTenantIdNullByTenantId sets tenant_id to NULL for all devices with the given tenant_id.
+func (r *repository) SetTenantIdNullByTenantId(tenantId int) error {
+	return r.db.Model(&CpeElement{}).Where("tenant_id = ?", tenantId).Update("tenant_id", nil).Error
 }
 
-// DeleteDefaultGroupsByLicenseId deletes all default device groups for the given license.
-func (r *repository) DeleteDefaultGroupsByLicenseId(licenseId int) error {
+// DeleteDefaultGroupsByTenantId deletes all default device groups for the given license.
+func (r *repository) DeleteDefaultGroupsByTenantId(tenantId int) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var groups []DeviceGroup
-		if err := tx.Where("license_id = ? AND default_group = ?", licenseId, true).Find(&groups).Error; err != nil {
+		if err := tx.Where("tenant_id = ? AND default_group = ?", tenantId, true).Find(&groups).Error; err != nil {
 			return err
 		}
 		for _, g := range groups {

@@ -14,12 +14,12 @@ import (
 
 // Repository defines the data-access contract for SSH management.
 type Repository interface {
-	FindLabelByName(tenancyId int, name string) (*SSHLabel, error)
+	FindLabelByName(tenantId int, name string) (*SSHLabel, error)
 	FindLabelByID(id int) (*SSHLabel, error)
 	CreateLabel(label *SSHLabel) error
 	DeleteLabel(id int) error
 	UpdateLabel(label *SSHLabel) error
-	ListLabels(tenancyId int) ([]SSHLabel, error)
+	ListLabels(tenantId int) ([]SSHLabel, error)
 	FindTimerByElementId(elementId int64) (*SSHAccessTimerTask, error)
 	CreateTimer(task *SSHAccessTimerTask) error
 	UpdateTimer(task *SSHAccessTimerTask) error
@@ -27,7 +27,7 @@ type Repository interface {
 	FindExpiredTimers() ([]SSHAccessTimerTask, error)
 	FindElementInfo(elementId int64) (sn string, deviceName string, err error)
 	FindElementIdsByGroup(groupIds []string) ([]int64, error)
-	GetTenancyName(tenancyId int) string
+	GetTenancyName(tenantId int) string
 }
 
 // repository is the concrete GORM-backed implementation of Repository.
@@ -42,9 +42,9 @@ func NewRepository(db *gorm.DB) Repository {
 
 // ---------- SSH Label ----------
 
-func (r *repository) FindLabelByName(tenancyId int, name string) (*SSHLabel, error) {
+func (r *repository) FindLabelByName(tenantId int, name string) (*SSHLabel, error) {
 	var label SSHLabel
-	err := r.db.Where("license_id = ? AND name = ?", tenancyId, name).First(&label).Error
+	err := r.db.Where("tenant_id = ? AND name = ?", tenantId, name).First(&label).Error
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +72,9 @@ func (r *repository) UpdateLabel(label *SSHLabel) error {
 	return r.db.Save(label).Error
 }
 
-func (r *repository) ListLabels(tenancyId int) ([]SSHLabel, error) {
+func (r *repository) ListLabels(tenantId int) ([]SSHLabel, error) {
 	var labels []SSHLabel
-	err := r.db.Where("license_id = ?", tenancyId).Find(&labels).Error
+	err := r.db.Where("tenant_id = ?", tenantId).Find(&labels).Error
 	return labels, err
 }
 
@@ -151,9 +151,9 @@ func (r *repository) FindElementIdsByGroup(groupIds []string) ([]int64, error) {
 	return ids, err
 }
 
-func (r *repository) GetTenancyName(tenancyId int) string {
+func (r *repository) GetTenancyName(tenantId int) string {
 	var name string
-	r.db.Table("tenancy").Where("id = ?", tenancyId).Pluck("name", &name)
+	r.db.Table("tenancy").Where("id = ?", tenantId).Pluck("name", &name)
 	return name
 }
 
@@ -161,11 +161,11 @@ func (r *repository) GetTenancyName(tenancyId int) string {
 
 // Service defines the business-logic contract for SSH operations.
 type Service interface {
-	AddLabel(req *AddSSHLabelRequest, tenancyId int) error
+	AddLabel(req *AddSSHLabelRequest, tenantId int) error
 	DeleteLabel(id int) error
-	ListLabels(tenancyId int) ([]SSHLabel, error)
-	UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error
-	SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) ([]string, error)
+	ListLabels(tenantId int) ([]SSHLabel, error)
+	UpdateLabel(req *UpdateSSHLabelRequest, tenantId int) error
+	SetAccessTimer(req *SSHAccessTimerRequest, tenantId int, username string) ([]string, error)
 	ListAccessTimers(req *ListSSHAccessTimerRequest) ([]SSHAccessTimerVO, int64, error)
 	StartExpiredChecker()
 }
@@ -182,15 +182,15 @@ func NewService(db *gorm.DB) Service {
 
 // ---------- SSH Label methods ----------
 
-func (s *service) AddLabel(req *AddSSHLabelRequest, tenancyId int) error {
-	existing, _ := s.repo.FindLabelByName(tenancyId, req.Name)
+func (s *service) AddLabel(req *AddSSHLabelRequest, tenantId int) error {
+	existing, _ := s.repo.FindLabelByName(tenantId, req.Name)
 	if existing != nil {
 		return fmt.Errorf("label name already exists")
 	}
 	label := &SSHLabel{
 		Name:      &req.Name,
 		Content:   &req.Content,
-		LicenseId: &tenancyId,
+		TenantId: &tenantId,
 	}
 	return s.repo.CreateLabel(label)
 }
@@ -199,12 +199,12 @@ func (s *service) DeleteLabel(id int) error {
 	return s.repo.DeleteLabel(id)
 }
 
-func (s *service) ListLabels(tenancyId int) ([]SSHLabel, error) {
-	return s.repo.ListLabels(tenancyId)
+func (s *service) ListLabels(tenantId int) ([]SSHLabel, error) {
+	return s.repo.ListLabels(tenantId)
 }
 
-func (s *service) UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error {
-	existing, _ := s.repo.FindLabelByName(tenancyId, req.Name)
+func (s *service) UpdateLabel(req *UpdateSSHLabelRequest, tenantId int) error {
+	existing, _ := s.repo.FindLabelByName(tenantId, req.Name)
 	if existing != nil && existing.Id != req.Id {
 		return fmt.Errorf("label name already exists")
 	}
@@ -219,7 +219,7 @@ func (s *service) UpdateLabel(req *UpdateSSHLabelRequest, tenancyId int) error {
 
 // ---------- SSH Access Timer methods ----------
 
-func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, username string) ([]string, error) {
+func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenantId int, username string) ([]string, error) {
 	elementIds := req.ElementIds
 	if req.DeviceGroupIds != nil && len(req.DeviceGroupIds) > 0 {
 		groupIds, err := s.repo.FindElementIdsByGroup(req.DeviceGroupIds)
@@ -237,7 +237,7 @@ func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, user
 	}
 
 	deadline := time.Now().Add(time.Duration(req.Deadline) * time.Minute)
-	tenancyName := s.repo.GetTenancyName(tenancyId)
+	tenancyName := s.repo.GetTenancyName(tenantId)
 	now := time.Now()
 
 	// operationIds are returned to the caller (and the frontend) so the
@@ -261,7 +261,7 @@ func (s *service) SetAccessTimer(req *SSHAccessTimerRequest, tenancyId int, user
 		} else {
 			task := &SSHAccessTimerTask{
 				TenancyName:      &tenancyName,
-				TenancyId:        &tenancyId,
+				TenantId:        &tenantId,
 				ElementId:        int64Ptr(int64(eid)),
 				SshStatus:        strPtr("0"), // SSH_STATUS_DISENABLE, aligned with Java buildSshAccessTimerTask
 				DeviceName:       &deviceName,

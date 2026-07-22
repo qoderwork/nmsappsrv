@@ -23,32 +23,32 @@ type Repository interface {
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[PerformanceKpi], error)
 
-	FindKPIs(tenancyId int) ([]PerformanceKpi, error)
+	FindKPIs(tenantId int) ([]PerformanceKpi, error)
 	FindAllKPIs() ([]PerformanceKpi, error)
-	FindKPISets(tenancyId int) ([]PerformanceKpiSet, error)
+	FindKPISets(tenantId int) ([]PerformanceKpiSet, error)
 	CreateKPISet(s *PerformanceKpiSet) error
 	DeleteKPISet(id int) error
-	FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error)
+	FindKPITemplates(tenantId int) ([]PerformanceKpiTemplate, error)
 	FindKPITemplate(id int) (*PerformanceKpiTemplate, error)
 	CreateKPITemplate(t *PerformanceKpiTemplate) error
 	UpdateKPITemplate(t *PerformanceKpiTemplate) error
 	DeleteKPITemplate(id int) error
-	FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error)
-	FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error)
+	FindPMFileLogs(tenantId int, offset, limit int) ([]PMFileLog, int64, error)
+	FindKPIAlarmTemplates(tenantId int) ([]KpiAlarmTemplate, error)
 	FindKPIAlarmTemplate(id int) (*KpiAlarmTemplate, error)
 	CreateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	UpdateKPIAlarmTemplate(t *KpiAlarmTemplate) error
 	DeleteKPIAlarmTemplate(id int) error
 	UpdateKPIAlarmTemplateStatus(id int, enable bool) error
-	FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error)
-	FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error)
-	FindAllActiveElements(licenseId int) ([]elementRow, error)
+	FindDashboardData(tenantId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error)
+	FindPDCPTraffic(tenantId int, startTime, endTime time.Time) ([]PDCPTraffic, error)
+	FindAllActiveElements(tenantId int) ([]elementRow, error)
 	FindAllActiveElementsAllTenants() ([]elementRow, error)
 	BulkCreateKPIs(items []PerformanceKpi) error
 	FindPMFileLogsInRange(elementId int64, startTime, endTime time.Time) ([]PMFileLog, error)
-	FindENBDevicesForMeas(licenseId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error)
+	FindENBDevicesForMeas(tenantId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error)
 	CreateReplenishTask(t *PMReplenishTask) error
-	FindReplenishTasks(tenancyId int, name string, offset, limit int) ([]PMReplenishTask, int64, error)
+	FindReplenishTasks(tenantId int, name string, offset, limit int) ([]PMReplenishTask, int64, error)
 	FindReplenishTask(id int) (*PMReplenishTask, error)
 	FindReplenishTaskDevices(taskId int) ([]ReplenishDeviceVo, error)
 	CreatePMFileLog(log *PMFileLog) error
@@ -77,9 +77,9 @@ func NewRepository(db *gorm.DB) Repository {
 // ---------------------------------------------------------------------------
 
 // FindKPIs returns all KPIs for the given tenancy.
-func (r *repository) FindKPIs(tenancyId int) ([]PerformanceKpi, error) {
+func (r *repository) FindKPIs(tenantId int) ([]PerformanceKpi, error) {
 	var items []PerformanceKpi
-	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
+	err := r.db.Where("tenant_id = ?", tenantId).Find(&items).Error
 	return items, err
 }
 
@@ -93,9 +93,9 @@ func (r *repository) FindAllKPIs() ([]PerformanceKpi, error) {
 // PerformanceKpiSet (different entity type)
 // ---------------------------------------------------------------------------
 
-func (r *repository) FindKPISets(tenancyId int) ([]PerformanceKpiSet, error) {
+func (r *repository) FindKPISets(tenantId int) ([]PerformanceKpiSet, error) {
 	var items []PerformanceKpiSet
-	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
+	err := r.db.Where("tenant_id = ?", tenantId).Find(&items).Error
 	return items, err
 }
 
@@ -111,9 +111,9 @@ func (r *repository) DeleteKPISet(id int) error {
 // PerformanceKpiTemplate (different entity type)
 // ---------------------------------------------------------------------------
 
-func (r *repository) FindKPITemplates(tenancyId int) ([]PerformanceKpiTemplate, error) {
+func (r *repository) FindKPITemplates(tenantId int) ([]PerformanceKpiTemplate, error) {
 	var items []PerformanceKpiTemplate
-	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
+	err := r.db.Where("tenant_id = ?", tenantId).Find(&items).Error
 	return items, err
 }
 
@@ -141,10 +141,10 @@ func (r *repository) DeleteKPITemplate(id int) error {
 // PMFileLog
 // ---------------------------------------------------------------------------
 
-func (r *repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileLog, int64, error) {
+func (r *repository) FindPMFileLogs(tenantId int, offset, limit int) ([]PMFileLog, int64, error) {
 	var items []PMFileLog
 	var total int64
-	q := r.db.Model(&PMFileLog{}).Where("tenancy_id = ?", tenancyId)
+	q := r.db.Model(&PMFileLog{}).Where("tenant_id = ?", tenantId)
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -156,9 +156,9 @@ func (r *repository) FindPMFileLogs(tenancyId int, offset, limit int) ([]PMFileL
 // KpiAlarmTemplate (different entity type)
 // ---------------------------------------------------------------------------
 
-func (r *repository) FindKPIAlarmTemplates(tenancyId int) ([]KpiAlarmTemplate, error) {
+func (r *repository) FindKPIAlarmTemplates(tenantId int) ([]KpiAlarmTemplate, error) {
 	var items []KpiAlarmTemplate
-	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
+	err := r.db.Where("tenant_id = ?", tenantId).Find(&items).Error
 	return items, err
 }
 
@@ -192,11 +192,11 @@ func (r *repository) DeleteKPIAlarmTemplate(id int) error {
 // DashboardPmStatisticData
 // ---------------------------------------------------------------------------
 
-func (r *repository) FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error) {
+func (r *repository) FindDashboardData(tenantId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error) {
 	var items []DashboardPmStatisticData
 	query := r.db.Where("time BETWEEN ? AND ?", startTime, endTime)
-	if tenancyId > 0 {
-		query = query.Where("tenancy_id = ?", tenancyId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	err := query.Find(&items).Error
 	return items, err
@@ -206,11 +206,11 @@ func (r *repository) FindDashboardData(tenancyId int, startTime, endTime time.Ti
 // PDCPTraffic
 // ---------------------------------------------------------------------------
 
-func (r *repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error) {
+func (r *repository) FindPDCPTraffic(tenantId int, startTime, endTime time.Time) ([]PDCPTraffic, error) {
 	var items []PDCPTraffic
 	query := r.db.Where("statistic_time BETWEEN ? AND ?", startTime, endTime)
-	if tenancyId > 0 {
-		query = query.Where("tenancy_id = ?", tenancyId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	err := query.Find(&items).Error
 	return items, err
@@ -221,13 +221,13 @@ func (r *repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time
 // ---------------------------------------------------------------------------
 
 // FindAllActiveElements queries all non-deleted devices for the given license.
-func (r *repository) FindAllActiveElements(licenseId int) ([]elementRow, error) {
+func (r *repository) FindAllActiveElements(tenantId int) ([]elementRow, error) {
 	var rows []elementRow
 	query := r.db.Table("cpe_element").
 		Select("ne_neid, device_type, generation, model_name").
 		Where("deleted = 0")
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	err := query.Find(&rows).Error
 	return rows, err
@@ -266,13 +266,13 @@ func (r *repository) FindPMFileLogsInRange(elementId int64, startTime, endTime t
 // FindENBDevicesForMeas returns paginated eNB devices (device_type='enb')
 // for the license, optionally filtered by a name/serial search text.
 // Mirrors Java listKPIMeas (which queries NeElement where device_type='enb').
-func (r *repository) FindENBDevicesForMeas(licenseId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error) {
+func (r *repository) FindENBDevicesForMeas(tenantId int, searchText string, offset, limit int) ([]MeasDeviceVo, int64, error) {
 	var items []MeasDeviceVo
 	var total int64
 
 	q := r.db.Table("cpe_element").
 		Select("ne_neid, device_name, serial_number, device_type, root_node").
-		Where("deleted = 0 AND device_type = 'enb' AND license_id = ?", licenseId)
+		Where("deleted = 0 AND device_type = 'enb' AND tenant_id = ?", tenantId)
 	if searchText != "" {
 		like := "%" + searchText + "%"
 		q = q.Where("device_name LIKE ? OR serial_number LIKE ?", like, like)
@@ -319,10 +319,10 @@ func (r *repository) CreateReplenishTask(t *PMReplenishTask) error {
 
 // FindReplenishTasks returns paginated replenish tasks for the license,
 // optionally filtered by name. Mirrors Java listReplenishTask.
-func (r *repository) FindReplenishTasks(tenancyId int, name string, offset, limit int) ([]PMReplenishTask, int64, error) {
+func (r *repository) FindReplenishTasks(tenantId int, name string, offset, limit int) ([]PMReplenishTask, int64, error) {
 	var items []PMReplenishTask
 	var total int64
-	q := r.db.Model(&PMReplenishTask{}).Where("tenancy_id = ?", tenancyId)
+	q := r.db.Model(&PMReplenishTask{}).Where("tenant_id = ?", tenantId)
 	if name != "" {
 		like := "%" + name + "%"
 		q = q.Where("name LIKE ?", like)

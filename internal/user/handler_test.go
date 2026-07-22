@@ -64,16 +64,16 @@ func (m *mockService) Logout(username, jwtToken string) error {
 	return nil
 }
 
-func (m *mockService) RecordLogin(username, ip string, licenseId int, result int) error {
+func (m *mockService) RecordLogin(username, ip string, tenantId int, result int) error {
 	if m.recordLoginFn != nil {
-		return m.recordLoginFn(username, ip, licenseId, result)
+		return m.recordLoginFn(username, ip, tenantId, result)
 	}
 	return nil
 }
 
-func (m *mockService) RecordLogout(username, ip string, licenseId int) error {
+func (m *mockService) RecordLogout(username, ip string, tenantId int) error {
 	if m.recordLogoutFn != nil {
-		return m.recordLogoutFn(username, ip, licenseId)
+		return m.recordLogoutFn(username, ip, tenantId)
 	}
 	return nil
 }
@@ -155,9 +155,9 @@ func (m *mockService) ResetPasswordByLink(username, key, newPassword string) err
 	return nil
 }
 
-func (m *mockService) SetTenancyForUser(userId, licenseId int) error {
+func (m *mockService) SetTenancyForUser(userId, tenantId int) error {
 	if m.setTenancyForUserFn != nil {
-		return m.setTenancyForUserFn(userId, licenseId)
+		return m.setTenancyForUserFn(userId, tenantId)
 	}
 	return nil
 }
@@ -176,9 +176,9 @@ func (m *mockService) NeedChangePassword(userId int) (*NeedChangePasswordRespons
 	return nil, nil
 }
 
-func (m *mockService) ListRoles(licenseId int) ([]Role, error) {
+func (m *mockService) ListRoles(tenantId int) ([]Role, error) {
 	if m.listRolesFn != nil {
-		return m.listRolesFn(licenseId)
+		return m.listRolesFn(tenantId)
 	}
 	return nil, nil
 }
@@ -218,9 +218,9 @@ func (m *mockService) UpdateRolePermissions(roleId string, permissionIds []strin
 	return nil
 }
 
-func (m *mockService) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
+func (m *mockService) GetRoleNamesForUser(userId int, tenantId int) ([]string, error) {
 	if m.getRoleNamesForUserFn != nil {
-		return m.getRoleNamesForUserFn(userId, licenseId)
+		return m.getRoleNamesForUserFn(userId, tenantId)
 	}
 	return nil, nil
 }
@@ -261,16 +261,16 @@ func TestHandler_Login(t *testing.T) {
 	setupHandlerEnv(t)
 
 	t.Run("valid credentials returns 200 with token", func(t *testing.T) {
-		licenseId := 1
+		tenantId := 1
 		svc := &mockService{
 			loginFn: func(username, password string) (*SysUser, error) {
 				return &SysUser{
 					Id:        10,
 					Username:  strPtr("alice"),
-					LicenseId: &licenseId,
+					TenantId: &tenantId,
 				}, nil
 			},
-			getRoleNamesForUserFn: func(userId, licenseId int) ([]string, error) {
+			getRoleNamesForUserFn: func(userId, tenantId int) ([]string, error) {
 				return []string{"admin"}, nil
 			},
 			recordLoginFn: func(username, ip string, licId int, result int) error {

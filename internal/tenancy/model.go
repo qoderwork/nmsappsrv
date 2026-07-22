@@ -6,7 +6,7 @@ import "time"
 type tenancyModel struct {
 	Id                   int        `gorm:"primaryKey;autoIncrement"`
 	LicenseName          *string    `gorm:"column:license_name;type:varchar(255)"`
-	LicenseId            *string    `gorm:"column:license_id;type:varchar(255)"`
+	TenantCode           *string    `gorm:"column:tenant_code;type:varchar(255)"`
 	LicenseType          *string    `gorm:"column:license_type;type:varchar(255)"`
 	ExpiryDate           *time.Time `gorm:"column:expiry_date"`
 	EnbQuantity          int        `gorm:"column:enb_quantity"`
@@ -22,7 +22,7 @@ type tenancyModel struct {
 	CpeQuantity          *int       `gorm:"column:cpe_quantity"`
 }
 
-func (tenancyModel) TableName() string { return "license" }
+func (tenancyModel) TableName() string { return "tenant" }
 
 // AddTenancyRequest represents the request body for adding a tenancy
 type AddTenancyRequest struct {
@@ -59,7 +59,7 @@ type UpdateTenancyRequest struct {
 type ViewTenancyResponse struct {
 	Id                   int     `json:"id"`
 	LicenseName          string  `json:"licenseName"`
-	LicenseId            string  `json:"licenseId"`
+	TenantCode           string  `json:"tenantCode"`
 	ExpiryDate           int64   `json:"expiryDate"`
 	EnbQuantity          int     `json:"enbQuantity"`
 	UserQuantity         int     `json:"userQuantity"`
@@ -83,7 +83,7 @@ type ListTenancyQuery struct {
 type TenancyVO struct {
 	Id                   int     `json:"id"`
 	LicenseName          string  `json:"licenseName"`
-	LicenseId            string  `json:"licenseId"`
+	TenantCode           string  `json:"tenantCode"`
 	ExpiryDate           int64   `json:"expiryDate"`
 	EnbQuantity          int     `json:"enbQuantity"`
 	UserQuantity         int     `json:"userQuantity"`

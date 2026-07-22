@@ -27,7 +27,7 @@ type MonitorStatistics struct {
 
 // Service defines the monitor business-logic contract.
 type Service interface {
-	ListMonitorTasks(licenseId int) ([]MonitorTask, error)
+	ListMonitorTasks(tenantId int) ([]MonitorTask, error)
 	GetMonitorTask(id int) (*MonitorTask, error)
 	CreateMonitorTask(t *MonitorTask) error
 	UpdateMonitorTask(t *MonitorTask) error
@@ -57,8 +57,8 @@ func newService(repo Repository) Service {
 
 // ---------- MonitorTask ----------
 
-func (s *service) ListMonitorTasks(licenseId int) ([]MonitorTask, error) {
-	return s.repo.FindMonitorTasks(licenseId)
+func (s *service) ListMonitorTasks(tenantId int) ([]MonitorTask, error) {
+	return s.repo.FindMonitorTasks(tenantId)
 }
 
 func (s *service) GetMonitorTask(id int) (*MonitorTask, error) {

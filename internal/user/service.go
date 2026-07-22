@@ -18,8 +18,8 @@ import (
 type Service interface {
 	Login(username, password string) (*SysUser, error)
 	Logout(username, jwtToken string) error
-	RecordLogin(username, ip string, licenseId int, result int) error
-	RecordLogout(username, ip string, licenseId int) error
+	RecordLogin(username, ip string, tenantId int, result int) error
+	RecordLogout(username, ip string, tenantId int) error
 	ListUsers(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error)
 	CreateUser(u *SysUser) (string, error)
 	UpdateUser(u *SysUser) error
@@ -31,16 +31,16 @@ type Service interface {
 	DisableUser(userId int) error
 	ResetPassword(adminId, userId int) (string, error)
 	ResetPasswordByLink(username, key, newPassword string) error
-	SetTenancyForUser(userId, licenseId int) error
+	SetTenancyForUser(userId, tenantId int) error
 	GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error)
 	NeedChangePassword(userId int) (*NeedChangePasswordResponse, error)
-	ListRoles(licenseId int) ([]Role, error)
+	ListRoles(tenantId int) ([]Role, error)
 	CreateRole(r *Role) error
 	UpdateRole(r *Role) error
 	DeleteRole(id string) error
 	GetRolePermissions(roleId string) ([]RoleHasPermission, error)
 	UpdateRolePermissions(roleId string, permissionIds []string) error
-	GetRoleNamesForUser(userId int, licenseId int) ([]string, error)
+	GetRoleNamesForUser(userId int, tenantId int) ([]string, error)
 }
 
 // service is the concrete implementation of Service.
@@ -188,14 +188,14 @@ func (s *service) Logout(username, jwtToken string) error {
 }
 
 // RecordLogin creates a login log entry.
-func (s *service) RecordLogin(username, ip string, licenseId int, result int) error {
+func (s *service) RecordLogin(username, ip string, tenantId int, result int) error {
 	now := time.Now()
 	log := LoginLog{
 		Username:  &username,
 		IpAddress: &ip,
 		LoginTime: &now,
 		Result:    &result,
-		LicenseId: &licenseId,
+		TenantId: &tenantId,
 	}
 	if err := s.repo.CreateLoginLog(&log); err != nil {
 		return apperror.Wrap(err, "RECORD_LOGIN_FAILED", 500, "failed to record login")
@@ -204,7 +204,7 @@ func (s *service) RecordLogin(username, ip string, licenseId int, result int) er
 }
 
 // RecordLogout creates a logout log entry.
-func (s *service) RecordLogout(username, ip string, licenseId int) error {
+func (s *service) RecordLogout(username, ip string, tenantId int) error {
 	now := time.Now()
 	logType := LoginTypeLogout
 	info := "Logout"
@@ -213,7 +213,7 @@ func (s *service) RecordLogout(username, ip string, licenseId int) error {
 		IpAddress: &ip,
 		LoginTime: &now,
 		Result:    intPtr(1),
-		LicenseId: &licenseId,
+		TenantId: &tenantId,
 		Type:      &logType,
 		Info:      &info,
 	}
@@ -533,14 +533,14 @@ func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 }
 
 // SetTenancyForUser updates a user's license/tenancy and forces re-login.
-func (s *service) SetTenancyForUser(userId, licenseId int) error {
+func (s *service) SetTenancyForUser(userId, tenantId int) error {
 	u, err := s.repo.FindUserByID(userId)
 	if err != nil {
 		return apperror.ErrUserNotFound
 	}
 
 	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
-		"license_id": licenseId,
+		"tenant_id": tenantId,
 	}); err != nil {
 		return apperror.Wrap(err, "SET_TENANCY_FAILED", 500, "failed to set tenancy")
 	}
@@ -607,8 +607,8 @@ func (s *service) NeedChangePassword(userId int) (*NeedChangePasswordResponse, e
 // ---------------------------------------------------------------------------
 
 // ListRoles returns all roles for the given license.
-func (s *service) ListRoles(licenseId int) ([]Role, error) {
-	roles, err := s.repo.FindRoles(licenseId)
+func (s *service) ListRoles(tenantId int) ([]Role, error) {
+	roles, err := s.repo.FindRoles(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_ROLES_FAILED", 500, "failed to list roles")
 	}
@@ -667,7 +667,7 @@ func (s *service) UpdateRolePermissions(roleId string, permissionIds []string) e
 // GetRoleNamesForUser returns the role names for a given user.
 // Mirrors Java RoleManagementServiceImpl: query user_has_role by userId,
 // then load roles by id IN (roleIds) — NOT by tenancy/license filter.
-func (s *service) GetRoleNamesForUser(userId int, licenseId int) ([]string, error) {
+func (s *service) GetRoleNamesForUser(userId int, tenantId int) ([]string, error) {
 	userRoles, err := s.repo.FindUserRoles(userId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_ROLE_NAMES_FAILED", 500, "failed to get user roles")

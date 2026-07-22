@@ -504,7 +504,7 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 			// Mirrors Java PositiveMessageProcessor.transferComplete.TYPE_CONFIG:
 			//   - Download success: fire web callback CONFIG_DOWNLOADED
 			//   - Upload success:  save file name to element.config_file,
-			//                     delete Redis key ConfigFileName_{licenseId}_{neId},
+			//                     delete Redis key ConfigFileName_{tenantId}_{neId},
 			//                     fire web callback RECEIVE_CONFIG
 			//   - OpenStation config success: mark element.open_station_config_status="success"
 			if originEvent.EventType != nil {
@@ -539,11 +539,11 @@ func (ep *EventProcessor) processTransferComplete(ctx context.Context, soapXml s
 				if isConfigOp {
 					if success && cpeOK {
 						if isUpload {
-							licenseId := 0
-							if cpe.LicenseId != nil {
-								licenseId = *cpe.LicenseId
+							tenantId := 0
+							if cpe.TenantId != nil {
+								tenantId = *cpe.TenantId
 							}
-							redisKey := fmt.Sprintf("ConfigFileName_%d_%d", licenseId, cpe.NeNeid)
+							redisKey := fmt.Sprintf("ConfigFileName_%d_%d", tenantId, cpe.NeNeid)
 							fileName, _ := redis.Get(ctx, redisKey)
 							if fileName != "" {
 								ep.db.Model(&device.CpeElement{}).
@@ -1368,8 +1368,8 @@ func (ep *EventProcessor) processUpdateCBSDStatusResponse(ctx context.Context, s
 				PreferredBandwidth *int    `gorm:"column:preferred_bandwidth"`
 			}
 			if err := ep.db.Table("cbsd_info").
-				Where("serial_number = ? AND cbsd_serial_number = ? AND license_id = ?",
-					sn, fi.CBSDSerialNumber, cpe.LicenseId).
+				Where("serial_number = ? AND cbsd_serial_number = ? AND tenant_id = ?",
+					sn, fi.CBSDSerialNumber, cpe.TenantId).
 				Take(&info).Error; err != nil {
 				logger.Warnf("UpdateCBSDStatus: no CBSD info for SN=%s, cbsdSN=%s: %v",
 					sn, fi.CBSDSerialNumber, err)

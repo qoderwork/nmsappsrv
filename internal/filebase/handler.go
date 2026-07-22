@@ -76,7 +76,7 @@ func elementIDParam(c *gin.Context) int64 {
 
 // ---- downloads ----
 
-// DownloadBpf handles GET /acs-file-server/download/{type}/{fileName}?licenseId=
+// DownloadBpf handles GET /acs-file-server/download/{type}/{fileName}?tenantId=
 // (Java FileDownloadController.download, type "bpf" only).
 func (h *Handler) DownloadBpf(c *gin.Context) {
 	typ := c.Param("type")
@@ -89,7 +89,7 @@ func (h *Handler) DownloadBpf(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid file name")
 		return
 	}
-	path := h.svc.BpfPath(c.Query("licenseId"), fileName)
+	path := h.svc.BpfPath(c.Query("tenantId"), fileName)
 	serveFileAs(c, path, fileName)
 }
 
@@ -376,15 +376,15 @@ func (h *Handler) UploadCallTrace(c *gin.Context) {
 // ---- config upload ----
 
 func (h *Handler) UploadConfigNamed(c *gin.Context) {
-	tenancyID, _ := strconv.ParseInt(c.Param("tenancyId"), 10, 64)
+	tenantID, _ := strconv.ParseInt(c.Param("tenantId"), 10, 64)
 	elementID, _ := strconv.ParseInt(c.Param("elementId"), 10, 64)
-	base := filepath.Join(h.svc.cfg.ConfigDir, itoa(tenancyID), itoa(elementID))
+	base := filepath.Join(h.svc.cfg.ConfigDir, itoa(tenantID), itoa(elementID))
 	h.uploadTo(c, base, c.Param("fileName"))
 }
 func (h *Handler) UploadConfig(c *gin.Context) {
-	tenancyID, _ := strconv.ParseInt(c.Param("tenancyId"), 10, 64)
+	tenantID, _ := strconv.ParseInt(c.Param("tenantId"), 10, 64)
 	elementID, _ := strconv.ParseInt(c.Param("elementId"), 10, 64)
-	base := filepath.Join(h.svc.cfg.ConfigDir, itoa(tenancyID), itoa(elementID))
+	base := filepath.Join(h.svc.cfg.ConfigDir, itoa(tenantID), itoa(elementID))
 	h.uploadTo(c, base, firstMultipartName(c))
 }
 

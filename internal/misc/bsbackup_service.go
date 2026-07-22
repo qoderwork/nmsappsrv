@@ -51,15 +51,15 @@ func configUploadDir() string {
 
 // ListBaseStationBackupInfo returns a paginated list of devices together with
 // their latest config-file / backup information.
-func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoRequest, tenancyId int) ([]BaseStationBackupInfoVo, int64, error) {
+func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoRequest, tenantId int) ([]BaseStationBackupInfoVo, int64, error) {
 	db := s.repo.DB()
 	offset := (req.Page - 1) * req.PageSize
 
 	// Base query: non-deleted devices, optionally filtered by license / tenancy.
 	baseQuery := db.Model(&device.CpeElement{}).
 		Where("deleted = ?", false)
-	if tenancyId > 0 {
-		baseQuery = baseQuery.Where("license_id = ?", tenancyId)
+	if tenantId > 0 {
+		baseQuery = baseQuery.Where("tenant_id = ?", tenantId)
 	}
 
 	if req.SearchText != "" {
@@ -92,8 +92,8 @@ func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoReques
 		// Look up the latest backup record from config_upload_log.
 		var cul ConfigUploadLog
 		culQuery := db.Where("element_id = ?", elem.NeNeid)
-		if tenancyId > 0 {
-			culQuery = culQuery.Where("license_id = ?", tenancyId)
+		if tenantId > 0 {
+			culQuery = culQuery.Where("tenant_id = ?", tenantId)
 		}
 		err := culQuery.Order("upload_time DESC").
 			First(&cul).Error
@@ -112,7 +112,7 @@ func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoReques
 
 // ImportConfigFile persists an uploaded configuration file to disk and creates
 // a config_upload_log record.
-func (s *service) ImportConfigFile(elementId int64, fileName string, fileData []byte, tenancyId int) (*ImportConfigFileResult, error) {
+func (s *service) ImportConfigFile(elementId int64, fileName string, fileData []byte, tenantId int) (*ImportConfigFileResult, error) {
 	db := s.repo.DB()
 
 	// Verify the target device exists.
@@ -143,7 +143,7 @@ func (s *service) ImportConfigFile(elementId int64, fileName string, fileData []
 		ElementId:       int64Ptr(elementId),
 		UploadTime:      &now,
 		Loc:             strPtr(filePath),
-		LicenseId:       intPtr(tenancyId),
+		TenantId:       intPtr(tenantId),
 		OpenStationFile: &openStationFile,
 		DeviceUpload:    true,
 	}
@@ -171,14 +171,14 @@ func (s *service) ImportConfigFile(elementId int64, fileName string, fileData []
 // ExportConfigFile collects the latest config files for the given devices and
 // packs them into a zip archive.  It returns the path to the temporary zip file
 // (the caller is responsible for cleanup).
-func (s *service) ExportConfigFile(elementIds []int64, tenancyId int) (string, error) {
+func (s *service) ExportConfigFile(elementIds []int64, tenantId int) (string, error) {
 	db := s.repo.DB()
 
 	// Fetch the latest config_upload_log per device.
 	var logs []ConfigUploadLog
 	logQuery := db.Where("element_id IN ?", elementIds)
-	if tenancyId > 0 {
-		logQuery = logQuery.Where("license_id = ?", tenancyId)
+	if tenantId > 0 {
+		logQuery = logQuery.Where("tenant_id = ?", tenantId)
 	}
 	if err := logQuery.Order("upload_time DESC").
 		Find(&logs).Error; err != nil {
@@ -240,7 +240,7 @@ func (s *service) ExportConfigFile(elementIds []int64, tenancyId int) (string, e
 
 // CreateBSBackupTask creates a new backup task and its per-device log entries.
 // When ExecuteMode is 1 (immediate) the TR-069 commands are dispatched right away.
-func (s *service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username string, tenancyId int) error {
+func (s *service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username string, tenantId int) error {
 	db := s.repo.DB()
 
 	deviceGroupJSON, err := json.Marshal(req.DeviceGroupIds)
@@ -271,7 +271,7 @@ func (s *service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username strin
 		Status:             intPtr(1), // waiting
 		ExecuteMode:        intPtr(req.ExecuteMode),
 		TriggerTime:        triggerTime,
-		TenancyId:          intPtr(tenancyId),
+		TenantId:          intPtr(tenantId),
 		TaskType:           strPtr(taskType),
 		ExecuteOnAllDevice: boolPtr(req.ExecuteOnAllDevice),
 		ElementIds:         strPtr(strings.Join(elementIdStrs, ",")),
@@ -301,7 +301,7 @@ func (s *service) CreateBSBackupTask(req *AddBSBackupTaskRequest, username strin
 
 // CreateBSRestoreTask creates a new restore task and its per-device log entries.
 // When ExecuteMode is 1 (immediate) the TR-069 commands are dispatched right away.
-func (s *service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username string, tenancyId int) error {
+func (s *service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username string, tenantId int) error {
 	db := s.repo.DB()
 
 	deviceGroupJSON, err := json.Marshal(req.DeviceGroupIds)
@@ -332,7 +332,7 @@ func (s *service) CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username str
 		Status:             intPtr(1), // waiting
 		ExecuteMode:        intPtr(req.ExecuteMode),
 		TriggerTime:        triggerTime,
-		TenancyId:          intPtr(tenancyId),
+		TenantId:          intPtr(tenantId),
 		TaskType:           strPtr(taskType),
 		ExecuteOnAllDevice: boolPtr(req.ExecuteOnAllDevice),
 		ElementIds:         strPtr(strings.Join(elementIdStrs, ",")),
@@ -419,14 +419,14 @@ func (s *service) StartBSBackupRestoreTask(taskId int, username string) error {
 // ListBSBackupTasks returns a paginated list of backup/restore tasks for the
 // given tenancy.  The returned VOs follow the existing BackupRestoreTaskVo
 // shape used elsewhere in the misc module.
-func (s *service) ListBSBackupTasks(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
+func (s *service) ListBSBackupTasks(tenantId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
 	db := s.repo.DB()
 	offset := (page - 1) * pageSize
 
 	var total int64
 	baseQuery := db.Model(&BackupOrRestoreTask{})
-	if tenancyId > 0 {
-		baseQuery = baseQuery.Where("tenancy_id = ?", tenancyId)
+	if tenantId > 0 {
+		baseQuery = baseQuery.Where("tenant_id = ?", tenantId)
 	}
 	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count tasks: %w", err)

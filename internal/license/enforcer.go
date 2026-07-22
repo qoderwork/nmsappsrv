@@ -3,7 +3,6 @@ package license
 import (
 	"crypto/ed25519"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,21 +22,15 @@ var publicKeyFS embed.FS
 // activeLicenseFile is the on-disk name of the verified envelope inside InstallDir.
 const activeLicenseFile = "active.lic"
 
-// LicenseStore is the minimal persistence the Enforcer needs. It is satisfied
-// by *repository. Kept narrow so the Enforcer can be unit-tested with a fake.
-type LicenseStore interface {
-	UpsertActiveLicense(l *License) error
-}
-
 // Enforcer verifies and caches the active signed license (go-infra/licensing).
 //
 // On a successful verify it (1) persists the envelope to disk so it survives
-// restarts, (2) advances the persisted anti-rollback clock, and (3) writes the
-// display fields to the license table. LoadPersisted re-verifies the on-disk
-// envelope at startup and is the source of truth after a restart.
+// restarts, and (2) advances the persisted anti-rollback clock. LoadPersisted
+// re-verifies the on-disk envelope at startup and is the source of truth after
+// a restart. Activation state lives ONLY in memory + file (not DB) to prevent
+// tampering via direct SQL updates.
 type Enforcer struct {
 	cfg      config.LicenseConfig
-	store    LicenseStore
 	verifier *licensing.Verifier
 	minClock int64
 
@@ -50,7 +43,7 @@ type Enforcer struct {
 // NewEnforcer builds an Enforcer. It loads the public key (file override or
 // embedded default) and constructs the verifier with host machine binding and
 // anti-clock-rollback (WithMinClock) using the persisted max-clock file.
-func NewEnforcer(cfg config.LicenseConfig, store LicenseStore) (*Enforcer, error) {
+func NewEnforcer(cfg config.LicenseConfig) (*Enforcer, error) {
 	pub, err := loadPublicKey(cfg.PublicKeyPath)
 	if err != nil {
 		return nil, err
@@ -61,7 +54,6 @@ func NewEnforcer(cfg config.LicenseConfig, store LicenseStore) (*Enforcer, error
 		WithMinClock(minClock)
 	return &Enforcer{
 		cfg:      cfg,
-		store:    store,
 		verifier: v,
 		minClock: minClock,
 		status:   "missing",
@@ -148,42 +140,13 @@ func (e *Enforcer) VerifyAndStore(raw []byte, originalName string) (*licensing.L
 	return lic, nil
 }
 
-// applyVerifiedLocked updates the in-memory cache, status, and DB row. Caller
-// must hold e.mu.
+// applyVerifiedLocked updates the in-memory cache and status. Caller must hold e.mu.
+// Activation state is intentionally NOT persisted to DB — the .lic file on disk
+// is the single source of truth (signature-protected against tampering).
 func (e *Enforcer) applyVerifiedLocked(lic *licensing.License, detail string) {
 	e.active = lic
 	e.status = "active"
 	e.detail = detail
-
-	row := &License{
-		LicenseName: ptrStr(lic.Subject),
-		LicenseId:   ptrStr(lic.ID),
-		LicenseType: ptrStr(lic.Product),
-		Subject:     ptrStr(lic.Subject),
-		Issuer:      ptrStr(lic.Issuer),
-		ExpiryDate:  ptrTime(lic.Expiry),
-		NotBefore:   ptrTime(lic.NotBefore),
-		Status:      ptrStr("active"),
-		VerifiedAt:  ptrTime(time.Now()),
-	}
-	if lic.Machine != nil {
-		row.MachineFingerprint = ptrStr(lic.Machine.Fingerprint)
-	}
-	if len(lic.Features) > 0 {
-		if b, err := json.Marshal(lic.Features); err == nil {
-			row.Features = ptrStr(string(b))
-		}
-	}
-	if len(lic.Capacity) > 0 {
-		if b, err := json.Marshal(lic.Capacity); err == nil {
-			row.Capacity = ptrStr(string(b))
-		}
-	}
-	if e.store != nil {
-		if err := e.store.UpsertActiveLicense(row); err != nil {
-			logger.Warnf("license: persist to db failed: %v", err)
-		}
-	}
 }
 
 func (e *Enforcer) setStatus(status, detail string) {

@@ -22,7 +22,7 @@ type Repository interface {
 	FindAll(query *gorm.DB) ([]MonitorTask, error)
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[MonitorTask], error)
-	FindMonitorTasks(licenseId int) ([]MonitorTask, error)
+	FindMonitorTasks(tenantId int) ([]MonitorTask, error)
 	FindEnabledMonitorTasks() ([]MonitorTask, error)
 	FindMonitorData(elementId int64, parameterId string, startTime, endTime time.Time) ([]MonitorData, error)
 	FindMonitorDataSeries(parameterId string, elementIds []int64, start, end time.Time) ([]MonitorData, error)
@@ -52,11 +52,11 @@ func NewRepository(db *gorm.DB) Repository {
 
 // ---------- MonitorTask ----------
 
-func (r *repository) FindMonitorTasks(licenseId int) ([]MonitorTask, error) {
+func (r *repository) FindMonitorTasks(tenantId int) ([]MonitorTask, error) {
 	var items []MonitorTask
 	query := r.db.Model(&MonitorTask{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	err := query.Find(&items).Error
 	return items, err

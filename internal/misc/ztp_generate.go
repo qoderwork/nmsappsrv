@@ -161,7 +161,7 @@ func (s *service) GenerateAOSFile(elementId int64) (string, error) {
 
 	ts := time.Now().UTC().Format("20060102150405")
 	// Filename convention mirrors Java: AOS_<mode>_<tenancy>_<serial>_<ts>.xml
-	// (tenancy defaults to 0; cpe_element has no tenancy_id column in Go).
+	// (tenancy defaults to 0; cpe_element has no tenant_id column in Go).
 	fileName := fmt.Sprintf("AOS_%s_0_%s_%s.xml", mode, sn, ts)
 	filePath := filepath.Join(dir, fileName)
 	if err := os.WriteFile(filePath, content, 0o644); err != nil {

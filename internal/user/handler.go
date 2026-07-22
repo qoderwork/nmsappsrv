@@ -91,22 +91,22 @@ func (h *Handler) Login(c *gin.Context) {
 		h.captchaMgr.OnSuccess(req.Username, ip)
 	}
 
-	licenseId := 0 // 0 = platform user (Admin/Operator), no tenant filter (aligns with Java SecurityUtil.getTenancyId() returning null)
-	if u.LicenseId != nil && *u.LicenseId > 0 {
-		licenseId = *u.LicenseId
+	tenantId := 0 // 0 = platform user (Admin/Operator), no tenant filter (aligns with Java SecurityUtil.getTenantId() returning null)
+	if u.TenantId != nil && *u.TenantId > 0 {
+		tenantId = *u.TenantId
 	}
 
 	// Resolve role names for JWT claims (aligned with Java JWT structure)
-	roleNames, _ := h.svc.GetRoleNamesForUser(u.Id, licenseId)
+	roleNames, _ := h.svc.GetRoleNamesForUser(u.Id, tenantId)
 
-	token, err := middleware.GenerateToken(u.Id, *u.Username, licenseId, roleNames, "")
+	token, err := middleware.GenerateToken(u.Id, *u.Username, tenantId, roleNames, "")
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to generate token")
 		return
 	}
 
 	// Record successful login.
-	_ = h.svc.RecordLogin(req.Username, c.ClientIP(), licenseId, 1)
+	_ = h.svc.RecordLogin(req.Username, c.ClientIP(), tenantId, 1)
 
 	utils.Success(c, gin.H{"token": token})
 }
@@ -130,7 +130,7 @@ func (h *Handler) CaptchaImage(c *gin.Context) {
 // Logout handles POST /logout
 func (h *Handler) Logout(c *gin.Context) {
 	username := middleware.GetUsername(c)
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	// Extract JWT from Authorization header
 	authHeader := c.GetHeader("Authorization")
@@ -144,7 +144,7 @@ func (h *Handler) Logout(c *gin.Context) {
 	}
 
 	// Record logout
-	_ = h.svc.RecordLogout(username, c.ClientIP(), licenseId)
+	_ = h.svc.RecordLogout(username, c.ClientIP(), tenantId)
 
 	utils.Success(c, nil)
 }
@@ -187,23 +187,23 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	// Convert to DTOs to exclude sensitive fields (password, salt)
 	dtos := ToUserDTOs(data)
 
-	// Fill tenancy names (mirrors Java: tenancyIdToNameMap)
-	// Build lookup from license_id -> license_name
-	licenseIds := make(map[int]bool)
+	// Fill tenancy names (mirrors Java: tenantIdToNameMap)
+	// Build lookup from tenant_id -> license_name
+	tenantIds := make(map[int]bool)
 	for _, u := range data {
-		if u.LicenseId != nil {
-			licenseIds[*u.LicenseId] = true
+		if u.TenantId != nil {
+			tenantIds[*u.TenantId] = true
 		}
 	}
 	var tenancyMap map[int]string
-	if len(licenseIds) > 0 {
-		tenancyMap = h.buildTenancyMap(licenseIds)
+	if len(tenantIds) > 0 {
+		tenancyMap = h.buildTenancyMap(tenantIds)
 	}
 
 	for i := range dtos {
 		// Fill tenancy name
-		if data[i].LicenseId != nil && tenancyMap != nil {
-			dtos[i].Tenancy = tenancyMap[*data[i].LicenseId]
+		if data[i].TenantId != nil && tenancyMap != nil {
+			dtos[i].Tenancy = tenancyMap[*data[i].TenantId]
 		}
 		// Default createUsername to "admin" if empty (mirrors Java)
 		if dtos[i].CreateUsername == nil || *dtos[i].CreateUsername == "" {
@@ -225,10 +225,10 @@ func (h *Handler) ListUsers(c *gin.Context) {
 }
 
 // buildTenancyMap queries the license table and returns a map of id -> license_name.
-func (h *Handler) buildTenancyMap(licenseIds map[int]bool) map[int]string {
+func (h *Handler) buildTenancyMap(tenantIds map[int]bool) map[int]string {
 	result := make(map[int]string)
 	var ids []int
-	for id := range licenseIds {
+	for id := range tenantIds {
 		ids = append(ids, id)
 	}
 	type licenseRow struct {
@@ -236,7 +236,7 @@ func (h *Handler) buildTenancyMap(licenseIds map[int]bool) map[int]string {
 		LicenseName *string `gorm:"column:license_name"`
 	}
 	var rows []licenseRow
-	if err := h.db.Table("license").Select("id, license_name").Where("id IN ?", ids).Find(&rows).Error; err != nil {
+	if err := h.db.Table("tenant").Select("id, license_name").Where("id IN ?", ids).Find(&rows).Error; err != nil {
 		logger.Warnf("buildTenancyMap: failed to query licenses: %v", err)
 		return result
 	}
@@ -257,7 +257,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Set creator and license (tenancy) — mirrors Java SecurityUtil.getTenancyId()
+	// Set creator and license (tenancy) — mirrors Java SecurityUtil.getTenantId()
 	// Admin/Operator roles are not restricted by tenancy isolation (returns null in Java)
 	creatorId := middleware.GetUserId(c)
 	u.CreateUserId = &creatorId
@@ -270,9 +270,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		}
 	}
 	if !isAdminOrOperator {
-		licenseId := middleware.GetLicenseId(c)
-		if licenseId > 0 {
-			u.LicenseId = &licenseId
+		tenantId := middleware.GetTenantId(c)
+		if tenantId > 0 {
+			u.TenantId = &tenantId
 		}
 	}
 
@@ -460,7 +460,7 @@ func (h *Handler) SetTenancyForUser(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.SetTenancyForUser(req.UserId, req.LicenseId); err != nil {
+	if err := h.svc.SetTenancyForUser(req.UserId, req.TenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -503,9 +503,9 @@ func (h *Handler) NeedChangePassword(c *gin.Context) {
 
 // ListRoles handles GET /roles
 func (h *Handler) ListRoles(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListRoles(licenseId)
+	data, err := h.svc.ListRoles(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

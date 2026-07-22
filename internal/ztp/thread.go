@@ -554,7 +554,7 @@ func (t *Thread) raiseZTPFailedAlarm(dev device.CpeElement, faultInfo string) {
 		Severity:              strPtr("Critical"),
 		SpecificProblem:       strPtr("ZTP Failed"),
 		ElementId:             &dev.NeNeid,
-		LicenseId:             dev.LicenseId,
+		TenantId:             dev.TenantId,
 		UpdateTime:            &now,
 		AdditionalInformation: strPtr(faultInfo),
 	}

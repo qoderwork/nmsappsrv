@@ -36,8 +36,8 @@ func buildDeploySPV(params []deployParamValue) ([]setParamEntry, []soap.Paramete
 }
 
 // ListParameterTemplates returns all templates for the given tenancy.
-func (s *service) ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error) {
-	return s.repo.FindParameterTemplates(tenancyId)
+func (s *service) ListParameterTemplates(tenantId int) ([]ParameterTemplate, error) {
+	return s.repo.FindParameterTemplates(tenantId)
 }
 
 // CreateParameterTemplate persists a new parameter template together with its
@@ -46,7 +46,7 @@ func (s *service) CreateParameterTemplate(req *ParameterTemplateRequest) error {
 	t := &ParameterTemplate{
 		Name:        req.Name,
 		Description: req.Description,
-		TenancyId:   req.TenancyId,
+		TenantId:   req.TenantId,
 		IsDefault:   req.IsDefault,
 	}
 	if err := s.repo.CreateParameterTemplate(t); err != nil {
@@ -62,7 +62,7 @@ func (s *service) UpdateParameterTemplate(req *ParameterTemplateRequest) error {
 		Id:          req.ID,
 		Name:        req.Name,
 		Description: req.Description,
-		TenancyId:   req.TenancyId,
+		TenantId:   req.TenantId,
 		IsDefault:   req.IsDefault,
 	}
 	if err := s.repo.UpdateParameterTemplate(t); err != nil {
@@ -325,8 +325,8 @@ func (s *service) GetParameterTemplate(id int64) (*ParameterTemplateDetailVo, er
 	if tpl.Description != nil {
 		vo.Description = *tpl.Description
 	}
-	if tpl.TenancyId != nil {
-		vo.TenancyId = *tpl.TenancyId
+	if tpl.TenantId != nil {
+		vo.TenantId = *tpl.TenantId
 	}
 	if tpl.IsDefault != nil {
 		vo.IsDefault = *tpl.IsDefault

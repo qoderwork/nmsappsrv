@@ -196,7 +196,7 @@ func (f *fakeAlarmSvc) CreateAlarm(a *alarm.Alarm) error {
 }
 
 func TestRaiseZTPFailedAlarm(t *testing.T) {
-	dev := device.CpeElement{NeNeid: 42, LicenseId: intPtr(7)}
+	dev := device.CpeElement{NeNeid: 42, TenantId: intPtr(7)}
 
 	t.Run("no existing -> creates ztp_failed alarm", func(t *testing.T) {
 		fake := &fakeAlarmSvc{}
@@ -212,7 +212,7 @@ func TestRaiseZTPFailedAlarm(t *testing.T) {
 		assert.Equal(t, "ZTP Alarm", strOrEmpty(a.EventType))
 		assert.Equal(t, "The ACS URL parameter is missing in Inform", strOrEmpty(a.AdditionalInformation))
 		assert.Equal(t, int64(42), *a.ElementId)
-		assert.Equal(t, intPtr(7), a.LicenseId)
+		assert.Equal(t, intPtr(7), a.TenantId)
 	})
 
 	t.Run("existing same info -> dedup, no create", func(t *testing.T) {

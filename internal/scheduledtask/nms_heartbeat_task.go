@@ -45,7 +45,7 @@ func (t *NMSHeartbeatTask) SendHeartbeat() {
 		Id      int    `gorm:"column:id"`
 		OmcName *string `gorm:"column:omc_name"`
 	}
-	if err := t.db.Table("license").Select("id, omc_name").Find(&licenses).Error; err != nil {
+	if err := t.db.Table("tenant").Select("id, omc_name").Find(&licenses).Error; err != nil {
 		logger.Errorf("NMSHeartbeatTask: failed to query licenses: %v", err)
 		return
 	}
@@ -56,7 +56,7 @@ func (t *NMSHeartbeatTask) SendHeartbeat() {
 }
 
 // sendHeartbeatForLicense 为指定License发送心跳
-func (t *NMSHeartbeatTask) sendHeartbeatForLicense(licenseId int, omcName *string, enterpriseOID uint32, nmsIP, nmsHostname string) {
+func (t *NMSHeartbeatTask) sendHeartbeatForLicense(tenantId int, omcName *string, enterpriseOID uint32, nmsIP, nmsHostname string) {
 	// 查询该 license 下 task_type=alarm_trap 且 task_state=true 的 north_report
 	// 记录。Java 的 NorthReport 实体没有 port/community 字段 — 完整连接信息
 	// 编码在 server_url 字段里（snmp://... 格式），通过 ParseConnectionURL 解析。
@@ -68,9 +68,9 @@ func (t *NMSHeartbeatTask) sendHeartbeatForLicense(licenseId int, omcName *strin
 	}
 	if err := t.db.Table("north_report").
 		Select("id, server_url").
-		Where("license_id = ? AND task_type = ? AND task_state = ?", licenseId, "alarm_trap", true).
+		Where("tenant_id = ? AND task_type = ? AND task_state = ?", tenantId, "alarm_trap", true).
 		Find(&reports).Error; err != nil {
-		logger.Errorf("NMSHeartbeatTask: failed to query north_report for license %d: %v", licenseId, err)
+		logger.Errorf("NMSHeartbeatTask: failed to query north_report for license %d: %v", tenantId, err)
 		return
 	}
 
@@ -120,18 +120,18 @@ func (t *NMSHeartbeatTask) sendHeartbeatForLicense(licenseId int, omcName *strin
 		connInfo, err := snmp.ParseConnectionURL(*report.ServerUrl)
 		if err != nil {
 			logger.Errorf("NMSHeartbeatTask: failed to parse server_url %q for license %d: %v",
-				*report.ServerUrl, licenseId, err)
+				*report.ServerUrl, tenantId, err)
 			continue
 		}
 
 		if err := snmp.SendTrap(*connInfo, params); err != nil {
 			logger.Errorf("NMSHeartbeatTask: failed to send trap to %s:%d for license %d: %v",
-				connInfo.IP, connInfo.Port, licenseId, err)
+				connInfo.IP, connInfo.Port, tenantId, err)
 			continue
 		}
 
 		logger.Infof("NMSHeartbeatTask: sent heartbeat trap to %s:%d for license %d (seq=%d)",
-			connInfo.IP, connInfo.Port, licenseId, seqNum)
+			connInfo.IP, connInfo.Port, tenantId, seqNum)
 	}
 }
 

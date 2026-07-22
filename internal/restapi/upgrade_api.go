@@ -17,7 +17,7 @@ import (
 // ============================
 
 func (s *service) UploadUpgradeFile(c *gin.Context, fileName string, filePath string, fileSize int64) (*RestUpgradeFileVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 	now := time.Now()
 
@@ -25,7 +25,7 @@ func (s *service) UploadUpgradeFile(c *gin.Context, fileName string, filePath st
 		"file_name":   fileName,
 		"file_path":   filePath,
 		"file_size":   fileSize,
-		"tenancy_id":  licenseId,
+		"tenant_id":  tenantId,
 		"user":        username,
 		"upload_time": now,
 		"create_time": now,
@@ -48,9 +48,9 @@ func (s *service) UploadUpgradeFile(c *gin.Context, fileName string, filePath st
 }
 
 func (s *service) ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpgradeFileVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	files, total, err := s.repo.ListUpgradeFiles(licenseId, offset, limit)
+	files, total, err := s.repo.ListUpgradeFiles(tenantId, offset, limit)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_UPGRADE_FILES_FAILED", 500, "failed to list upgrade files")
 	}
@@ -83,9 +83,9 @@ func (s *service) ListUpgradeFiles(c *gin.Context, offset, limit int) ([]RestUpg
 }
 
 func (s *service) DeleteUpgradeFile(c *gin.Context, id int) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	if err := s.repo.DeleteUpgradeFile(id, licenseId); err != nil {
+	if err := s.repo.DeleteUpgradeFile(id, tenantId); err != nil {
 		logger.Errorf("Failed to delete upgrade file %d: %v", id, err)
 		return apperror.Wrap(err, "DELETE_UPGRADE_FILE_FAILED", 500, "failed to delete upgrade file")
 	}
@@ -98,7 +98,7 @@ func (s *service) DeleteUpgradeFile(c *gin.Context, id int) error {
 // ============================
 
 func (s *service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest) (*RestUpgradeTaskVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 	now := time.Now()
 
@@ -109,7 +109,7 @@ func (s *service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest)
 		"upgrade_file_id": req.UpgradeFileId,
 		"element_ids":     string(elementIdJSON),
 		"status":          1, // pending
-		"tenancy_id":      licenseId,
+		"tenant_id":      tenantId,
 		"user":            username,
 		"create_time":     now,
 		"update_time":     now,
@@ -152,9 +152,9 @@ func (s *service) GetUpgradeTask(c *gin.Context, id int) (*RestUpgradeTaskVo, er
 }
 
 func (s *service) ListUpgradeTasks(c *gin.Context, offset, limit int) ([]RestUpgradeTaskVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	tasks, total, err := s.repo.ListUpgradeTasks(licenseId, offset, limit)
+	tasks, total, err := s.repo.ListUpgradeTasks(tenantId, offset, limit)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_UPGRADE_TASKS_FAILED", 500, "failed to list upgrade tasks")
 	}

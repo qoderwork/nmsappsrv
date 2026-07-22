@@ -27,9 +27,9 @@ func (h *Handler) ListSites(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	search := c.Query("search")
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListSites(licenseId, search, page, pageSize)
+	data, total, err := h.svc.ListSites(tenantId, search, page, pageSize)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -45,8 +45,8 @@ func (h *Handler) CreateSite(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	if err := h.svc.CreateSite(&site, licenseId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.CreateSite(&site, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -67,8 +67,8 @@ func (h *Handler) UpdateSite(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
-	if err := h.svc.UpdateSite(id, &site, licenseId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.UpdateSite(id, &site, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -92,8 +92,8 @@ func (h *Handler) DeleteSite(c *gin.Context) {
 
 // ListSiteBasicInfo handles GET /sites/basic
 func (h *Handler) ListSiteBasicInfo(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	data, err := h.svc.ListSiteBasicInfo(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	data, err := h.svc.ListSiteBasicInfo(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -104,8 +104,8 @@ func (h *Handler) ListSiteBasicInfo(c *gin.Context) {
 // ---------- SysArea ----------
 
 func (h *Handler) ListAreas(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	items, err := h.svc.ListAreas(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	items, err := h.svc.ListAreas(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

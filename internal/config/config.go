@@ -70,7 +70,7 @@ type CaptchaConfig struct {
 type FileServerConfig struct {
 	Root             string `mapstructure:"root"`               // base dir for all acs-file-server files
 	UpgradeDir       string `mapstructure:"upgrade_dir"`        // filePath (upgrade packages)
-	ConfigDir        string `mapstructure:"config_dir"`         // configFilePath (per tenancyId/elementId)
+	ConfigDir        string `mapstructure:"config_dir"`         // configFilePath (per tenantId/elementId)
 	BatchProcessDir  string `mapstructure:"batch_process_dir"`  // batchProcessFilePath (bpf + ztp templates)
 	LogDir           string `mapstructure:"log_dir"`            // logFilePath (device logs)
 	MrDir            string `mapstructure:"mr_dir"`             // mrFilePath

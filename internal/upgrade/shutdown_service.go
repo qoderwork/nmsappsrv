@@ -28,7 +28,7 @@ func NewShutdownService(db *gorm.DB) *ShutdownService {
 }
 
 // CreateShutdownTask creates a new shutdown task and dispatches commands if immediate.
-func (s *ShutdownService) CreateShutdownTask(req *AddShutdownTaskRequest, username string, tenancyId int) (int, error) {
+func (s *ShutdownService) CreateShutdownTask(req *AddShutdownTaskRequest, username string, tenantId int) (int, error) {
 	elementIdsJSON, err := json.Marshal(req.ElementIds)
 	if err != nil {
 		return 0, fmt.Errorf("failed to marshal element IDs: %w", err)
@@ -41,7 +41,7 @@ func (s *ShutdownService) CreateShutdownTask(req *AddShutdownTaskRequest, userna
 		OperationTime: &now,
 		Status:        intPtr(1), // Waiting
 		ExecuteMode:   &req.ExecuteMode,
-		TenancyId:     &tenancyId,
+		TenantId:     &tenantId,
 		ElementIds:    strPtr(string(elementIdsJSON)),
 	}
 
@@ -96,7 +96,7 @@ func (s *ShutdownService) CreateShutdownTask(req *AddShutdownTaskRequest, userna
 }
 
 // ListShutdownTasks returns a paginated list of shutdown tasks for a tenancy.
-func (s *ShutdownService) ListShutdownTasks(page, pageSize, tenancyId int) ([]ShutdownTaskVo, int64, error) {
+func (s *ShutdownService) ListShutdownTasks(page, pageSize, tenantId int) ([]ShutdownTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -107,7 +107,7 @@ func (s *ShutdownService) ListShutdownTasks(page, pageSize, tenancyId int) ([]Sh
 	var tasks []ShutdownMyTask
 	var total int64
 
-	query := s.repo.db.Where("tenancy_id = ?", tenancyId)
+	query := s.repo.db.Where("tenant_id = ?", tenantId)
 	query.Model(&ShutdownMyTask{}).Count(&total)
 
 	offset := (page - 1) * pageSize

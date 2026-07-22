@@ -206,10 +206,10 @@ func (h *Handler) SaveCaTask(c *gin.Context) {
 	}
 
 	username := middleware.GetUsername(c)
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	ctx := context.Background()
 
-	if err := h.svc.SaveCaTask(ctx, req.TaskName, req.CaFileId, req.Scope, req.DeviceIds, req.GroupIds, username, licenseId); err != nil {
+	if err := h.svc.SaveCaTask(ctx, req.TaskName, req.CaFileId, req.Scope, req.DeviceIds, req.GroupIds, username, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -233,14 +233,14 @@ func (h *Handler) ListCaTasks(c *gin.Context) {
 	}
 
 	// Get tenancy ID from JWT context
-	tenancyId := middleware.GetLicenseId(c)
-	var tenancyIdPtr *int
-	if tenancyId > 0 {
-		tenancyIdPtr = &tenancyId
+	tenantId := middleware.GetTenantId(c)
+	var tenantIdPtr *int
+	if tenantId > 0 {
+		tenantIdPtr = &tenantId
 	}
 
 	ctx := context.Background()
-	data, total, err := h.svc.ListCaTasks(ctx, req.Page, req.PageSize, tenancyIdPtr)
+	data, total, err := h.svc.ListCaTasks(ctx, req.Page, req.PageSize, tenantIdPtr)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

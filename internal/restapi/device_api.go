@@ -14,9 +14,9 @@ import (
 // ============================
 
 func (s *service) ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	devices, total, err := s.repo.ListDevices(licenseId, offset, limit)
+	devices, total, err := s.repo.ListDevices(tenantId, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -31,7 +31,7 @@ func (s *service) ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo
 			Product:         derefStr(d.Product),
 			SoftwareVersion: derefStr(d.SoftwareVersion),
 			Manufacturer:    derefStr(d.Manufacturer),
-			LicenseId:       derefIntPtr(d.LicenseId),
+			TenantId:       derefIntPtr(d.TenantId),
 		}
 		// Determine status from device state
 		if d.Deleted {
@@ -46,9 +46,9 @@ func (s *service) ListDevices(c *gin.Context, offset, limit int) ([]RestDeviceVo
 }
 
 func (s *service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	d, err := s.repo.GetDeviceById(id, licenseId)
+	d, err := s.repo.GetDeviceById(id, tenantId)
 	if err != nil {
 		return nil, apperror.ErrDeviceNotFound
 	}
@@ -61,7 +61,7 @@ func (s *service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
 		Product:         derefStr(d.Product),
 		SoftwareVersion: derefStr(d.SoftwareVersion),
 		Manufacturer:    derefStr(d.Manufacturer),
-		LicenseId:       derefIntPtr(d.LicenseId),
+		TenantId:       derefIntPtr(d.TenantId),
 		Status:          "online",
 	}
 
@@ -69,17 +69,17 @@ func (s *service) GetDevice(c *gin.Context, id int64) (*RestDeviceVo, error) {
 }
 
 func (s *service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDeviceVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
 	// Check for duplicate serial number
-	existing, _ := s.repo.GetDeviceBySN(req.SerialNumber, licenseId)
+	existing, _ := s.repo.GetDeviceBySN(req.SerialNumber, tenantId)
 	if existing != nil {
 		return nil, apperror.ErrDeviceAlreadyExist
 	}
 
 	// Check device limit (default max 10000)
-	count, err := s.repo.CountDevices(licenseId)
+	count, err := s.repo.CountDevices(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "CHECK_DEVICE_COUNT_FAILED", 500, "failed to check device count")
 	}
@@ -90,7 +90,7 @@ func (s *service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDev
 	sn := req.SerialNumber
 	d := &device.CpeElement{
 		SerialNumber: &sn,
-		LicenseId:    &licenseId,
+		TenantId:    &tenantId,
 	}
 	if req.DeviceName != "" {
 		d.DeviceName = &req.DeviceName
@@ -115,16 +115,16 @@ func (s *service) AddDevice(c *gin.Context, req *AddRestDeviceRequest) (*RestDev
 		DeviceName:   req.DeviceName,
 		DeviceType:   req.DeviceType,
 		Product:      req.Product,
-		LicenseId:    licenseId,
+		TenantId:    tenantId,
 		Status:       "online",
 	}
 	return vo, nil
 }
 
 func (s *service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDeviceRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	d, err := s.repo.GetDeviceById(id, licenseId)
+	d, err := s.repo.GetDeviceById(id, tenantId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
@@ -148,9 +148,9 @@ func (s *service) ModifyDeviceById(c *gin.Context, id int64, req *ModifyRestDevi
 }
 
 func (s *service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	d, err := s.repo.GetDeviceBySN(req.SerialNumber, licenseId)
+	d, err := s.repo.GetDeviceBySN(req.SerialNumber, tenantId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
@@ -171,9 +171,9 @@ func (s *service) ModifyDeviceBySN(c *gin.Context, req *ModifyRestDeviceBySNRequ
 }
 
 func (s *service) DeleteDevice(c *gin.Context, id int64) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	if err := s.repo.SoftDeleteDevice(id, licenseId); err != nil {
+	if err := s.repo.SoftDeleteDevice(id, tenantId); err != nil {
 		logger.Errorf("Failed to delete device %d: %v", id, err)
 		return apperror.Wrap(err, "DELETE_DEVICE_FAILED", 500, "failed to delete device")
 	}

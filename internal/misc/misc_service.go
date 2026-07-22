@@ -7,7 +7,7 @@ import "time"
 // ---------------------------------------------------------------------------
 
 // ListBatchConfigLogs returns a paginated list of batch configuration logs.
-func (s *service) ListBatchConfigLogs(tenancyId int, page, pageSize int) ([]BatchConfigurationLog, int64, error) {
+func (s *service) ListBatchConfigLogs(tenantId int, page, pageSize int) ([]BatchConfigurationLog, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -15,7 +15,7 @@ func (s *service) ListBatchConfigLogs(tenancyId int, page, pageSize int) ([]Batc
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindBatchConfigLogs(tenancyId, offset, pageSize)
+	return s.repo.FindBatchConfigLogs(tenantId, offset, pageSize)
 }
 
 // ---------------------------------------------------------------------------
@@ -39,8 +39,8 @@ func (s *service) ListMRData(elementId int64, page, pageSize int) ([]MRData, int
 // ---------------------------------------------------------------------------
 
 // ListNorthReports returns all north reports for the given license.
-func (s *service) ListNorthReports(licenseId int) ([]NorthReport, error) {
-	return s.repo.FindNorthReports(licenseId)
+func (s *service) ListNorthReports(tenantId int) ([]NorthReport, error) {
+	return s.repo.FindNorthReports(tenantId)
 }
 
 // CreateNorthReport persists a new north report.
@@ -63,8 +63,8 @@ func (s *service) DeleteNorthReport(id int) error {
 // ---------------------------------------------------------------------------
 
 // ListRadius returns all RADIUS configurations for the given tenancy.
-func (s *service) ListRadius(tenancyId int) ([]Radius, error) {
-	return s.repo.FindRadius(tenancyId)
+func (s *service) ListRadius(tenantId int) ([]Radius, error) {
+	return s.repo.FindRadius(tenantId)
 }
 
 // SaveRadius inserts or updates a RADIUS configuration.
@@ -82,7 +82,7 @@ func (s *service) DeleteRadius(id int) error {
 // ---------------------------------------------------------------------------
 
 // ListOperatorLogs returns a paginated list of operator logs.
-func (s *service) ListOperatorLogs(tenancyId int, page, pageSize int) ([]SystemOperatorLog, int64, error) {
+func (s *service) ListOperatorLogs(tenantId int, page, pageSize int) ([]SystemOperatorLog, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -90,7 +90,7 @@ func (s *service) ListOperatorLogs(tenancyId int, page, pageSize int) ([]SystemO
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindOperatorLogs(tenancyId, offset, pageSize)
+	return s.repo.FindOperatorLogs(tenantId, offset, pageSize)
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ func (s *service) DeleteUploadFile(id string) error {
 // ---------------------------------------------------------------------------
 
 // ListTBGs returns a paginated list of TBG records.
-func (s *service) ListTBGs(licenseId int, req *ListTBGRequest) ([]TBG, int64, error) {
+func (s *service) ListTBGs(tenantId int, req *ListTBGRequest) ([]TBG, int64, error) {
 	page := req.Page
 	if page < 1 {
 		page = 1
@@ -134,17 +134,17 @@ func (s *service) ListTBGs(licenseId int, req *ListTBGRequest) ([]TBG, int64, er
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindTBGs(licenseId, req.Name, offset, pageSize)
+	return s.repo.FindTBGs(tenantId, req.Name, offset, pageSize)
 }
 
 // AddTBG creates a new TBG record.
-func (s *service) AddTBG(licenseId int, req *AddTBGRequest) (*TBG, error) {
+func (s *service) AddTBG(tenantId int, req *AddTBGRequest) (*TBG, error) {
 	now := time.Now()
 	tbg := &TBG{
 		Name:      &req.Name,
 		IP:        &req.IP,
 		Port:      &req.Port,
-		LicenseId: &licenseId,
+		TenantId: &tenantId,
 		CreateTime: &now,
 		UpdateTime: &now,
 	}
@@ -179,10 +179,10 @@ func (s *service) DeleteTBGs(ids []int64) error {
 }
 
 // ImportTBGs batch imports TBG records.
-func (s *service) ImportTBGs(licenseId int, tbgs []TBG) (int, error) {
+func (s *service) ImportTBGs(tenantId int, tbgs []TBG) (int, error) {
 	now := time.Now()
 	for i := range tbgs {
-		tbgs[i].LicenseId = &licenseId
+		tbgs[i].TenantId = &tenantId
 		tbgs[i].CreateTime = &now
 		tbgs[i].UpdateTime = &now
 	}
@@ -197,7 +197,7 @@ func (s *service) ImportTBGs(licenseId int, tbgs []TBG) (int, error) {
 // ---------------------------------------------------------------------------
 
 // ListPSAPIDs returns a paginated list of PSAP ID records.
-func (s *service) ListPSAPIDs(licenseId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error) {
+func (s *service) ListPSAPIDs(tenantId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error) {
 	page := req.Page
 	if page < 1 {
 		page = 1
@@ -207,11 +207,11 @@ func (s *service) ListPSAPIDs(licenseId int, req *ListPSAPIDRequest) ([]PSAPID, 
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindPSAPIDs(licenseId, req.PsapId, offset, pageSize)
+	return s.repo.FindPSAPIDs(tenantId, req.PsapId, offset, pageSize)
 }
 
 // SyncPSAPIDs synchronizes PSAP ID records from the external source.
-func (s *service) SyncPSAPIDs(licenseId int, operator string) (int, error) {
+func (s *service) SyncPSAPIDs(tenantId int, operator string) (int, error) {
 	// In a full implementation this would call an external PSAP service.
 	// For now, we create a sync log and return.
 	now := time.Now()
@@ -246,8 +246,8 @@ func (s *service) ListPSAPIDSyncLogs(page, pageSize int) ([]PSAPIDSyncLog, int64
 // ---------------------------------------------------------------------------
 
 // ListSpatialFileMarkets returns all spatial file markets for a license.
-func (s *service) ListSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error) {
-	return s.repo.FindSpatialFileMarkets(licenseId)
+func (s *service) ListSpatialFileMarkets(tenantId int) ([]SpatialFileMarket, error) {
+	return s.repo.FindSpatialFileMarkets(tenantId)
 }
 
 // GetMarketCoordinates returns PSAP ID coordinates for a given market.

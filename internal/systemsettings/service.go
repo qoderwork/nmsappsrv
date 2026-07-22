@@ -37,8 +37,8 @@ func NewSystemSettingsService(db *gorm.DB, aesKeyHex string) *SystemSettingsServ
 }
 
 // GetDeviceSettings reads device configuration for a specific tenancy.
-func (s *SystemSettingsService) GetDeviceSettings(tenancyId int) (*DeviceConfig, error) {
-	key := fmt.Sprintf("device_config_%d", tenancyId)
+func (s *SystemSettingsService) GetDeviceSettings(tenantId int) (*DeviceConfig, error) {
+	key := fmt.Sprintf("device_config_%d", tenantId)
 	value, err := s.repo.GetSystemConfig(key)
 	if err != nil {
 		return nil, err
@@ -57,10 +57,10 @@ func (s *SystemSettingsService) GetDeviceSettings(tenancyId int) (*DeviceConfig,
 }
 
 // UpdateDeviceSettings updates device configuration for a specific tenancy.
-func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRequest, tenancyId int) error {
-	key := fmt.Sprintf("device_config_%d", tenancyId)
+func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRequest, tenantId int) error {
+	key := fmt.Sprintf("device_config_%d", tenantId)
 
-	existing, err := s.GetDeviceSettings(tenancyId)
+	existing, err := s.GetDeviceSettings(tenantId)
 	if err != nil {
 		return err
 	}
@@ -116,8 +116,8 @@ func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRe
 	}
 
 	// Sync to Redis — mirrors Java SystemSettingsManagementServiceImpl.updateDeviceSettings:
-	// 1) nms_allow_auto_registration_{tenancyId} gates auto-registration in the ACS.
-	// 2) device_authentication_{tenancyId} carries the ACS-level credentials
+	// 1) nms_allow_auto_registration_{tenantId} gates auto-registration in the ACS.
+	// 2) device_authentication_{tenantId} carries the ACS-level credentials
 	//    (acsUsername/acsPassword) that the ACS AuthenticateInterceptor uses to
 	//    validate CPE ConnectionRequest Authorization headers.
 	ctx := context.Background()
@@ -125,8 +125,8 @@ func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRe
 	if existing.AutoRegistrationEnable != nil {
 		autoReg = *existing.AutoRegistrationEnable
 	}
-	if err := redis.Set(ctx, fmt.Sprintf("nms_allow_auto_registration_%d", tenancyId), strconv.FormatBool(autoReg), 0); err != nil {
-		logger.Errorf("Failed to sync nms_allow_auto_registration_%d to Redis: %v", tenancyId, err)
+	if err := redis.Set(ctx, fmt.Sprintf("nms_allow_auto_registration_%d", tenantId), strconv.FormatBool(autoReg), 0); err != nil {
+		logger.Errorf("Failed to sync nms_allow_auto_registration_%d to Redis: %v", tenantId, err)
 	}
 
 	username := ""
@@ -153,10 +153,10 @@ func (s *SystemSettingsService) UpdateDeviceSettings(req *UpdateDeviceSettingsRe
 	}
 	authJSON, err := json.Marshal(authDTO)
 	if err != nil {
-		logger.Errorf("Failed to marshal ACS auth config for tenant %d: %v", tenancyId, err)
+		logger.Errorf("Failed to marshal ACS auth config for tenant %d: %v", tenantId, err)
 	} else {
-		if err := redis.Set(ctx, fmt.Sprintf("device_authentication_%d", tenancyId), string(authJSON), 0); err != nil {
-			logger.Errorf("Failed to sync device_authentication_%d to Redis: %v", tenancyId, err)
+		if err := redis.Set(ctx, fmt.Sprintf("device_authentication_%d", tenantId), string(authJSON), 0); err != nil {
+			logger.Errorf("Failed to sync device_authentication_%d to Redis: %v", tenantId, err)
 		}
 	}
 
@@ -433,8 +433,8 @@ func (s *SystemSettingsService) GetACSConfigRaw() (*ACSConfig, error) {
 // yields a config with only useDefaultOid=false; the stored password (AES-GCM
 // encrypted) is decrypted then masked on read, exactly like Java's
 // AESGCMUtil.decrypt + LogUtil.maskName.
-func (s *SystemSettingsService) GetNorthBoundConfig(tenancyId int) (*NorthBoundConfig, error) {
-	value, err := s.repo.GetSystemConfig(NorthBoundConfigKey(tenancyId))
+func (s *SystemSettingsService) GetNorthBoundConfig(tenantId int) (*NorthBoundConfig, error) {
+	value, err := s.repo.GetSystemConfig(NorthBoundConfigKey(tenantId))
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +462,7 @@ func (s *SystemSettingsService) GetNorthBoundConfig(tenancyId int) (*NorthBoundC
 
 // UpdateNorthBoundConfig upserts the northbound integration configuration for a
 // tenancy. Mirrors Java NorthBoundManagementServiceImpl.updateNorthBoundConfig:
-//   - tenancyId==0 (Java's null tenancy) clears the connection fields,
+//   - tenantId==0 (Java's null tenancy) clears the connection fields,
 //   - useDefaultOid is required (invalid-argument otherwise),
 //   - supplied (non-nil) fields are overlaid (null-safe; Java's quirk of
 //     null-overwriting the whole block when type is present is intentionally not
@@ -471,15 +471,15 @@ func (s *SystemSettingsService) GetNorthBoundConfig(tenancyId int) (*NorthBoundC
 //   - when type==2 the privateKey/fileName fields are accepted,
 //   - the password is only re-encrypted when passwordChange is true,
 //   - the cached redis key is invalidated.
-func (s *SystemSettingsService) UpdateNorthBoundConfig(req *NorthBoundConfig, tenancyId int) error {
+func (s *SystemSettingsService) UpdateNorthBoundConfig(req *NorthBoundConfig, tenantId int) error {
 	if req == nil || req.UseDefaultOid == nil {
 		return apperror.New("INVALID_ARGUMENT", 400, "useDefaultOid is required")
 	}
 
-	key := NorthBoundConfigKey(tenancyId)
+	key := NorthBoundConfigKey(tenantId)
 
-	// Java: when tenancyId is null, null out the connection fields.
-	if tenancyId == 0 {
+	// Java: when tenantId is null, null out the connection fields.
+	if tenantId == 0 {
 		req.Ip = nil
 		req.Port = nil
 		req.Username = nil

@@ -20,11 +20,11 @@ type Service interface {
 	BatchSetParameter(elementId int64, records []SetParameterRecord, username string) error
 	ListParameterLogs(elementId int64, keyword string, page, pageSize int) ([]ParameterLog, int64, error)
 	PresetParameters(elementId int64, presets map[string]string) error
-	ListParameterSets(licenseId int) ([]ParameterSet, error)
+	ListParameterSets(tenantId int) ([]ParameterSet, error)
 	CreateParameterSet(ps *ParameterSet) error
 	UpdateParameterSet(ps *ParameterSet) error
 	DeleteParameterSet(id string) error
-	ListParameterTemplates(tenancyId int) ([]ParameterTemplate, error)
+	ListParameterTemplates(tenantId int) ([]ParameterTemplate, error)
 	CreateParameterTemplate(req *ParameterTemplateRequest) error
 	UpdateParameterTemplate(req *ParameterTemplateRequest) error
 	GetParameterTemplate(id int64) (*ParameterTemplateDetailVo, error)
@@ -34,9 +34,9 @@ type Service interface {
 	TriggerBackup(elementId int64, username string) error
 	ListBackupLogs(elementId int64) ([]ParameterBackupLog, error)
 	ListBackupLogsWithPage(req *ListParameterBackupLogsRequest) ([]ParameterBackupLogVo, int64, error)
-	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error
-	BatchParameterConfiguration(excelBytes []byte, username string, tenancyId int) error
-	ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error)
+	BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenantId int) error
+	BatchParameterConfiguration(excelBytes []byte, username string, tenantId int) error
+	ListBatchConfigurations(tenantId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error)
 	ListBatchConfigurationDetail(taskId int64) ([]BatchConfigTaskDetailVo, error)
 
 	// TR-069 Parameter Definition CRUD.

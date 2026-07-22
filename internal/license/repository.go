@@ -24,21 +24,16 @@ type Repository interface {
 
 	// Custom queries.
 	FindAllLicenses() ([]License, error)
-	FindSASConfig(licenseId int) (*SASConfig, error)
+	FindSASConfig(tenantId int) (*SASConfig, error)
 	SaveSASConfig(cfg *SASConfig) error
 	FindEntraEndpoints() ([]EntraEndpoint, error)
 	CreateEntraEndpoint(e *EntraEndpoint) error
 	UpdateEntraEndpoint(e *EntraEndpoint) error
 	DeleteEntraEndpoint(id string) error
 
-	// L-2 enforcement persistence.
-	UpsertActiveLicense(l *License) error
-	GetActiveLicense() (*License, error)
+	// Base station license.
 	UpsertBaseStationLicense(e *BaseStationLicense) error
 }
-
-// activeSlot is the fixed slot value for the single canonical enforced license.
-const activeSlot = "active"
 
 func ptrStr(s string) *string { return &s }
 
@@ -70,9 +65,9 @@ func (r *repository) FindAllLicenses() ([]License, error) {
 // ---------------------------------------------------------------------------
 
 // FindSASConfig returns the SAS configuration for the given license.
-func (r *repository) FindSASConfig(licenseId int) (*SASConfig, error) {
+func (r *repository) FindSASConfig(tenantId int) (*SASConfig, error) {
 	var cfg SASConfig
-	if err := r.db.Where("license_id = ?", licenseId).First(&cfg).Error; err != nil {
+	if err := r.db.Where("tenant_id = ?", tenantId).First(&cfg).Error; err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -81,7 +76,7 @@ func (r *repository) FindSASConfig(licenseId int) (*SASConfig, error) {
 // SaveSASConfig creates or updates a SAS configuration row (upsert).
 func (r *repository) SaveSASConfig(cfg *SASConfig) error {
 	var existing SASConfig
-	err := r.db.Where("license_id = ?", cfg.LicenseId).First(&existing).Error
+	err := r.db.Where("tenant_id = ?", cfg.TenantId).First(&existing).Error
 	if err != nil {
 		// No existing row — insert.
 		return r.db.Create(cfg).Error
@@ -117,37 +112,6 @@ func (r *repository) UpdateEntraEndpoint(e *EntraEndpoint) error {
 // DeleteEntraEndpoint removes an Entra endpoint by ID.
 func (r *repository) DeleteEntraEndpoint(id string) error {
 	return r.db.Where("id = ?", id).Delete(&EntraEndpoint{}).Error
-}
-
-// ---------------------------------------------------------------------------
-// L-2 enforcement persistence
-// ---------------------------------------------------------------------------
-
-// UpsertActiveLicense writes the single canonical "active" license row.
-func (r *repository) UpsertActiveLicense(l *License) error {
-	l.Slot = ptrStr(activeSlot)
-	var existing License
-	err := r.db.Where("slot = ?", activeSlot).First(&existing).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return r.db.Create(l).Error
-		}
-		return err
-	}
-	l.Id = existing.Id
-	return r.db.Save(l).Error
-}
-
-// GetActiveLicense returns the canonical "active" license row, or nil if none.
-func (r *repository) GetActiveLicense() (*License, error) {
-	var l License
-	if err := r.db.Where("slot = ?", activeSlot).First(&l).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &l, nil
 }
 
 // UpsertBaseStationLicense creates or updates a base station license row,

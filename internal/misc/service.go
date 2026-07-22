@@ -10,16 +10,16 @@ import (
 
 // Service defines the business-logic contract for miscellaneous operations.
 type Service interface {
-	ListBatchConfigLogs(tenancyId int, page, pageSize int) ([]BatchConfigurationLog, int64, error)
+	ListBatchConfigLogs(tenantId int, page, pageSize int) ([]BatchConfigurationLog, int64, error)
 	ListMRData(elementId int64, page, pageSize int) ([]MRData, int64, error)
-	ListNorthReports(licenseId int) ([]NorthReport, error)
+	ListNorthReports(tenantId int) ([]NorthReport, error)
 	CreateNorthReport(r *NorthReport) error
 	UpdateNorthReport(r *NorthReport) error
 	DeleteNorthReport(id int) error
-	ListRadius(tenancyId int) ([]Radius, error)
+	ListRadius(tenantId int) ([]Radius, error)
 	SaveRadius(r *Radius) error
 	DeleteRadius(id int) error
-	ListOperatorLogs(tenancyId int, page, pageSize int) ([]SystemOperatorLog, int64, error)
+	ListOperatorLogs(tenantId int, page, pageSize int) ([]SystemOperatorLog, int64, error)
 	ListUploadFiles(page, pageSize int) ([]UploadFile, int64, error)
 	CreateUploadFile(f *UploadFile) error
 	DeleteUploadFile(id string) error
@@ -36,45 +36,45 @@ type Service interface {
 	GenerateAOSFile(elementId int64) (string, error)
 	ScanAndGenerateAOSFiles() (int, error)
 
-	ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error)
+	ListBackupRestoreTasks(tenantId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error)
 	CreateBackupRestoreTask(t *BackupOrRestoreTask) error
-	BatchAddObject(req *BatchAddObjectRequest, username string, tenancyId int) error
-	ListBatchAddObjectTasks(tenancyId int, page, pageSize int) ([]BatchAddObjectTaskVo, int64, error)
+	BatchAddObject(req *BatchAddObjectRequest, username string, tenantId int) error
+	ListBatchAddObjectTasks(tenantId int, page, pageSize int) ([]BatchAddObjectTaskVo, int64, error)
 	ListBatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTaskDetailVo, error)
-	CreateBackupTask(req *BackupRestoreRequest, username string, tenancyId int) error
-	CreateRestoreTask(req *BackupRestoreRequest, username string, tenancyId int) error
+	CreateBackupTask(req *BackupRestoreRequest, username string, tenantId int) error
+	CreateRestoreTask(req *BackupRestoreRequest, username string, tenantId int) error
 	StartBackupRestoreTask(taskId int, username string) error
 	CancelBackupRestoreTask(taskId int) error
-	ListBackupRestoreTasksVo(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error)
+	ListBackupRestoreTasksVo(tenantId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error)
 	ListBackupRestoreTaskDetail(taskId int) ([]BackupRestoreTaskDetailVo, error)
 
-	ListBaseStationBackupInfo(req *ListBaseStationBackupInfoRequest, tenancyId int) ([]BaseStationBackupInfoVo, int64, error)
-	ImportConfigFile(elementId int64, fileName string, fileData []byte, tenancyId int) (*ImportConfigFileResult, error)
-	ExportConfigFile(elementIds []int64, tenancyId int) (string, error)
-	CreateBSBackupTask(req *AddBSBackupTaskRequest, username string, tenancyId int) error
-	CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username string, tenancyId int) error
+	ListBaseStationBackupInfo(req *ListBaseStationBackupInfoRequest, tenantId int) ([]BaseStationBackupInfoVo, int64, error)
+	ImportConfigFile(elementId int64, fileName string, fileData []byte, tenantId int) (*ImportConfigFileResult, error)
+	ExportConfigFile(elementIds []int64, tenantId int) (string, error)
+	CreateBSBackupTask(req *AddBSBackupTaskRequest, username string, tenantId int) error
+	CreateBSRestoreTask(req *AddBSRestoreTaskRequest, username string, tenantId int) error
 	CancelTask(taskId int) error
 	StartBSBackupRestoreTask(taskId int, username string) error
-	ListBSBackupTasks(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error)
+	ListBSBackupTasks(tenantId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error)
 	ListDeviceBackupResult(taskId int, page, pageSize int) ([]DeviceBackupResultVo, int64, error)
 	GetConfigFilePath(logId string) (string, error)
 
 	GetDeviceSerialNumber(elementId int64) (string, error)
 
 	// AOS Management — TBG
-	ListTBGs(licenseId int, req *ListTBGRequest) ([]TBG, int64, error)
-	AddTBG(licenseId int, req *AddTBGRequest) (*TBG, error)
+	ListTBGs(tenantId int, req *ListTBGRequest) ([]TBG, int64, error)
+	AddTBG(tenantId int, req *AddTBGRequest) (*TBG, error)
 	ModifyTBG(req *ModifyTBGRequest) error
 	DeleteTBGs(ids []int64) error
-	ImportTBGs(licenseId int, tbgs []TBG) (int, error)
+	ImportTBGs(tenantId int, tbgs []TBG) (int, error)
 
 	// AOS Management — PSAPID
-	ListPSAPIDs(licenseId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error)
-	SyncPSAPIDs(licenseId int, operator string) (int, error)
+	ListPSAPIDs(tenantId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error)
+	SyncPSAPIDs(tenantId int, operator string) (int, error)
 	ListPSAPIDSyncLogs(page, pageSize int) ([]PSAPIDSyncLog, int64, error)
 
 	// AOS Management — SpatialFile
-	ListSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error)
+	ListSpatialFileMarkets(tenantId int) ([]SpatialFileMarket, error)
 	GetMarketCoordinates(marketId int) ([]PSAPID, error)
 }
 

@@ -34,8 +34,8 @@ func (h *Handler) AddSSHLabel(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	tenancyId := middleware.GetLicenseId(c)
-	if err := h.svc.AddLabel(&req, tenancyId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.AddLabel(&req, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -58,8 +58,8 @@ func (h *Handler) DeleteSSHLabel(c *gin.Context) {
 
 // ListSSHLabels handles POST /listSSHLabels
 func (h *Handler) ListSSHLabels(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	labels, err := h.svc.ListLabels(tenancyId)
+	tenantId := middleware.GetTenantId(c)
+	labels, err := h.svc.ListLabels(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -74,8 +74,8 @@ func (h *Handler) UpdateSSHLabel(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	tenancyId := middleware.GetLicenseId(c)
-	if err := h.svc.UpdateLabel(&req, tenancyId); err != nil {
+	tenantId := middleware.GetTenantId(c)
+	if err := h.svc.UpdateLabel(&req, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -91,9 +91,9 @@ func (h *Handler) SetSSHAccessTimer(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
-	operationIds, err := h.svc.SetAccessTimer(&req, tenancyId, username)
+	operationIds, err := h.svc.SetAccessTimer(&req, tenantId, username)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

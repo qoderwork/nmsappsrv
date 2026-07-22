@@ -21,7 +21,7 @@ type Repository interface {
 	FindAll(query *gorm.DB) ([]MmlExecuteResult, error)
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[MmlExecuteResult], error)
-	FindMmlSets(licenseId int) ([]MmlSet, error)
+	FindMmlSets(tenantId int) ([]MmlSet, error)
 	FindMmlCommands(setId int) ([]MmlCommand, error)
 	FindMmlCommandParams(commandId int) ([]MmlCommandParam, error)
 	FindMmlCommandByCommand(command string) (*MmlCommand, error)
@@ -31,17 +31,17 @@ type Repository interface {
 	CreateMmlSet(set *MmlSet) error
 	CreateMmlCommand(cmd *MmlCommand) error
 	CreateMmlCommandParam(p *MmlCommandParam) error
-	FindMmlSetsByVersionAndLicense(version string, licenseId int) ([]MmlSet, error)
-	FindTopMmlSets(version string, licenseId int) ([]MmlSet, error)
+	FindMmlSetsByVersionAndLicense(version string, tenantId int) ([]MmlSet, error)
+	FindTopMmlSets(version string, tenantId int) ([]MmlSet, error)
 	FindChildMmlSets(parentId int) ([]MmlSet, error)
-	FindMmlSetByParentIdAndName(parentId *int, name string, licenseId int) ([]MmlSet, error)
+	FindMmlSetByParentIdAndName(parentId *int, name string, tenantId int) ([]MmlSet, error)
 	FindMmlCommandsBySetIds(ids []int) ([]MmlCommand, error)
 	FindMmlCommandParamsByCommandIds(ids []int) ([]MmlCommandParam, error)
-	FindMmlVersions(licenseId int) ([]string, error)
+	FindMmlVersions(tenantId int) ([]string, error)
 	DeleteMmlSetsByIds(ids []int) error
 	DeleteMmlCommandsByIds(ids []int) error
 	DeleteMmlCommandParamsByIds(ids []int) error
-	FindBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
+	FindBatchProcessFiles(tenantId int) ([]BatchProcessFile, error)
 	FindBatchProcessFileByID(id int) (*BatchProcessFile, error)
 	CreateBatchProcessFile(file *BatchProcessFile) error
 	UpdateBatchProcessFile(file *BatchProcessFile) error
@@ -72,11 +72,11 @@ func NewRepository(db *gorm.DB) Repository {
 // ---------------------------------------------------------------------------
 
 // FindMmlSets returns all MML sets for the given license.
-func (r *repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
+func (r *repository) FindMmlSets(tenantId int) ([]MmlSet, error) {
 	var sets []MmlSet
 	query := r.db.Model(&MmlSet{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Find(&sets).Error; err != nil {
 		logger.Errorf("FindMmlSets error: %v", err)

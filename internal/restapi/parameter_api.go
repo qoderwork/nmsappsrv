@@ -14,10 +14,10 @@ import (
 // ============================
 
 func (s *service) GetDeviceParams(c *gin.Context, elementId int64) ([]RestParameterVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	// Verify device exists and belongs to this license
-	_, err := s.repo.GetDeviceById(elementId, licenseId)
+	_, err := s.repo.GetDeviceById(elementId, tenantId)
 	if err != nil {
 		return nil, apperror.ErrDeviceNotFound
 	}
@@ -31,11 +31,11 @@ func (s *service) GetDeviceParams(c *gin.Context, elementId int64) ([]RestParame
 }
 
 func (s *service) SetDeviceParams(c *gin.Context, elementId int64, req *SetRestParameterRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
 	// Verify device exists
-	_, err := s.repo.GetDeviceById(elementId, licenseId)
+	_, err := s.repo.GetDeviceById(elementId, tenantId)
 	if err != nil {
 		return apperror.ErrDeviceNotFound
 	}
@@ -50,11 +50,11 @@ func (s *service) SetDeviceParams(c *gin.Context, elementId int64, req *SetRestP
 }
 
 func (s *service) PresetDeviceParams(c *gin.Context, elementId int64, req *PresetParameterRequest) (*RequestStatusVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
 	// Verify device exists
-	_, err := s.repo.GetDeviceById(elementId, licenseId)
+	_, err := s.repo.GetDeviceById(elementId, tenantId)
 	if err != nil {
 		return nil, apperror.ErrDeviceNotFound
 	}

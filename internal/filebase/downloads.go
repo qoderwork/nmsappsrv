@@ -25,7 +25,7 @@ func (caFileView) TableName() string { return "ca_file" }
 
 type cpeElementView struct {
 	ConfigFile  *string `gorm:"column:config_file"`
-	LicenseId   *int    `gorm:"column:license_id"`
+	TenantId   *int    `gorm:"column:tenant_id"`
 	AosFileName *string `gorm:"column:aos_file_name"`
 }
 
@@ -78,19 +78,19 @@ func (s *Service) resolveCa(fileId int) (absPath, name string, ok bool) {
 }
 
 // resolveConfigFile mirrors Java BaseStationBackupAndRestoreManagementServiceImpl.
-// downloadConfigFile: configFilePath + "/" + (licenseId|0) + "/" + elementId +
+// downloadConfigFile: configFilePath + "/" + (tenantId|0) + "/" + elementId +
 // "/" + <config_file>, served as the config_file base name.
 func (s *Service) resolveConfigFile(elementId int64) (absPath, name string, ok bool) {
 	var v cpeElementView
 	if err := s.db.Where("id = ?", elementId).First(&v).Error; err != nil || v.ConfigFile == nil || *v.ConfigFile == "" {
 		return "", "", false
 	}
-	licenseId := 0
-	if v.LicenseId != nil {
-		licenseId = *v.LicenseId
+	tenantId := 0
+	if v.TenantId != nil {
+		tenantId = *v.TenantId
 	}
 	base := filepath.Base(deref(v.ConfigFile))
-	p := filepath.Join(s.cfg.ConfigDir, itoa(int64(licenseId)), itoa(elementId), base)
+	p := filepath.Join(s.cfg.ConfigDir, itoa(int64(tenantId)), itoa(elementId), base)
 	return p, base, true
 }
 

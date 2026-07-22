@@ -15,12 +15,12 @@ import (
 
 // Service defines the business-logic contract for reboot management.
 type Service interface {
-	AddRebootTask(req *AddRebootTaskRequest, tenancyId int, username string) (int, error)
+	AddRebootTask(req *AddRebootTaskRequest, tenantId int, username string) (int, error)
 	DeleteRebootTask(id int) error
 	StartRebootTask(id int, username string) error
 	CancelRebootTask(id int) error
 	TriggerDueTimedTasks(ctx context.Context) (int, error)
-	ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
+	ListTasks(tenantId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error)
 	ListTaskResults(query ListRebootTaskResultQuery) ([]RebootTaskResultVO, int64, error)
 }
 
@@ -46,8 +46,8 @@ func isValidDeviceType(dt string) bool {
 }
 
 // AddRebootTask creates a new reboot task and dispatches commands if immediate.
-func (s *service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, username string) (int, error) {
-	if s.repo.TaskNameExists(tenancyId, req.Name) {
+func (s *service) AddRebootTask(req *AddRebootTaskRequest, tenantId int, username string) (int, error) {
+	if s.repo.TaskNameExists(tenantId, req.Name) {
 		return 0, fmt.Errorf("task name already exists")
 	}
 	if !isValidDeviceType(req.DeviceType) {
@@ -73,7 +73,7 @@ func (s *service) AddRebootTask(req *AddRebootTaskRequest, tenancyId int, userna
 		User:           username,
 		OperationTime:  now,
 		ExecuteMode:    req.ExecuteMode,
-		TenancyId:      tenancyId,
+		TenantId:      tenantId,
 		ElementIds:     MarshalElementIds(elementIds),
 		DeviceType:     req.DeviceType,
 		Scope:          req.Scope,
@@ -150,8 +150,8 @@ func (s *service) CancelRebootTask(id int) error {
 }
 
 // ListTasks returns paginated reboot tasks.
-func (s *service) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
-	return s.repo.ListTasks(tenancyId, query)
+func (s *service) ListTasks(tenantId int, query ListRebootTaskQuery) ([]RebootTaskVO, int64, error) {
+	return s.repo.ListTasks(tenantId, query)
 }
 
 // ListTaskResults returns per-device results for a task.

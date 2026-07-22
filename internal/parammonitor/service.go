@@ -118,12 +118,12 @@ func (s *service) resolveScopeToElementIds(scope int, scopeData *string) ([]int6
 }
 
 func (s *service) AddMonitorConfig(c *gin.Context, req *AddMonitorConfigRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	now := time.Now()
 
 	config := ParameterMonitorConfig{
 		Name:       &req.Name,
-		LicenseId:  &licenseId,
+		TenantId:  &tenantId,
 		Enable:     &req.Enable,
 		Scope:      &req.Scope,
 		ScopeData:  &req.ScopeData,
@@ -239,7 +239,7 @@ func (s *service) UpdateMonitorConfig(req *UpdateMonitorConfigRequest) error {
 }
 
 func (s *service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigRequest) ([]MonitorConfigVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
 	if req.Page <= 0 {
 		req.Page = 1
@@ -248,7 +248,7 @@ func (s *service) ListMonitorConfigs(c *gin.Context, req *ListMonitorConfigReque
 		req.PageSize = 10
 	}
 
-	configs, total, err := s.repo.ListConfigs(licenseId, req.Page, req.PageSize)
+	configs, total, err := s.repo.ListConfigs(tenantId, req.Page, req.PageSize)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_MONITOR_CONFIGS_FAILED", 500, "failed to list monitor configs")
 	}

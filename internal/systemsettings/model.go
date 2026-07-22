@@ -3,7 +3,7 @@ package systemsettings
 import "fmt"
 
 // DeviceConfig represents the device configuration stored per-tenancy in system_config
-// (key = "device_config_<tenancyId>"). Field set matches Java UpdateDeviceSettingsDTO
+// (key = "device_config_<tenantId>"). Field set matches Java UpdateDeviceSettingsDTO
 // (systemsettings P0 S-2).
 type DeviceConfig struct {
 	DeviceInformPeriod       *int     `json:"deviceInformPeriod"`
@@ -120,7 +120,7 @@ type UpdateLogConfigRequest struct {
 }
 
 // NorthBoundConfig represents the northbound integration configuration stored in
-// system_config as key "north_bound_prefix_<tenancyId>" (JSON blob). Field set
+// system_config as key "north_bound_prefix_<tenantId>" (JSON blob). Field set
 // matches Java GetNorthBoundConfigVO / NorthBoundManagementServiceImpl
 // (ABSENT backfill domain #3). Password is AES-GCM encrypted at rest using the
 // same systemsettings aesKey (mirrors Java AESGCMUtil + AESSecretHolder), and
@@ -144,7 +144,7 @@ type NorthBoundConfig struct {
 }
 
 // NorthBoundConfigKey returns the system_config key for the given tenancy,
-// mirroring Java's NORTH_BOUND_CONFIG_PREFIX + tenancyId.
-func NorthBoundConfigKey(tenancyId int) string {
-	return fmt.Sprintf("north_bound_prefix_%d", tenancyId)
+// mirroring Java's NORTH_BOUND_CONFIG_PREFIX + tenantId.
+func NorthBoundConfigKey(tenantId int) string {
+	return fmt.Sprintf("north_bound_prefix_%d", tenantId)
 }

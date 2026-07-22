@@ -16,7 +16,7 @@ const (
 	DefaultAdminUsername = "admin"
 	DefaultAdminPassword = "Admin@123"
 	DefaultLicenseName   = "Default"
-	DefaultLicenseId     = "1"
+	DefaultTenantCode    = "1"
 	// DefaultAdminRoleId is the built-in admin role id. It is kept identical
 	// to authz.RoleAdminID so the admin user links to the same role row that
 	// authz.SeedBuiltinRoles manages (hard-coded here to avoid coupling
@@ -66,12 +66,12 @@ func ensureDefaultLicense(db *gorm.DB) (*license.License, error) {
 	}
 
 	name := DefaultLicenseName
-	lid := DefaultLicenseId
+	lid := DefaultTenantCode
 	licType := "full"
 	expiry := time.Now().Add(10 * 365 * 24 * time.Hour) // 10 years
 	lic := license.License{
 		LicenseName: &name,
-		LicenseId:   &lid,
+		TenantCode:  &lid,
 		LicenseType: &licType,
 		ExpiryDate:  &expiry,
 		EnbQuantity: 9999,
@@ -90,7 +90,7 @@ func ensureDefaultLicense(db *gorm.DB) (*license.License, error) {
 // if missing. The role name is normalized to "Admin" (matching the Java NMS
 // built-in role) so fresh and upgraded databases converge — older deployments
 // may carry a lowercase "admin" name written by authz.SeedBuiltinRoles.
-func ensureAdminRole(db *gorm.DB, licenseId int) (*user.Role, error) {
+func ensureAdminRole(db *gorm.DB, tenantId int) (*user.Role, error) {
 	roleName := "Admin"
 	var role user.Role
 	err := db.Where("id = ?", DefaultAdminRoleId).First(&role).Error
@@ -110,7 +110,7 @@ func ensureAdminRole(db *gorm.DB, licenseId int) (*user.Role, error) {
 			Id:          DefaultAdminRoleId,
 			RoleName:    &roleName,
 			Description: &desc,
-			LicenseId:   &licenseId,
+			TenantId:   &tenantId,
 			DefaultRole: boolPtr(true),
 		}
 		if e := db.Create(&role).Error; e != nil {
@@ -174,7 +174,7 @@ func healLegacyAdminRole(db *gorm.DB) error {
 	return nil
 }
 
-func ensureAdminUser(db *gorm.DB, licenseId int, roleId string) error {
+func ensureAdminUser(db *gorm.DB, tenantId int, roleId string) error {
 	var count int64
 	db.Model(&user.SysUser{}).Where("username = ?", DefaultAdminUsername).Count(&count)
 	if count > 0 {
@@ -195,7 +195,7 @@ func ensureAdminUser(db *gorm.DB, licenseId int, roleId string) error {
 		Password:           &hashedStr,
 		RealName:           strPtr("Administrator"),
 		Status:             &status,
-		LicenseId:          &licenseId,
+		TenantId:          &tenantId,
 		CreateTime:         &now,
 		Enable:             &enable,
 		LoginErrorTimes:    intPtr(0),

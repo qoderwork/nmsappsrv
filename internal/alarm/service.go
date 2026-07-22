@@ -13,23 +13,23 @@ import (
 
 // Service defines the business-logic contract for alarm management.
 type Service interface {
-	ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
+	ListAlarms(tenantId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error)
 	GetAlarm(id int64) (*Alarm, error)
 	ClearAlarm(id int64) error
 	ConfirmAlarm(id int64) error
 	UnconfirmAlarm(id int64) error
 	BatchClearAlarms(alarmIds []int64, clearUser string) (int64, []int64, error)
-	GetSeverityCount(licenseId int) ([]SeverityCount, error)
+	GetSeverityCount(tenantId int) ([]SeverityCount, error)
 	CreateAlarm(a *Alarm) error
 	CheckAlarmSuppression(alarm *Alarm) (bool, string)
 	GetByElementTypeAlarmId(elementId int64, alarmType int, alarmId string) (*Alarm, error)
 	GetByAlarmId(alarmType int, alarmId string) (*Alarm, error)
-	ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error)
-	ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error)
-	ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error)
+	ListAlarmLibrary(tenantId int) ([]AlarmLibrary, error)
+	ImportAlarmLibrary(tenantId int, items []AlarmLibrary) (int, error)
+	ListAlarmTemplates(tenantId int) ([]AlarmTemplate, error)
 	CreateAlarmTemplate(t *AlarmTemplate) error
 	UpdateAlarmTemplate(t *AlarmTemplate) error
-	ListAlarmFilters(licenseId int) ([]AlarmFilter, error)
+	ListAlarmFilters(tenantId int) ([]AlarmFilter, error)
 	CreateAlarmFilter(f *AlarmFilter) error
 	UpdateAlarmFilter(f *AlarmFilter) error
 	DeleteAlarmFilter(id int) error
@@ -56,17 +56,17 @@ type Service interface {
 	// QueryAlarmStatisticResult returns aggregated alarm counts (by
 	// severity, by type, by source) for the given license. Mirrors Java
 	// queryAlarmStatisticResult.
-	QueryAlarmStatisticResult(licenseId int) (*AlarmStatisticResult, error)
+	QueryAlarmStatisticResult(tenantId int) (*AlarmStatisticResult, error)
 	// DeleteAlarmLibrary hard-deletes an alarm library entry. Mirrors Java
 	// deleteAlarmLibrary.
 	DeleteAlarmLibrary(id int) error
 	// ListActiveAlarmProbableCause returns the distinct probable_cause
 	// values for active alarms in the license. Mirrors Java
 	// listActiveAlarmProbableCause.
-	ListActiveAlarmProbableCause(licenseId int) ([]string, error)
+	ListActiveAlarmProbableCause(tenantId int) ([]string, error)
 	// GetAlarmEventType returns the distinct event_type values for the
 	// license. Mirrors Java getAlarmEventType.
-	GetAlarmEventType(licenseId int) ([]string, error)
+	GetAlarmEventType(tenantId int) ([]string, error)
 	// ListEmailNoticeResult returns paginated email notification
 	// results (one row per email-notifier attempt), filtered by
 	// alarmTemplateId (exact) and emailSubject (LIKE). Mirrors Java
@@ -92,7 +92,7 @@ func NewService(db *gorm.DB) Service {
 
 // ListAlarms returns a paginated alarm list. The page number (1-based) is
 // converted to an offset before querying.
-func (s *service) ListAlarms(licenseId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
+func (s *service) ListAlarms(tenantId int, severity string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -100,7 +100,7 @@ func (s *service) ListAlarms(licenseId int, severity string, alarmType int, page
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	data, total, err := s.repo.FindAlarms(licenseId, severity, alarmType, offset, pageSize)
+	data, total, err := s.repo.FindAlarms(tenantId, severity, alarmType, offset, pageSize)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_ALARMS_FAILED", 500, "failed to list alarms")
 	}
@@ -201,12 +201,12 @@ func (s *service) GetByAlarmId(alarmType int, alarmId string) (*Alarm, error) {
 //     alarm's alarm_id must appear in the filter's alarm list
 //     (alarm_filter_has_alarm).
 func (s *service) CheckAlarmSuppression(alarm *Alarm) (bool, string) {
-	licenseId := 0
-	if alarm.LicenseId != nil {
-		licenseId = *alarm.LicenseId
+	tenantId := 0
+	if alarm.TenantId != nil {
+		tenantId = *alarm.TenantId
 	}
 
-	filters, err := s.repo.FindActiveAlarmFilters(licenseId)
+	filters, err := s.repo.FindActiveAlarmFilters(tenantId)
 	if err != nil {
 		logger.Errorf("CheckAlarmSuppression: failed to query filters: %v", err)
 		return false, ""
@@ -337,8 +337,8 @@ func trimSpace(s string) string {
 // ---------------------------------------------------------------------------
 
 // ListAlarmLibrary returns all alarm library entries for the given tenancy.
-func (s *service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
-	data, err := s.repo.FindAlarmLibrary(tenancyId)
+func (s *service) ListAlarmLibrary(tenantId int) ([]AlarmLibrary, error) {
+	data, err := s.repo.FindAlarmLibrary(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_ALARM_LIBRARY_FAILED", 500, "failed to list alarm library")
 	}
@@ -350,8 +350,8 @@ func (s *service) ListAlarmLibrary(tenancyId int) ([]AlarmLibrary, error) {
 // ---------------------------------------------------------------------------
 
 // ListAlarmTemplates returns all alarm templates for the given tenancy.
-func (s *service) ListAlarmTemplates(tenancyId int) ([]AlarmTemplate, error) {
-	data, err := s.repo.FindAlarmTemplates(tenancyId)
+func (s *service) ListAlarmTemplates(tenantId int) ([]AlarmTemplate, error) {
+	data, err := s.repo.FindAlarmTemplates(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_ALARM_TEMPLATES_FAILED", 500, "failed to list alarm templates")
 	}
@@ -402,8 +402,8 @@ func (s *service) UpdateAlarmTemplateEmailNotification(id int, enable bool) erro
 
 // QueryAlarmStatisticResult aggregates alarm counts for the license.
 // Mirrors Java queryAlarmStatisticResult.
-func (s *service) QueryAlarmStatisticResult(licenseId int) (*AlarmStatisticResult, error) {
-	stat, err := s.repo.FindAlarmStatistic(licenseId)
+func (s *service) QueryAlarmStatisticResult(tenantId int) (*AlarmStatisticResult, error) {
+	stat, err := s.repo.FindAlarmStatistic(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "QUERY_ALARM_STATISTIC_RESULT_FAILED", 500, "failed to query alarm statistic result")
 	}
@@ -427,8 +427,8 @@ func (s *service) DeleteAlarmLibrary(id int) error {
 
 // ListActiveAlarmProbableCause returns distinct probable_cause values for
 // active alarms in the license. Mirrors Java listActiveAlarmProbableCause.
-func (s *service) ListActiveAlarmProbableCause(licenseId int) ([]string, error) {
-	causes, err := s.repo.FindActiveProbableCauses(licenseId)
+func (s *service) ListActiveAlarmProbableCause(tenantId int) ([]string, error) {
+	causes, err := s.repo.FindActiveProbableCauses(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_ACTIVE_ALARM_PROBABLE_CAUSE_FAILED", 500, "failed to list active alarm probable causes")
 	}
@@ -437,8 +437,8 @@ func (s *service) ListActiveAlarmProbableCause(licenseId int) ([]string, error) 
 
 // GetAlarmEventType returns distinct event_type values for the license.
 // Mirrors Java getAlarmEventType.
-func (s *service) GetAlarmEventType(licenseId int) ([]string, error) {
-	types, err := s.repo.FindAlarmEventTypes(licenseId)
+func (s *service) GetAlarmEventType(tenantId int) ([]string, error) {
+	types, err := s.repo.FindAlarmEventTypes(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "GET_ALARM_EVENT_TYPE_FAILED", 500, "failed to get alarm event types")
 	}
@@ -450,8 +450,8 @@ func (s *service) GetAlarmEventType(licenseId int) ([]string, error) {
 // ---------------------------------------------------------------------------
 
 // ListAlarmFilters returns all alarm filters for the given license.
-func (s *service) ListAlarmFilters(licenseId int) ([]AlarmFilter, error) {
-	data, err := s.repo.FindAlarmFilters(licenseId)
+func (s *service) ListAlarmFilters(tenantId int) ([]AlarmFilter, error) {
+	data, err := s.repo.FindAlarmFilters(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_ALARM_FILTERS_FAILED", 500, "failed to list alarm filters")
 	}
@@ -554,8 +554,8 @@ func (s *service) UnconfirmAlarm(id int64) error {
 // GetSeverityCount returns the per-severity tally of ACTIVE alarms, mirroring
 // nms-serv getCountOfSeverity. All four severities are always returned, with a
 // zero count for any that currently have no active alarms.
-func (s *service) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
-	counts, err := s.repo.CountBySeverity(licenseId)
+func (s *service) GetSeverityCount(tenantId int) ([]SeverityCount, error) {
+	counts, err := s.repo.CountBySeverity(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "SEVERITY_COUNT_FAILED", 500, "failed to count alarms by severity")
 	}
@@ -572,13 +572,13 @@ func (s *service) GetSeverityCount(licenseId int) ([]SeverityCount, error) {
 // ---------------------------------------------------------------------------
 
 // ImportAlarmLibrary persists a batch of alarm library entries for the given
-// tenancy. Entries that already exist (matched by tenancy_id + alarm_identifier)
+// tenancy. Entries that already exist (matched by tenant_id + alarm_identifier)
 // are updated in place. Returns the number of entries processed.
-func (s *service) ImportAlarmLibrary(tenancyId int, items []AlarmLibrary) (int, error) {
+func (s *service) ImportAlarmLibrary(tenantId int, items []AlarmLibrary) (int, error) {
 	// Stamp every row with the current tenancy.
-	tenancyIdCopy := tenancyId
+	tenantIdCopy := tenantId
 	for i := range items {
-		items[i].TenancyId = &tenancyIdCopy
+		items[i].TenantId = &tenantIdCopy
 	}
 	if err := s.repo.BulkCreateAlarmLibrary(items); err != nil {
 		return 0, apperror.Wrap(err, "IMPORT_ALARM_LIBRARY_FAILED", 500, "failed to import alarm library")

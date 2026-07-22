@@ -19,7 +19,7 @@ import (
 
 // BatchParameterConfigurationDirect creates a batch parameter configuration task
 // and dispatches SetParameterValues commands for each device to Redis.
-func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenancyId int) error {
+func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigRequest, username string, tenantId int) error {
 	if len(req.ParamValues) == 0 {
 		return fmt.Errorf("paramValues must not be empty")
 	}
@@ -47,7 +47,7 @@ func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigReq
 	task := &misc.BatchConfigurationLog{
 		Name:          &taskName,
 		OperationTime: &now,
-		TenancyId:     &tenancyId,
+		TenantId:     &tenantId,
 		User:          &username,
 		DeviceCount:   &deviceCount,
 	}
@@ -110,7 +110,7 @@ func (s *service) BatchParameterConfigurationDirect(req *BatchParameterConfigReq
 }
 
 // ListBatchConfigurations returns the paginated task list with progress info.
-func (s *service) ListBatchConfigurations(tenancyId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error) {
+func (s *service) ListBatchConfigurations(tenantId int, page, pageSize int) ([]BatchConfigTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -119,7 +119,7 @@ func (s *service) ListBatchConfigurations(tenancyId int, page, pageSize int) ([]
 	}
 	offset := (page - 1) * pageSize
 
-	logs, total, err := s.repo.FindBatchConfigLogs(tenancyId, offset, pageSize)
+	logs, total, err := s.repo.FindBatchConfigLogs(tenantId, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}

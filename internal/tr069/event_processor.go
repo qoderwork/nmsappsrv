@@ -79,12 +79,12 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 
 		logger.Infof("device %s not found, auto-creating", sn)
 
-		// Resolve default license_id from system_config (aligns with Java auto-registration)
-		var resolvedLicenseId *int
+		// Resolve default tenant_id from system_config (aligns with Java auto-registration)
+		var resolvedTenantId *int
 		var configValue string
 		if err := ep.db.Table("system_config").Where("config_key = ?", "default_license").Limit(1).Scan(&configValue).Error; err == nil && configValue != "" {
 			if lid, err := strconv.Atoi(configValue); err == nil && lid > 0 {
-				resolvedLicenseId = &lid
+				resolvedTenantId = &lid
 			}
 		}
 
@@ -110,7 +110,7 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 			LoadedBasicInfo: false,
 			IsInitialized:   false,
 			Deleted:         false,
-			LicenseId:       resolvedLicenseId,
+			TenantId:       resolvedTenantId,
 		}
 
 		// Extract basic info from Inform parameters (matches Java extraBasicInfo)
@@ -172,7 +172,7 @@ func (ep *EventProcessor) ProcessInform(inform *soap.Inform, sn string, deviceTy
 		}
 
 		// Auto-assign to default device groups (2.7)
-		ep.autoAssignToDefaultGroups(cpe.NeNeid, cpe.LicenseId)
+		ep.autoAssignToDefaultGroups(cpe.NeNeid, cpe.TenantId)
 
 		// Set online status in Redis for new device
 		ep.updateDeviceOnlineStatus(ctx, sn, true)

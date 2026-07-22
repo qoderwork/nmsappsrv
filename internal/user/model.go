@@ -18,7 +18,7 @@ type SysUser struct {
 	PhoneNumber          *string    `gorm:"column:phone_number;type:varchar(255)" json:"phone_number"`
 	RealName             *string    `gorm:"column:real_name;type:varchar(255)" json:"real_name"`
 	Status               *int       `gorm:"column:status" json:"status"`
-	LicenseId            *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId            *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	CreateTime           *time.Time `gorm:"column:create_time" json:"create_time"`
 	LastLoginTime        *time.Time `gorm:"column:last_login_time" json:"last_login_time"`
 	LoginErrorTimes      *int       `gorm:"column:login_error_times" json:"login_error_times"`
@@ -137,13 +137,13 @@ func ToUserDTOs(users []SysUser) []UserDTO {
 }
 
 // Role 对应 role 表 (Java: String id, not auto-increment)
-// Column names name/tenancy_id align with Java Role entity (JPA default naming
-// from name/tenancyId fields). Go field names retained for code stability.
+// Column names name/tenant_id align with Java Role entity (JPA default naming
+// from name/tenantId fields). Go field names retained for code stability.
 type Role struct {
 	Id          string     `gorm:"primaryKey;type:varchar(32)" json:"id"`
 	RoleName    *string    `gorm:"column:name;type:varchar(255)" json:"role_name"`
 	Description *string    `gorm:"column:description;type:varchar(255)" json:"description"`
-	LicenseId   *int       `gorm:"column:tenancy_id" json:"license_id"`
+	TenantId   *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	UseToSSO    *bool      `gorm:"column:use_to_sso" json:"use_to_sso"`
 	DefaultRole *bool      `gorm:"column:default_role" json:"default_role"`
 	User        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
@@ -189,7 +189,7 @@ type LoginLog struct {
 	IpAddress  *string    `gorm:"column:ip;type:varchar(255)" json:"ip_address"`
 	LoginTime  *time.Time `gorm:"column:operation_time" json:"login_time"`
 	Result     *int       `gorm:"column:result" json:"result"`
-	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	Type       *int       `gorm:"column:type" json:"type"`
 	Info       *string    `gorm:"column:info;type:varchar(500)" json:"info"`
 }
@@ -239,7 +239,7 @@ type ResetPasswordByLinkRequest struct {
 // SetTenancyRequest 设置用户租户请求
 type SetTenancyRequest struct {
 	UserId    int `json:"userId" binding:"required"`
-	LicenseId int `json:"licenseId" binding:"required"`
+	TenantId int `json:"tenantId" binding:"required"`
 }
 
 // Redis key 常量

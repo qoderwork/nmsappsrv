@@ -62,14 +62,14 @@ func (h *Handler) ListProductTypeAndDeviceCount(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
-	var tenancyIdPtr *int
-	if tenancyId > 0 {
-		tenancyIdPtr = &tenancyId
+	tenantId := middleware.GetTenantId(c)
+	var tenantIdPtr *int
+	if tenantId > 0 {
+		tenantIdPtr = &tenantId
 	}
 
 	ctx := context.Background()
-	data, err := h.svc.ListProductTypeAndDeviceCount(ctx, req.Mode, tenancyIdPtr)
+	data, err := h.svc.ListProductTypeAndDeviceCount(ctx, req.Mode, tenantIdPtr)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -91,14 +91,14 @@ func (h *Handler) ListBaseStationStatistics(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
-	var tenancyIdPtr *int
-	if tenancyId > 0 {
-		tenancyIdPtr = &tenancyId
+	tenantId := middleware.GetTenantId(c)
+	var tenantIdPtr *int
+	if tenantId > 0 {
+		tenantIdPtr = &tenantId
 	}
 
 	ctx := context.Background()
-	data, err := h.svc.ListBaseStationStatistics(ctx, tenancyIdPtr, req.ElementIds, *req.StartTime, *req.EndTime)
+	data, err := h.svc.ListBaseStationStatistics(ctx, tenantIdPtr, req.ElementIds, *req.StartTime, *req.EndTime)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -120,17 +120,17 @@ func (h *Handler) ListPDCPTrafficStatistic(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
-	var tenancyIdPtr *int
-	if tenancyId > 0 {
-		tenancyIdPtr = &tenancyId
+	tenantId := middleware.GetTenantId(c)
+	var tenantIdPtr *int
+	if tenantId > 0 {
+		tenantIdPtr = &tenantId
 	}
 
 	startTimeStr := req.StartTime.Format("2006-01-02 15:04:05")
 	endTimeStr := req.EndTime.Format("2006-01-02 15:04:05")
 
 	ctx := context.Background()
-	data, err := h.svc.ListPDCPTrafficStatistic(ctx, startTimeStr, endTimeStr, tenancyIdPtr)
+	data, err := h.svc.ListPDCPTrafficStatistic(ctx, startTimeStr, endTimeStr, tenantIdPtr)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -141,14 +141,14 @@ func (h *Handler) ListPDCPTrafficStatistic(c *gin.Context) {
 
 // ListDeviceOnlineInfo handles POST /api/v1/listDeviceOnlineInfo
 func (h *Handler) ListDeviceOnlineInfo(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
-	var tenancyIdPtr *int
-	if tenancyId > 0 {
-		tenancyIdPtr = &tenancyId
+	tenantId := middleware.GetTenantId(c)
+	var tenantIdPtr *int
+	if tenantId > 0 {
+		tenantIdPtr = &tenantId
 	}
 
 	ctx := context.Background()
-	data, err := h.svc.ListDeviceOnlineInfo(ctx, tenancyIdPtr)
+	data, err := h.svc.ListDeviceOnlineInfo(ctx, tenantIdPtr)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -170,14 +170,14 @@ func (h *Handler) StatisticKPIForDevicelop(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
-	var tenancyIdPtr *int
-	if tenancyId > 0 {
-		tenancyIdPtr = &tenancyId
+	tenantId := middleware.GetTenantId(c)
+	var tenantIdPtr *int
+	if tenantId > 0 {
+		tenantIdPtr = &tenantId
 	}
 
 	ctx := context.Background()
-	data, err := h.svc.StatisticKPIForDevicelop(ctx, tenancyIdPtr, req.DeviceGroupId, req.Granularity, req.Gmt, req.Timestamp)
+	data, err := h.svc.StatisticKPIForDevicelop(ctx, tenantIdPtr, req.DeviceGroupId, req.Granularity, req.Gmt, req.Timestamp)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

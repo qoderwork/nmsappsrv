@@ -30,7 +30,7 @@ type BatchProcessFile struct {
 	FileSize   *int64     `gorm:"column:file_size" json:"file_size"`
 	Status     int        `gorm:"column:status" json:"status"` // 0=uploaded, 1=sending, 2=sent, 3=completed, 4=failed
 	UploadUser *string    `gorm:"column:upload_user;type:varchar(255)" json:"upload_user"`
-	LicenseId  *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	UploadTime *time.Time `gorm:"column:upload_time" json:"upload_time"`
 	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
 }
@@ -57,11 +57,11 @@ func (BatchProcessLog) TableName() string { return "batch_process_log" }
 // ---------------------------------------------------------------------------
 
 // FindBatchProcessFiles returns all batch process files for the given license.
-func (r *repository) FindBatchProcessFiles(licenseId int) ([]BatchProcessFile, error) {
+func (r *repository) FindBatchProcessFiles(tenantId int) ([]BatchProcessFile, error) {
 	var files []BatchProcessFile
 	query := r.db.Model(&BatchProcessFile{})
-	if licenseId > 0 {
-		query = query.Where("license_id = ?", licenseId)
+	if tenantId > 0 {
+		query = query.Where("tenant_id = ?", tenantId)
 	}
 	if err := query.Order("upload_time DESC").
 		Find(&files).Error; err != nil {
@@ -153,9 +153,9 @@ func (r *repository) FindBatchProcessExecuteResults(batchFileId int) ([]MmlExecu
 // BatchProcessService defines the business-logic contract for MML batch
 // processing operations.
 type BatchProcessService interface {
-	UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, licenseId int) (*BatchProcessFile, error)
-	ListBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
-	SendBatchProcessFile(id int, licenseId int) (*BatchProcessFile, error)
+	UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, tenantId int) (*BatchProcessFile, error)
+	ListBatchProcessFiles(tenantId int) ([]BatchProcessFile, error)
+	SendBatchProcessFile(id int, tenantId int) (*BatchProcessFile, error)
 	CheckBatchProcessFile(id int) (*BatchProcessFile, error)
 	ListBatchProcessLogs(batchFileId int) ([]BatchProcessLog, error)
 	ListBatchExecuteResults(batchFileId int) ([]MmlExecuteResult, error)
@@ -165,24 +165,24 @@ type BatchProcessService interface {
 
 const uploadBatchProcessDir = "/data/uploads/batch_process"
 
-func (s *service) UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, licenseId int) (*BatchProcessFile, error) {
+func (s *service) UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, tenantId int) (*BatchProcessFile, error) {
 	now := time.Now()
-	file := &BatchProcessFile{FileName: &fileName, FilePath: &filePath, FileSize: &fileSize, Status: 0, UploadUser: &username, LicenseId: &licenseId, UploadTime: &now, UpdateTime: &now}
+	file := &BatchProcessFile{FileName: &fileName, FilePath: &filePath, FileSize: &fileSize, Status: 0, UploadUser: &username, TenantId: &tenantId, UploadTime: &now, UpdateTime: &now}
 	if err := s.repo.CreateBatchProcessFile(file); err != nil {
 		return nil, apperror.Wrap(err, "UPLOAD_BATCH_PROCESS_FAILED", 500, "failed to save batch process file record")
 	}
 	return file, nil
 }
 
-func (s *service) ListBatchProcessFiles(licenseId int) ([]BatchProcessFile, error) {
-	data, err := s.repo.FindBatchProcessFiles(licenseId)
+func (s *service) ListBatchProcessFiles(tenantId int) ([]BatchProcessFile, error) {
+	data, err := s.repo.FindBatchProcessFiles(tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "LIST_BATCH_PROCESS_FILES_FAILED", 500, "failed to list batch process files")
 	}
 	return data, nil
 }
 
-func (s *service) SendBatchProcessFile(id int, licenseId int) (*BatchProcessFile, error) {
+func (s *service) SendBatchProcessFile(id int, tenantId int) (*BatchProcessFile, error) {
 	file, err := s.repo.FindBatchProcessFileByID(id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -363,8 +363,8 @@ func (h *Handler) UploadBatchProcessFile(c *gin.Context) {
 		return
 	}
 	username := middleware.GetUsername(c)
-	licenseId := middleware.GetLicenseId(c)
-	result, err := h.svc.UploadBatchProcessFile(fileHeader.Filename, filePath, fileHeader.Size, username, licenseId)
+	tenantId := middleware.GetTenantId(c)
+	result, err := h.svc.UploadBatchProcessFile(fileHeader.Filename, filePath, fileHeader.Size, username, tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -373,8 +373,8 @@ func (h *Handler) UploadBatchProcessFile(c *gin.Context) {
 }
 
 func (h *Handler) ListBatchProcessFiles(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	data, err := h.svc.ListBatchProcessFiles(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	data, err := h.svc.ListBatchProcessFiles(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -388,8 +388,8 @@ func (h *Handler) SendBatchProcessFile(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid batch process file id")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	result, err := h.svc.SendBatchProcessFile(id, licenseId)
+	tenantId := middleware.GetTenantId(c)
+	result, err := h.svc.SendBatchProcessFile(id, tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

@@ -17,7 +17,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // ListBackupRestoreTasks returns a paginated list of backup/restore tasks.
-func (s *service) ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error) {
+func (s *service) ListBackupRestoreTasks(tenantId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -25,7 +25,7 @@ func (s *service) ListBackupRestoreTasks(tenancyId int, page, pageSize int) ([]B
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-	return s.repo.FindBackupOrRestoreTasks(tenancyId, offset, pageSize)
+	return s.repo.FindBackupOrRestoreTasks(tenantId, offset, pageSize)
 }
 
 // CreateBackupRestoreTask persists a new backup/restore task.
@@ -50,7 +50,7 @@ type operationMessage struct {
 
 // BatchAddObject creates a batch-add-object task and dispatches AddObject
 // commands for each device to the Redis operation queue.
-func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, tenancyId int) error {
+func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, tenantId int) error {
 	if len(req.Ids) == 0 {
 		return fmt.Errorf("device ids must not be empty")
 	}
@@ -64,7 +64,7 @@ func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, te
 	task := &BatchAddObjectTask{
 		User:      &username,
 		Time:      &now,
-		TenancyId: &tenancyId,
+		TenantId: &tenantId,
 	}
 	if err := s.repo.CreateBatchAddObjectTask(task); err != nil {
 		return fmt.Errorf("create task: %w", err)
@@ -122,7 +122,7 @@ func (s *service) BatchAddObject(req *BatchAddObjectRequest, username string, te
 }
 
 // ListBatchAddObjectTasks returns the paginated task list with progress info.
-func (s *service) ListBatchAddObjectTasks(tenancyId int, page, pageSize int) ([]BatchAddObjectTaskVo, int64, error) {
+func (s *service) ListBatchAddObjectTasks(tenantId int, page, pageSize int) ([]BatchAddObjectTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -131,7 +131,7 @@ func (s *service) ListBatchAddObjectTasks(tenancyId int, page, pageSize int) ([]
 	}
 	offset := (page - 1) * pageSize
 
-	tasks, total, err := s.repo.FindBatchAddObjectTasks(tenancyId, offset, pageSize)
+	tasks, total, err := s.repo.FindBatchAddObjectTasks(tenantId, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -163,14 +163,14 @@ func (s *service) ListBatchAddObjectTaskDetail(taskId int) ([]BatchAddObjectTask
 
 // CreateBackupTask creates a batch backup task and dispatches commands for
 // immediate execution (mode 1) or saves it for later trigger (mode 2/3).
-func (s *service) CreateBackupTask(req *BackupRestoreRequest, username string, tenancyId int) error {
+func (s *service) CreateBackupTask(req *BackupRestoreRequest, username string, tenantId int) error {
 	if req.Name == "" {
 		return fmt.Errorf("task name is required")
 	}
 	if req.ExecuteMode < 1 || req.ExecuteMode > 3 {
 		return fmt.Errorf("invalid execute mode: %d", req.ExecuteMode)
 	}
-	if s.repo.CheckDuplicateBackupRestoreTaskName(req.Name, tenancyId) {
+	if s.repo.CheckDuplicateBackupRestoreTaskName(req.Name, tenantId) {
 		return fmt.Errorf("task name already exists: %s", req.Name)
 	}
 
@@ -190,7 +190,7 @@ func (s *service) CreateBackupTask(req *BackupRestoreRequest, username string, t
 		OperationTime:      &now,
 		Status:             &status,
 		ExecuteMode:        &req.ExecuteMode,
-		TenancyId:          &tenancyId,
+		TenantId:          &tenantId,
 		TaskType:           &taskType,
 		ExecuteOnAllDevice: &req.ExecuteOnAllDevice,
 		ElementIds:         strPtr(string(elementIdsJSON)),
@@ -220,14 +220,14 @@ func (s *service) CreateBackupTask(req *BackupRestoreRequest, username string, t
 
 // CreateRestoreTask creates a batch restore task and dispatches commands for
 // immediate execution (mode 1) or saves it for later trigger (mode 2/3).
-func (s *service) CreateRestoreTask(req *BackupRestoreRequest, username string, tenancyId int) error {
+func (s *service) CreateRestoreTask(req *BackupRestoreRequest, username string, tenantId int) error {
 	if req.Name == "" {
 		return fmt.Errorf("task name is required")
 	}
 	if req.ExecuteMode < 1 || req.ExecuteMode > 3 {
 		return fmt.Errorf("invalid execute mode: %d", req.ExecuteMode)
 	}
-	if s.repo.CheckDuplicateBackupRestoreTaskName(req.Name, tenancyId) {
+	if s.repo.CheckDuplicateBackupRestoreTaskName(req.Name, tenantId) {
 		return fmt.Errorf("task name already exists: %s", req.Name)
 	}
 
@@ -247,7 +247,7 @@ func (s *service) CreateRestoreTask(req *BackupRestoreRequest, username string, 
 		OperationTime:      &now,
 		Status:             &status,
 		ExecuteMode:        &req.ExecuteMode,
-		TenancyId:          &tenancyId,
+		TenantId:          &tenantId,
 		TaskType:           &taskType,
 		ExecuteOnAllDevice: &req.ExecuteOnAllDevice,
 		ElementIds:         strPtr(string(elementIdsJSON)),
@@ -324,7 +324,7 @@ func (s *service) CancelBackupRestoreTask(taskId int) error {
 }
 
 // ListBackupRestoreTasksVo returns the task list with progress and result info.
-func (s *service) ListBackupRestoreTasksVo(tenancyId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
+func (s *service) ListBackupRestoreTasksVo(tenantId int, page, pageSize int) ([]BackupRestoreTaskVo, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -333,7 +333,7 @@ func (s *service) ListBackupRestoreTasksVo(tenancyId int, page, pageSize int) ([
 	}
 	offset := (page - 1) * pageSize
 
-	tasks, total, err := s.repo.FindBackupOrRestoreTasks(tenancyId, offset, pageSize)
+	tasks, total, err := s.repo.FindBackupOrRestoreTasks(tenantId, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}

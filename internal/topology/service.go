@@ -419,7 +419,7 @@ func (s *Service) doRU(eid int64, parentRoute string, addChild func(TopologyDevi
 // BatchUpgradeEUAndRU creates a batch upgrade task for EU and RU devices.
 // It saves a local log and sends the BatchUpgrade SOAP to the BBU device,
 // mirroring Java BatchUpgradeEUAndRU (which also persists and dispatches).
-func (s *Service) BatchUpgradeEUAndRU(req *BatchUpgradeRequest, tenancyId int, username string) error {
+func (s *Service) BatchUpgradeEUAndRU(req *BatchUpgradeRequest, tenantId int, username string) error {
 	if req.ElementId == 0 || len(req.Devices) == 0 {
 		return apperror.ErrInvalidInput
 	}
@@ -483,7 +483,7 @@ func (s *Service) BatchUpgradeEUAndRU(req *BatchUpgradeRequest, tenancyId int, u
 	ovJSON, _ := json.Marshal(oldVersions)
 	now := time.Now()
 	log := upgrade.EUAndRUBatchUpgradeLog{
-		TenancyId: &tenancyId, ElementId: &req.ElementId,
+		TenantId: &tenantId, ElementId: &req.ElementId,
 		User: &username, OperationTime: &now,
 		OriginalVersion: strPtr(string(ovJSON)),
 	}

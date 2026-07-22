@@ -15,21 +15,21 @@ import (
 
 // Service defines the business-logic contract for MML operations.
 type Service interface {
-	ListMmlSets(licenseId int) ([]MmlSet, error)
+	ListMmlSets(tenantId int) ([]MmlSet, error)
 	ListMmlCommands(setId int) ([]MmlCommand, error)
 	GetMmlCommandParams(commandId int) ([]MmlCommandParam, error)
 	ExecuteMml(elementId int64, command string, uid string, username string, params map[string]interface{}) (*MmlExecuteResult, error)
 	ListMmlResults(elementId int64, page, pageSize int) ([]MmlExecuteResult, int64, error)
 	GetMmlResult(id int) (*MmlExecuteResult, error)
 	GetMMLResultByEventLogIds(eventLogIds []int64) ([]GetMMLResultByEventLogIdsVO, error)
-	ImportMMLAndParameter(reader io.Reader, version string, licenseId int) error
-	GetMmlVersions(licenseId int) ([]string, error)
-	GetMmlCommandsByVersion(version string, licenseId int) (*MmlVersionInfoVO, error)
-	GetMmlCommandTree(licenseId int) ([]MmlSetVo, error)
-	DeleteMmlByVersion(version string, licenseId int) error
-	UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, licenseId int) (*BatchProcessFile, error)
-	ListBatchProcessFiles(licenseId int) ([]BatchProcessFile, error)
-	SendBatchProcessFile(id int, licenseId int) (*BatchProcessFile, error)
+	ImportMMLAndParameter(reader io.Reader, version string, tenantId int) error
+	GetMmlVersions(tenantId int) ([]string, error)
+	GetMmlCommandsByVersion(version string, tenantId int) (*MmlVersionInfoVO, error)
+	GetMmlCommandTree(tenantId int) ([]MmlSetVo, error)
+	DeleteMmlByVersion(version string, tenantId int) error
+	UploadBatchProcessFile(fileName, filePath string, fileSize int64, username string, tenantId int) (*BatchProcessFile, error)
+	ListBatchProcessFiles(tenantId int) ([]BatchProcessFile, error)
+	SendBatchProcessFile(id int, tenantId int) (*BatchProcessFile, error)
 	CheckBatchProcessFile(id int) (*BatchProcessFile, error)
 	ListBatchProcessLogs(batchFileId int) ([]BatchProcessLog, error)
 	ListBatchExecuteResults(batchFileId int) ([]MmlExecuteResult, error)
@@ -53,8 +53,8 @@ func newService(repo Repository) Service {
 }
 
 // ListMmlSets returns all MML sets for the given license.
-func (s *service) ListMmlSets(licenseId int) ([]MmlSet, error) {
-	return s.repo.FindMmlSets(licenseId)
+func (s *service) ListMmlSets(tenantId int) ([]MmlSet, error) {
+	return s.repo.FindMmlSets(tenantId)
 }
 
 // ListMmlCommands returns all commands in the given MML set.

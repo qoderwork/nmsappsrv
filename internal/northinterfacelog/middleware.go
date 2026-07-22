@@ -58,7 +58,7 @@ func AuditMiddleware(svc *Service) gin.HandlerFunc {
 			ElementID:     0,
 			PresetTaskID:  0,
 			Info:          "HTTP " + strconv.Itoa(status),
-			TenancyID:     tenancyIDOf(c),
+			TenancyID:     tenantIDOf(c),
 		}
 		utils.SafeGo("north-interface-audit", func() {
 			_ = svc.Save(log)
@@ -66,11 +66,11 @@ func AuditMiddleware(svc *Service) gin.HandlerFunc {
 	}
 }
 
-// tenancyIDOf resolves the tenancy id from context, falling back to the JWT
-// license id. In the Java northbound context tenancyId == licenseId, so the
+// tenantIDOf resolves the tenancy id from context, falling back to the JWT
+// license id. In the Java northbound context tenantId == tenantId, so the
 // JWT claim is the right fallback when no explicit tenancy header is present.
-func tenancyIDOf(c *gin.Context) int {
-	if v, ok := c.Get("tenancy_id"); ok {
+func tenantIDOf(c *gin.Context) int {
+	if v, ok := c.Get("tenant_id"); ok {
 		switch t := v.(type) {
 		case int:
 			return t
@@ -82,5 +82,5 @@ func tenancyIDOf(c *gin.Context) int {
 			}
 		}
 	}
-	return middleware.GetLicenseId(c)
+	return middleware.GetTenantId(c)
 }

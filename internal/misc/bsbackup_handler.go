@@ -27,9 +27,9 @@ func (h *Handler) ListBaseStationBackupInfo(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	list, total, err := h.svc.ListBaseStationBackupInfo(&req, tenancyId)
+	list, total, err := h.svc.ListBaseStationBackupInfo(&req, tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list backup info: "+err.Error())
 		return
@@ -61,9 +61,9 @@ func (h *Handler) ImportConfigFile(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	result, err := h.svc.ImportConfigFile(elementId, header.Filename, fileData, tenancyId)
+	result, err := h.svc.ImportConfigFile(elementId, header.Filename, fileData, tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to import config file: "+err.Error())
 		return
@@ -85,9 +85,9 @@ func (h *Handler) ExportConfigFile(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	zipPath, err := h.svc.ExportConfigFile(req.ElementIds, tenancyId)
+	zipPath, err := h.svc.ExportConfigFile(req.ElementIds, tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to export config files: "+err.Error())
 		return
@@ -108,9 +108,9 @@ func (h *Handler) AddBSBackupTask(c *gin.Context) {
 	}
 
 	username := middleware.GetUsername(c)
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	if err := h.svc.CreateBSBackupTask(&req, username, tenancyId); err != nil {
+	if err := h.svc.CreateBSBackupTask(&req, username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to create backup task: "+err.Error())
 		return
 	}
@@ -162,9 +162,9 @@ func (h *Handler) AddBSRestoreTask(c *gin.Context) {
 	}
 
 	username := middleware.GetUsername(c)
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	if err := h.svc.CreateBSRestoreTask(&req, username, tenancyId); err != nil {
+	if err := h.svc.CreateBSRestoreTask(&req, username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to create restore task: "+err.Error())
 		return
 	}
@@ -206,9 +206,9 @@ func (h *Handler) ListBSBackupTasks(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	list, total, err := h.svc.ListBSBackupTasks(tenancyId, req.Page, req.PageSize)
+	list, total, err := h.svc.ListBSBackupTasks(tenantId, req.Page, req.PageSize)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list tasks: "+err.Error())
 		return

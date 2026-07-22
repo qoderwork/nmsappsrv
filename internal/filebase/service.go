@@ -54,18 +54,18 @@ func (s *Service) ensureDirs() {
 }
 
 // BpfPath returns the path for a bpf (batch-process) file, honouring the
-// optional licenseId sub-directory exactly like Java's FileDownloadController
-// (batchProcessFilePath/{licenseId}/{fileName}).
-func (s *Service) BpfPath(licenseID string, fileName string) string {
-	if licenseID != "" {
-		return filepath.Join(s.cfg.BatchProcessDir, licenseID, fileName)
+// optional tenantId sub-directory exactly like Java's FileDownloadController
+// (batchProcessFilePath/{tenantId}/{fileName}).
+func (s *Service) BpfPath(tenantID string, fileName string) string {
+	if tenantID != "" {
+		return filepath.Join(s.cfg.BatchProcessDir, tenantID, fileName)
 	}
 	return filepath.Join(s.cfg.BatchProcessDir, fileName)
 }
 
-// ConfigPath returns configFilePath/{tenancyId}/{elementId}/{fileName}.
-func (s *Service) ConfigPath(tenancyID, elementID int64, fileName string) string {
-	return filepath.Join(s.cfg.ConfigDir, itoa(tenancyID), itoa(elementID), fileName)
+// ConfigPath returns configFilePath/{tenantId}/{elementId}/{fileName}.
+func (s *Service) ConfigPath(tenantID, elementID int64, fileName string) string {
+	return filepath.Join(s.cfg.ConfigDir, itoa(tenantID), itoa(elementID), fileName)
 }
 
 // MmlResultPath returns mmlExecuteResultFilePath/{elementId}/{fileName}.

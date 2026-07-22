@@ -35,7 +35,7 @@ type excelDeviceParams struct {
 // SetParameterValues for each device found by serial number. This mirrors
 // Java ConfigurationManagementServiceImpl.batchParameterConfiguration:
 // sheets → headers (param names) → data rows (serial keys) → dispatch.
-func (s *service) BatchParameterConfiguration(excelBytes []byte, username string, tenancyId int) error {
+func (s *service) BatchParameterConfiguration(excelBytes []byte, username string, tenantId int) error {
 	if len(excelBytes) == 0 {
 		return fmt.Errorf("excel file must not be empty")
 	}
@@ -56,7 +56,7 @@ func (s *service) BatchParameterConfiguration(excelBytes []byte, username string
 	task := &misc.BatchConfigurationLog{
 		Name:          &taskName,
 		OperationTime: &now,
-		TenancyId:     &tenancyId,
+		TenantId:     &tenantId,
 		User:          &username,
 		DeviceCount:   &deviceCount,
 	}
@@ -225,16 +225,16 @@ func (h *Handler) BatchParameterConfiguration(c *gin.Context) {
 	}
 
 	username := middleware.GetUsername(c)
-	var tenancyId int
-	if v, ok := c.Get("tenancy_id"); ok {
+	var tenantId int
+	if v, ok := c.Get("tenant_id"); ok {
 		switch t := v.(type) {
 		case string:
-			tenancyId, _ = strconv.Atoi(t)
+			tenantId, _ = strconv.Atoi(t)
 		case int:
-			tenancyId = t
+			tenantId = t
 		}
 	}
-	if err := h.svc.BatchParameterConfiguration(buf.Bytes(), username, tenancyId); err != nil {
+	if err := h.svc.BatchParameterConfiguration(buf.Bytes(), username, tenantId); err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

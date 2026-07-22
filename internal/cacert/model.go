@@ -25,7 +25,7 @@ type CaTask struct {
 	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
 	UpdateBy   *string    `gorm:"column:update_by;type:varchar(255)" json:"update_by"`
 	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
-	TenancyId  *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (CaTask) TableName() string { return "ca_task" }

@@ -22,9 +22,9 @@ var publicPathPrefixes = []string{
 	"/webssh",           // WebSSH
 }
 
-// defaultLicenseIdStr is the string representation of the default license ID.
-// Corresponds to pkg/database.DefaultLicenseId ("1").
-const defaultLicenseIdStr = "1"
+// defaultTenantIdStr is the string representation of the default license ID.
+// Corresponds to pkg/database.DefaultTenantId ("1").
+const defaultTenantIdStr = "1"
 
 // publicExactPaths lists paths that bypass TenancyMiddleware via exact
 // matching. Mirrors Java InterceptorConfig.excludePathPatterns
@@ -59,10 +59,10 @@ func isPublicPath(path string) bool {
 	return false
 }
 
-// extractLicenseIDFromJWT parses the JWT from Authorization header and
-// extracts the license_id claim. Used by TenancyMiddleware when neither
+// extractTenantIDFromJWT parses the JWT from Authorization header and
+// extracts the tenant_id claim. Used by TenancyMiddleware when neither
 // X-License-Id header nor gin context (set by AuthMiddleware) is available.
-func extractLicenseIDFromJWT(c *gin.Context) int {
+func extractTenantIDFromJWT(c *gin.Context) int {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
 		return 0
@@ -76,11 +76,11 @@ func extractLicenseIDFromJWT(c *gin.Context) int {
 	if err != nil {
 		return 0
 	}
-	return claims.LicenseID
+	return claims.TenantID
 }
 
-// TenancyMiddleware extracts license_id and tenancy_id from request headers
-// or JWT context, and sets tenancy_id in gin.Context for downstream handlers.
+// TenancyMiddleware extracts tenant_id and tenant_id from request headers
+// or JWT context, and sets tenant_id in gin.Context for downstream handlers.
 // Public paths (health, metrics, swagger, device-facing file server, etc.)
 // bypass this check entirely — they have no per-tenant context.
 func TenancyMiddleware() gin.HandlerFunc {
@@ -90,66 +90,53 @@ func TenancyMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Extract license_id: header first, then JWT context, then JWT from Authorization header
-		licenseIDStr := c.GetHeader("X-License-Id")
-		var licenseID int
-		if licenseIDStr == "" {
+		// Extract tenant_id: header first, then JWT context, then JWT from Authorization header
+		tenantIDStr := c.GetHeader("X-License-Id")
+		var tenantID int
+		if tenantIDStr == "" {
 			// Try JWT context (int type from AuthMiddleware)
-			if val, exists := c.Get("license_id"); exists {
+			if val, exists := c.Get("tenant_id"); exists {
 				switch v := val.(type) {
 				case int:
-					licenseID = v
+					tenantID = v
 				case float64:
-					licenseID = int(v)
+					tenantID = int(v)
 				}
 			}
 			// If AuthMiddleware hasn't run yet (e.g. global middleware order),
 			// parse JWT directly from Authorization header
-			if licenseID <= 0 {
-				licenseID = extractLicenseIDFromJWT(c)
+			if tenantID <= 0 {
+				tenantID = extractTenantIDFromJWT(c)
 			}
 		} else {
 			// Handle "default" as special case (maps to ID 1)
-			if licenseIDStr == "default" || licenseIDStr == defaultLicenseIdStr {
-				licenseID = 1
+			if tenantIDStr == "default" || tenantIDStr == defaultTenantIdStr {
+				tenantID = 1
 			} else {
 				// Try parsing as integer
-				id, err := strconv.Atoi(licenseIDStr)
+				id, err := strconv.Atoi(tenantIDStr)
 				if err != nil {
-					logger.Warnf("invalid license_id header '%s' for request %s %s from %s",
-						licenseIDStr, c.Request.Method, c.Request.RequestURI, c.ClientIP())
-					utils.Error(c, 403, "invalid license_id")
+					logger.Warnf("invalid tenant_id header '%s' for request %s %s from %s",
+						tenantIDStr, c.Request.Method, c.Request.RequestURI, c.ClientIP())
+					utils.Error(c, 403, "invalid tenant_id")
 					c.Abort()
 					return
 				}
-				licenseID = id
+				tenantID = id
 			}
 		}
 
-		// Extract tenancy_id: header first, then JWT context
-		tenancyID := c.GetHeader("X-Tenancy-Id")
-		if tenancyID == "" {
-			if val, exists := c.Get("tenancy_id"); exists {
-				if s, ok := val.(string); ok {
-					tenancyID = s
-				}
-			}
-		}
-
-		// license_id is required (must be > 0)
-		if licenseID <= 0 {
-			logger.Warnf("missing or invalid license_id for request %s %s from %s",
+		// tenant_id is required (must be > 0)
+		if tenantID <= 0 {
+			logger.Warnf("missing or invalid tenant_id for request %s %s from %s",
 				c.Request.Method, c.Request.RequestURI, c.ClientIP())
-			utils.Error(c, 403, "license_id required")
+			utils.Error(c, 403, "tenant_id required")
 			c.Abort()
 			return
 		}
 
-		// Set values in context for downstream handlers as int
-		c.Set("license_id", licenseID)
-		if tenancyID != "" {
-			c.Set("tenancy_id", tenancyID)
-		}
+		// Set tenant_id in context for downstream handlers as int
+		c.Set("tenant_id", tenantID)
 
 		c.Next()
 	}

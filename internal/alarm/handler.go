@@ -46,9 +46,9 @@ func (h *Handler) ListAlarms(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	severity := c.Query("severity")
 	alarmType, _ := strconv.Atoi(c.DefaultQuery("alarm_type", "0"))
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListAlarms(licenseId, severity, alarmType, page, pageSize)
+	data, total, err := h.svc.ListAlarms(tenantId, severity, alarmType, page, pageSize)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -158,8 +158,8 @@ func (h *Handler) UnconfirmAlarm(c *gin.Context) {
 
 // GetSeverityCount handles GET /alarms/severity-count
 func (h *Handler) GetSeverityCount(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	data, err := h.svc.GetSeverityCount(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	data, err := h.svc.GetSeverityCount(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -173,9 +173,9 @@ func (h *Handler) GetSeverityCount(c *gin.Context) {
 
 // ListAlarmLibrary handles GET /alarm-library
 func (h *Handler) ListAlarmLibrary(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListAlarmLibrary(tenancyId)
+	data, err := h.svc.ListAlarmLibrary(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -189,9 +189,9 @@ func (h *Handler) ListAlarmLibrary(c *gin.Context) {
 
 // ListAlarmTemplates handles GET /alarm-templates
 func (h *Handler) ListAlarmTemplates(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListAlarmTemplates(tenancyId)
+	data, err := h.svc.ListAlarmTemplates(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -297,9 +297,9 @@ func (h *Handler) UpdateAlarmTemplateEmailNotification(c *gin.Context) {
 
 // ListAlarmFilters handles GET /alarm-filters
 func (h *Handler) ListAlarmFilters(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.ListAlarmFilters(licenseId)
+	data, err := h.svc.ListAlarmFilters(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -494,8 +494,8 @@ func (h *Handler) ImportAlarmLibrary(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
-	imported, err := h.svc.ImportAlarmLibrary(tenancyId, items)
+	tenantId := middleware.GetTenantId(c)
+	imported, err := h.svc.ImportAlarmLibrary(tenantId, items)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -676,8 +676,8 @@ func (h *Handler) UpdateEmailNotificationConfig(c *gin.Context) {
 // QueryAlarmStatisticResult handles POST /alarms/statistic
 // Mirrors Java queryAlarmStatisticResult.
 func (h *Handler) QueryAlarmStatisticResult(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	result, err := h.svc.QueryAlarmStatisticResult(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	result, err := h.svc.QueryAlarmStatisticResult(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -703,8 +703,8 @@ func (h *Handler) DeleteAlarmLibrary(c *gin.Context) {
 // ListActiveAlarmProbableCause handles GET /alarms/active-probable-causes
 // Mirrors Java listActiveAlarmProbableCause.
 func (h *Handler) ListActiveAlarmProbableCause(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	causes, err := h.svc.ListActiveAlarmProbableCause(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	causes, err := h.svc.ListActiveAlarmProbableCause(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -715,8 +715,8 @@ func (h *Handler) ListActiveAlarmProbableCause(c *gin.Context) {
 // GetAlarmEventType handles POST /alarms/event-type
 // Mirrors Java getAlarmEventType.
 func (h *Handler) GetAlarmEventType(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
-	types, err := h.svc.GetAlarmEventType(licenseId)
+	tenantId := middleware.GetTenantId(c)
+	types, err := h.svc.GetAlarmEventType(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return

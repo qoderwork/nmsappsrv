@@ -20,7 +20,7 @@ type Parameter struct {
 	Range                *string    `gorm:"column:rg;type:longtext" json:"range"`
 	IsOpen               bool       `gorm:"column:is_open" json:"is_open"`
 	StandardParameter    bool       `gorm:"column:standard_parameter" json:"standard_parameter"`
-	LicenseId            *int       `gorm:"column:license_id" json:"license_id"`
+	TenantId            *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	RegularExpression    *string    `gorm:"column:regular_expression;type:varchar(255)" json:"regular_expression"`
 	SelfDevelopParameter bool       `gorm:"column:self_develop_parameter" json:"self_develop_parameter"`
 	NeedReboot           *bool      `gorm:"column:need_reboot" json:"need_reboot"`
@@ -124,7 +124,7 @@ type ParameterSet struct {
 	ParentId       *string `gorm:"column:parent_id;type:varchar(32)" json:"parent_id"`
 	StandardSet    bool    `gorm:"column:standard_set" json:"standard_set"`
 	Sort           int     `gorm:"column:sort" json:"sort"`
-	LicenseId      *int    `gorm:"column:license_id" json:"license_id"`
+	TenantId      *int    `gorm:"column:tenant_id" json:"tenant_id"`
 	SelfDevelopSet bool    `gorm:"column:self_develop_set" json:"self_develop_set"`
 	DeviceType     *string `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	Chinese        *string `gorm:"column:chinese;type:varchar(255)" json:"chinese"`
@@ -150,7 +150,7 @@ type ParameterTemplate struct {
 	Id          int64   `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	Description *string `gorm:"column:description;type:varchar(255)" json:"description"`
-	TenancyId   *int    `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId   *int    `gorm:"column:tenant_id" json:"tenant_id"`
 	IsDefault   *bool   `gorm:"column:is_default" json:"is_default"`
 }
 
@@ -184,7 +184,7 @@ type ParameterTemplateRequest struct {
 	ID          int64               `json:"id"`
 	Name        *string             `json:"name"`
 	Description *string             `json:"description"`
-	TenancyId   *int                `json:"tenancy_id"`
+	TenantId   *int                `json:"tenant_id"`
 	IsDefault   *bool               `json:"is_default"`
 	Parameters  []TemplateParameter `json:"parameters"`
 }
@@ -207,7 +207,7 @@ type ParameterTemplateDetailVo struct {
 	Id          int64                `json:"id"`
 	Name        string               `json:"name"`
 	Description string               `json:"description"`
-	TenancyId   int                  `json:"tenancyId"`
+	TenantId   int                  `json:"tenantId"`
 	IsDefault   bool                 `json:"isDefault"`
 	Parameters  []TemplateParameterVo `json:"parameters"`
 }
@@ -221,7 +221,7 @@ type ParameterDeploymentTemplate struct {
 	ElementIds   *string    `gorm:"column:element_ids;type:longtext" json:"elementIds"`
 	Parameters   *string    `gorm:"column:parameters;type:longtext" json:"parameters"`
 	NeedReboot   *bool      `gorm:"column:need_reboot" json:"needReboot"`
-	TenancyId    *int       `gorm:"column:tenancy_id" json:"tenancyId"`
+	TenantId    *int       `gorm:"column:tenant_id" json:"tenantId"`
 	CreateTime   *time.Time `gorm:"column:create_time" json:"createTime"`
 	UpdateTime   *time.Time `gorm:"column:update_time" json:"updateTime"`
 	CreateUser   *string    `gorm:"column:create_user;type:varchar(255)" json:"createUser"`
@@ -249,7 +249,7 @@ type ParameterDeploymentLog struct {
 	Result        *bool      `gorm:"column:result" json:"result"`
 	Info          *string    `gorm:"column:info;type:text" json:"info"`
 	OperationTime *time.Time `gorm:"column:operation_time" json:"operation_time"`
-	TenancyId     *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId     *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (ParameterDeploymentLog) TableName() string { return "parameter_deployment_log" }

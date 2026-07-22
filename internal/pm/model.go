@@ -15,7 +15,7 @@ type PerformanceKpi struct {
 	DescriptionTranslation *string    `gorm:"column:description_translation;type:longtext" json:"description_translation"`
 	TriggerPoint           *string    `gorm:"column:trigger_point;type:longtext" json:"trigger_point"`
 	TriggerPointTranslation *string   `gorm:"column:trigger_point_translation;type:longtext" json:"trigger_point_translation"`
-	TenancyId              *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId              *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	KpiSetId               *int       `gorm:"column:kpi_set_id" json:"kpi_set_id"`
 	IdFormula              *string    `gorm:"column:id_formula;type:varchar(255)" json:"id_formula"`
 	UpdateTime             *time.Time `gorm:"column:update_time" json:"update_time"`
@@ -31,7 +31,7 @@ type PerformanceKpiSet struct {
 	Id          int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	StandardSet *bool   `gorm:"column:standard_set" json:"standard_set"`
-	TenancyId   *int    `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId   *int    `gorm:"column:tenant_id" json:"tenant_id"`
 	DefaultSet  *bool   `gorm:"column:default_set" json:"default_set"`
 }
 
@@ -44,7 +44,7 @@ type PerformanceKpiTemplate struct {
 	UpdateTime      *time.Time `gorm:"column:update_time" json:"update_time"`
 	User            *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 	Description     *string    `gorm:"column:description;type:varchar(255)" json:"description"`
-	TenancyId       *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId       *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	DefaultTemplate *bool      `gorm:"column:default_template" json:"default_template"`
 }
 
@@ -77,7 +77,7 @@ type PMFileLog struct {
 	CollectionTime *time.Time `gorm:"column:collection_time" json:"collection_time"`
 	StartTime      *time.Time `gorm:"column:start_time;index:idx_ne_start" json:"start_time"`
 	EndTime        *time.Time `gorm:"column:end_time" json:"end_time"`
-	TenancyId      *int       `gorm:"column:tenancy_id;index:idx_tenancy_start" json:"tenancy_id"`
+	TenantId      *int       `gorm:"column:tenant_id;index:idx_tenancy_start" json:"tenant_id"`
 }
 
 func (PMFileLog) TableName() string { return "pm_file_log" }
@@ -89,7 +89,7 @@ type KpiAlarmTemplate struct {
 	Description *string    `gorm:"column:description;type:varchar(255)" json:"description"`
 	Enable      *bool      `gorm:"column:enable" json:"enable"`
 	ScopeMode   *int       `gorm:"column:scope_mode" json:"scope_mode"`
-	TenancyId   *int       `gorm:"column:tenancy_id;uniqueIndex:idx_tenancy_name" json:"tenancy_id"`
+	TenantId   *int       `gorm:"column:tenant_id;uniqueIndex:idx_tenancy_name" json:"tenant_id"`
 	UpdateTime  *time.Time `gorm:"column:update_time" json:"update_time"`
 	User        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 }
@@ -132,7 +132,7 @@ type DashboardPmStatisticData struct {
 	PdcpUlRate      *float64   `gorm:"column:pdcp_ul_rate" json:"pdcp_ul_rate"`
 	PdcpDlRate      *float64   `gorm:"column:pdcp_dl_rate" json:"pdcp_dl_rate"`
 	CellAvailableRate *float64 `gorm:"column:cell_available_rate" json:"cell_available_rate"`
-	TenancyId       *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId       *int       `gorm:"column:tenant_id" json:"tenant_id"`
 }
 
 func (DashboardPmStatisticData) TableName() string { return "dashboard_pm_statistic_data" }
@@ -140,7 +140,7 @@ func (DashboardPmStatisticData) TableName() string { return "dashboard_pm_statis
 // PDCPTraffic 对应 pdcp_traffic 表
 type PDCPTraffic struct {
 	Id            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenancyId     *int       `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId     *int       `gorm:"column:tenant_id" json:"tenant_id"`
 	UlTraffic     *float64   `gorm:"column:ul_traffic" json:"ul_traffic"`
 	DlTraffic     *float64   `gorm:"column:dl_traffic" json:"dl_traffic"`
 	StatisticTime *time.Time `gorm:"column:statistic_time" json:"statistic_time"`
@@ -207,7 +207,7 @@ type PMReplenishTask struct {
 	EndTime             *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode         *int      `gorm:"column:execute_mode" json:"execute_mode"`  // 1:Immediately; 2:Awaiting start; 3:Schedule Time
 	TriggerTime         *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenancyId           *int      `gorm:"column:tenancy_id" json:"tenancy_id"`
+	TenantId           *int      `gorm:"column:tenant_id" json:"tenant_id"`
 	ElementIds          *string   `gorm:"column:element_ids;type:longtext" json:"element_ids"`
 	Scope               *string   `gorm:"column:scope;type:varchar(255)" json:"scope"`
 	DeviceGroupIds      *string   `gorm:"column:device_group_ids;type:longtext" json:"device_group_ids"`

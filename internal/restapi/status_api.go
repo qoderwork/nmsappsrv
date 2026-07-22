@@ -31,9 +31,9 @@ func (s *service) GetRequestStatus(requestId string) (*RequestStatusVo, error) {
 
 // ListDeviceOnlineStatus returns real-time online status for all devices
 func (s *service) ListDeviceOnlineStatus(c *gin.Context) ([]DeviceOnlineStatusVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	devices, err := s.repo.ListAllNonDeletedDevices(licenseId)
+	devices, err := s.repo.ListAllNonDeletedDevices(tenantId)
 	if err != nil {
 		logger.Errorf("Failed to list devices for online status: %v", err)
 		return nil, apperror.Wrap(err, "LIST_DEVICE_ONLINE_STATUS_FAILED", 500, "failed to list devices")

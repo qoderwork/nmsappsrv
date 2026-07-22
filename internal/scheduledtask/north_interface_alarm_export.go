@@ -54,19 +54,19 @@ func (t *NorthInterfaceAlarmExport) Export() {
 	var tenancies []struct {
 		Id int `gorm:"column:id"`
 	}
-	if err := t.db.Table("license").Select("id").Find(&tenancies).Error; err != nil {
+	if err := t.db.Table("tenant").Select("id").Find(&tenancies).Error; err != nil {
 		logger.Errorf("NorthInterfaceAlarmExport: failed to query tenancies: %v", err)
 		return
 	}
 
 	for _, tenancy := range tenancies {
-		licenseId := tenancy.Id
-		t.exportForTenancy(licenseId)
+		tenantId := tenancy.Id
+		t.exportForTenancy(tenantId)
 	}
 }
 
 // exportForTenancy 导出指定租户的未导出告警
-func (t *NorthInterfaceAlarmExport) exportForTenancy(licenseId int) {
+func (t *NorthInterfaceAlarmExport) exportForTenancy(tenantId int) {
 	// 查询该租户下的所有设备
 	var devices []struct {
 		ElementId    int64  `gorm:"column:ne_neid"`
@@ -74,20 +74,20 @@ func (t *NorthInterfaceAlarmExport) exportForTenancy(licenseId int) {
 	}
 	if err := t.db.Table("cpe_element").
 		Select("ne_neid, serial_number").
-		Where("license_id = ? AND deleted = ?", licenseId, false).
+		Where("tenant_id = ? AND deleted = ?", tenantId, false).
 		Where("serial_number IS NOT NULL AND serial_number != ''").
 		Find(&devices).Error; err != nil {
-		logger.Errorf("NorthInterfaceAlarmExport: failed to query devices for license %d: %v", licenseId, err)
+		logger.Errorf("NorthInterfaceAlarmExport: failed to query devices for license %d: %v", tenantId, err)
 		return
 	}
 
 	for _, device := range devices {
-		t.exportForDevice(licenseId, device.ElementId, device.SerialNumber)
+		t.exportForDevice(tenantId, device.ElementId, device.SerialNumber)
 	}
 }
 
 // exportForDevice 导出指定设备的未导出告警
-func (t *NorthInterfaceAlarmExport) exportForDevice(licenseId int, elementId int64, serialNumber string) {
+func (t *NorthInterfaceAlarmExport) exportForDevice(tenantId int, elementId int64, serialNumber string) {
 	// 查询未导出的活跃告警: alarm_type=1 (活跃), exported IS NULL
 	var alarms []alarmExportRow
 	if err := t.db.Table("alarm").
@@ -96,7 +96,7 @@ func (t *NorthInterfaceAlarmExport) exportForDevice(licenseId int, elementId int
 			"alarm.probable_cause, alarm.specific_problem, alarm.alarm_type, alarm.event_time, "+
 			"alarm.element_id, cpe_element.serial_number").
 		Joins("LEFT JOIN cpe_element ON alarm.element_id = cpe_element.ne_neid").
-		Where("alarm.license_id = ? AND alarm.element_id = ?", licenseId, elementId).
+		Where("alarm.tenant_id = ? AND alarm.element_id = ?", tenantId, elementId).
 		Where("alarm.alarm_type = ?", 1). // 活跃告警
 		Where("alarm.exported IS NULL").
 		Order("alarm.id ASC").
@@ -109,8 +109,8 @@ func (t *NorthInterfaceAlarmExport) exportForDevice(licenseId int, elementId int
 		return
 	}
 
-	// 创建导出目录: {exportPath}/{licenseId}/
-	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", licenseId))
+	// 创建导出目录: {exportPath}/{tenantId}/
+	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", tenantId))
 	if err := os.MkdirAll(exportDir, 0755); err != nil {
 		logger.Errorf("NorthInterfaceAlarmExport: failed to create export directory %s: %v", exportDir, err)
 		return

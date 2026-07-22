@@ -16,7 +16,7 @@ import (
 
 // Service defines the business-logic contract for core network management.
 type Service interface {
-	ListCoreNetworks(tenancyId int) ([]CoreNetwork, error)
+	ListCoreNetworks(tenantId int) ([]CoreNetwork, error)
 	GetCoreNetwork(id int) (*CoreNetwork, error)
 	CreateCoreNetwork(cn *CoreNetwork) error
 	UpdateCoreNetwork(cn *CoreNetwork) error
@@ -117,8 +117,8 @@ func newService(repo Repository) Service {
 }
 
 // ListCoreNetworks returns all core networks for the given tenancy.
-func (s *service) ListCoreNetworks(tenancyId int) ([]CoreNetwork, error) {
-	return s.repo.FindCoreNetworks(tenancyId)
+func (s *service) ListCoreNetworks(tenantId int) ([]CoreNetwork, error) {
+	return s.repo.FindCoreNetworks(tenantId)
 }
 
 // GetCoreNetwork returns a single core network by ID.

@@ -13,9 +13,9 @@ import (
 // ============================
 
 func (s *service) ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	alarms, total, err := s.repo.ListAlarms(licenseId, offset, limit)
+	alarms, total, err := s.repo.ListAlarms(tenantId, offset, limit)
 	if err != nil {
 		return nil, 0, apperror.Wrap(err, "LIST_ALARMS_FAILED", 500, "failed to list alarms")
 	}
@@ -39,9 +39,9 @@ func (s *service) ListAlarms(c *gin.Context, offset, limit int) ([]RestAlarmVo, 
 }
 
 func (s *service) SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarmVo, error) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	alarms, err := s.repo.SyncAlarms(req.ElementIds, licenseId)
+	alarms, err := s.repo.SyncAlarms(req.ElementIds, tenantId)
 	if err != nil {
 		return nil, apperror.Wrap(err, "SYNC_ALARMS_FAILED", 500, "failed to sync alarms")
 	}
@@ -65,10 +65,10 @@ func (s *service) SyncAlarms(c *gin.Context, req *SyncAlarmRequest) ([]RestAlarm
 }
 
 func (s *service) ClearAlarms(c *gin.Context, req *ClearAlarmRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
-	if err := s.repo.ClearAlarms(req.AlarmIds, licenseId); err != nil {
+	if err := s.repo.ClearAlarms(req.AlarmIds, tenantId); err != nil {
 		logger.Errorf("Failed to clear alarms: %v", err)
 		return apperror.Wrap(err, "CLEAR_ALARMS_FAILED", 500, "failed to clear alarms")
 	}

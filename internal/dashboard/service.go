@@ -16,11 +16,11 @@ import (
 type Service interface {
 	ListCpeOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error)
 	ListGNBOnlineStatistics(ctx context.Context, query *ListCpeOnlineStatisticsQuery) ([]TimeAndDataVO, error)
-	ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenancyId *int) (*ListProductTypeAndDeviceCountVO, error)
-	ListBaseStationStatistics(ctx context.Context, tenancyId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error)
-	ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]ListPDCPTrafficStatisticVO, error)
-	ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*ListDeviceOnlineInfoVO, error)
-	StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error)
+	ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenantId *int) (*ListProductTypeAndDeviceCountVO, error)
+	ListBaseStationStatistics(ctx context.Context, tenantId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error)
+	ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenantId *int) ([]ListPDCPTrafficStatisticVO, error)
+	ListDeviceOnlineInfo(ctx context.Context, tenantId *int) (*ListDeviceOnlineInfoVO, error)
+	StatisticKPIForDevicelop(ctx context.Context, tenantId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error)
 }
 
 // service is the concrete implementation of Service.
@@ -113,12 +113,12 @@ func (s *service) listOnlineStatistics(ctx context.Context, query *ListCpeOnline
 }
 
 // ListProductTypeAndDeviceCount returns device count grouped by product type with online/offline status
-func (s *service) ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenancyId *int) (*ListProductTypeAndDeviceCountVO, error) {
+func (s *service) ListProductTypeAndDeviceCount(ctx context.Context, mode string, tenantId *int) (*ListProductTypeAndDeviceCountVO, error) {
 	if mode == "" {
 		return nil, apperror.ErrInvalidInput.WithMessage("mode is required")
 	}
 
-	devices, err := s.repo.ListDevicesByMode(ctx, mode, tenancyId)
+	devices, err := s.repo.ListDevicesByMode(ctx, mode, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,7 @@ func (s *service) ListProductTypeAndDeviceCount(ctx context.Context, mode string
 // ListBaseStationStatistics returns per-base-station PM KPI series (cell availability + PDCP UL/DL)
 // keyed by "serialNumber(measObjLdn)", mirroring Java DashboardManagementServiceImpl.listBaseStationStatistics.
 // The faithful source is pm_kpi_measurement (parsed PM-file KPIs), not the pre-aggregated dashboard_pm_statistic_data.
-func (s *service) ListBaseStationStatistics(ctx context.Context, tenancyId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error) {
+func (s *service) ListBaseStationStatistics(ctx context.Context, tenantId *int, elementIds []int64, startTime, endTime time.Time) (*ListBaseStationStatisticsVO, error) {
 	if len(elementIds) == 0 {
 		return &ListBaseStationStatisticsVO{}, nil
 	}
@@ -252,8 +252,8 @@ func (s *service) ListBaseStationStatistics(ctx context.Context, tenancyId *int,
 }
 
 // ListPDCPTrafficStatistic returns PDCP traffic statistics by PLMN
-func (s *service) ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenancyId *int) ([]ListPDCPTrafficStatisticVO, error) {
-	results, err := s.repo.ListPDCPTraffic(ctx, startTime, endTime, tenancyId)
+func (s *service) ListPDCPTrafficStatistic(ctx context.Context, startTime, endTime string, tenantId *int) ([]ListPDCPTrafficStatisticVO, error) {
+	results, err := s.repo.ListPDCPTraffic(ctx, startTime, endTime, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -275,8 +275,8 @@ func (s *service) ListPDCPTrafficStatistic(ctx context.Context, startTime, endTi
 }
 
 // ListDeviceOnlineInfo returns counts of online/offline devices by type
-func (s *service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*ListDeviceOnlineInfoVO, error) {
-	devices, err := s.repo.ListAllDevices(ctx, tenancyId)
+func (s *service) ListDeviceOnlineInfo(ctx context.Context, tenantId *int) (*ListDeviceOnlineInfoVO, error) {
+	devices, err := s.repo.ListAllDevices(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +352,7 @@ func (s *service) ListDeviceOnlineInfo(ctx context.Context, tenancyId *int) (*Li
 // StatisticKPIForDevicelop returns per-bucket CELL availability + MAC UL/DL KPIs for device groups,
 // mirroring Java DashboardManagementServiceImpl.statisticKPIForDevicelop and
 // PerformanceUtil.dashboardAggregateKpiData. Source is pm_kpi_measurement.
-func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error) {
+func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenantId *int, deviceGroupIds []string, granularity, gmt string, timestamp *int64) (*DashboardKPIStatisticVO, error) {
 	if len(deviceGroupIds) == 0 {
 		return nil, apperror.ErrInvalidInput.WithMessage("deviceGroupId is required")
 	}
@@ -397,7 +397,7 @@ func (s *service) StatisticKPIForDevicelop(ctx context.Context, tenancyId *int, 
 		groupName, _ := g["group_name"].(string)
 
 		var licensePtr *int
-		if lid := toInt64(g["license_id"]); lid > 0 {
+		if lid := toInt64(g["tenant_id"]); lid > 0 {
 			li := int(lid)
 			licensePtr = &li
 		}
@@ -567,11 +567,11 @@ func generateTimeAxis(startTime, endTime time.Time, granularity string, loc *tim
 	return axis
 }
 
-func tenancyNameFor(m map[int]string, licenseId *int) *string {
-	if licenseId == nil {
+func tenancyNameFor(m map[int]string, tenantId *int) *string {
+	if tenantId == nil {
 		return nil
 	}
-	if name, ok := m[*licenseId]; ok {
+	if name, ok := m[*tenantId]; ok {
 		return &name
 	}
 	return nil

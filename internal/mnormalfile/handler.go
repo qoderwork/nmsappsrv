@@ -33,9 +33,9 @@ func (h *Handler) InitUpload(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
-	resp, err := h.svc.InitUpload(licenseId, username, &req)
+	resp, err := h.svc.InitUpload(tenantId, username, &req)
 	if err != nil {
 		logger.Errorf("InitUpload error: %v", err)
 		utils.Error(c, http.StatusInternalServerError, "failed to init upload")
@@ -101,10 +101,10 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
-	fileId, err := h.svc.Upload(licenseId, username, header.Filename, file, header.Size)
+	fileId, err := h.svc.Upload(tenantId, username, header.Filename, file, header.Size)
 	if err != nil {
 		logger.Errorf("Upload error: %v", err)
 		utils.Error(c, http.StatusInternalServerError, "failed to upload file")
@@ -132,8 +132,8 @@ func (h *Handler) List(c *gin.Context) {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	licenseId := middleware.GetLicenseId(c)
-	data, total, err := h.svc.List(licenseId, &req)
+	tenantId := middleware.GetTenantId(c)
+	data, total, err := h.svc.List(tenantId, &req)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list files")
 		return

@@ -18,7 +18,7 @@ type NorthInterfaceLog struct {
 	ElementID     int64     `gorm:"column:element_id" json:"elementId"`
 	PresetTaskID  int64     `gorm:"column:preset_task_id" json:"presetTaskId"`
 	Info          string    `gorm:"column:info;type:varchar(512)" json:"info"`
-	TenancyID     int       `gorm:"column:tenancy_id" json:"tenancyId"`
+	TenancyID     int       `gorm:"column:tenant_id" json:"tenantId"`
 }
 
 // TableName matches the Java entity table.

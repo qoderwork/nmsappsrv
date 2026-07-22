@@ -52,7 +52,7 @@ func newService(repo Repository) Service {
 }
 
 func (s *service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequest) error {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	now := time.Now()
 	ctx := context.Background()
 
@@ -70,7 +70,7 @@ func (s *service) AddLogCollectionTask(c *gin.Context, req *AddLogCollectionRequ
 			ElementId:   &elementId,
 			Status:      &status,
 			LogTime:     &now,
-			LicenseId:   &licenseId,
+			TenantId:   &tenantId,
 			RequestId:   &requestId,
 			IsActiveLog: &activeLog,
 		}
@@ -135,12 +135,12 @@ func (s *service) ListLogCollectionResults(c *gin.Context, req *ListLogCollectio
 	}
 
 	// Tenant isolation: every caller is scoped to its own license; filter the
-	// joined ne_log rows by license_id so one tenant cannot read another's logs.
-	// Admin users (licenseId=0) bypass the filter to see all data.
-	licenseId := middleware.GetLicenseId(c)
+	// joined ne_log rows by tenant_id so one tenant cannot read another's logs.
+	// Admin users (tenantId=0) bypass the filter to see all data.
+	tenantId := middleware.GetTenantId(c)
 	var licenseFilter *int
-	if licenseId > 0 {
-		licenseFilter = &licenseId
+	if tenantId > 0 {
+		licenseFilter = &tenantId
 	}
 	offset := (req.Page - 1) * req.PageSize
 	results, total, err := s.repo.FindByFilter(licenseFilter, req.ElementId, req.DeviceType, req.Status, offset, req.PageSize)
@@ -223,11 +223,11 @@ func (s *service) ListLogFiles(c *gin.Context, req *ListLogFileRequest) ([]LogFi
 
 	// Tenant isolation: scope the element's log files to the caller's license so
 	// a user cannot read another tenant's files by passing a foreign elementId.
-	// Admin users (licenseId=0) bypass the filter to see all data.
-	licenseId := middleware.GetLicenseId(c)
+	// Admin users (tenantId=0) bypass the filter to see all data.
+	tenantId := middleware.GetTenantId(c)
 	var licenseFilter *int
-	if licenseId > 0 {
-		licenseFilter = &licenseId
+	if tenantId > 0 {
+		licenseFilter = &tenantId
 	}
 	offset := (req.Page - 1) * req.PageSize
 	logs, total, err := s.repo.FindByElementId(req.ElementId, licenseFilter, offset, req.PageSize)

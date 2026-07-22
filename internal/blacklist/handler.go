@@ -24,7 +24,7 @@ func NewHandler(db *gorm.DB) *Handler {
 
 // ListDeviceBlackList handles POST /blacklist/list
 func (h *Handler) ListDeviceBlackList(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	var req struct {
 		SN       string `json:"sn"`
 		Page     int    `json:"page"`
@@ -48,7 +48,7 @@ func (h *Handler) ListDeviceBlackList(c *gin.Context) {
 		Page:     req.Page,
 		PageSize: req.PageSize,
 	}
-	data, total, err := h.svc.ListBlackList(licenseId, query)
+	data, total, err := h.svc.ListBlackList(tenantId, query)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -64,10 +64,10 @@ func (h *Handler) AddDeviceToBlackList(c *gin.Context) {
 		return
 	}
 
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	username := middleware.GetUsername(c)
 
-	id, err := h.svc.AddDeviceToBlackList(&req, licenseId, username)
+	id, err := h.svc.AddDeviceToBlackList(&req, tenantId, username)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -111,7 +111,7 @@ func (h *Handler) BatchDeleteDeviceFromBlackList(c *gin.Context) {
 
 // ListBlackListOperationLog handles POST /blacklist/operation-logs
 func (h *Handler) ListBlackListOperationLog(c *gin.Context) {
-	licenseId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 	var req ListBlackListOperationLogQuery
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// fallback to query params
@@ -129,7 +129,7 @@ func (h *Handler) ListBlackListOperationLog(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	data, total, err := h.svc.ListOperationLogs(licenseId, req)
+	data, total, err := h.svc.ListOperationLogs(tenantId, req)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, err.Error())
 		return

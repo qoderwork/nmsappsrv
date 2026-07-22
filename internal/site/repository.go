@@ -19,15 +19,15 @@ type Repository interface {
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[SiteInfo], error)
 
-	FindAreas(tenancyId int) ([]SysArea, error)
+	FindAreas(tenantId int) ([]SysArea, error)
 	FindAreaByID(id int) (*SysArea, error)
 	CreateArea(a *SysArea) error
 	UpdateArea(a *SysArea) error
 	DeleteArea(id int) error
 	FindChildAreas(parentId int) ([]SysArea, error)
-	FindSites(licenseId int, search string, offset, limit int) ([]SiteInfo, int64, error)
-	FindAllSites(licenseId int) ([]SiteBasicInfo, error)
-	FindSiteByNameAndLicense(name string, licenseId int) (*SiteInfo, error)
+	FindSites(tenantId int, search string, offset, limit int) ([]SiteInfo, int64, error)
+	FindAllSites(tenantId int) ([]SiteBasicInfo, error)
+	FindSiteByNameAndLicense(name string, tenantId int) (*SiteInfo, error)
 	NullifyDeviceSiteId(siteId string) error
 	FindSystemConfig() (*SystemConfig, error)
 	UpdateSystemConfig(cfg *SystemConfig) error
@@ -51,9 +51,9 @@ func NewRepository(db *gorm.DB) Repository {
 
 // ---------- SysArea ----------
 
-func (r *repository) FindAreas(tenancyId int) ([]SysArea, error) {
+func (r *repository) FindAreas(tenantId int) ([]SysArea, error) {
 	var items []SysArea
-	err := r.db.Where("tenancy_id = ?", tenancyId).Find(&items).Error
+	err := r.db.Where("tenant_id = ?", tenantId).Find(&items).Error
 	return items, err
 }
 
@@ -88,8 +88,8 @@ func (r *repository) FindChildAreas(parentId int) ([]SysArea, error) {
 // ---------- SiteInfo ----------
 
 // FindSites returns a paginated list of sites for the given license, optionally filtered by name.
-func (r *repository) FindSites(licenseId int, search string, offset, limit int) ([]SiteInfo, int64, error) {
-	query := r.DB.Model(&SiteInfo{}).Where("license_id = ?", licenseId)
+func (r *repository) FindSites(tenantId int, search string, offset, limit int) ([]SiteInfo, int64, error) {
+	query := r.DB.Model(&SiteInfo{}).Where("tenant_id = ?", tenantId)
 	if search != "" {
 		query = query.Where("site_name LIKE ?", "%"+search+"%")
 	}
@@ -102,20 +102,20 @@ func (r *repository) FindSites(licenseId int, search string, offset, limit int) 
 }
 
 // FindAllSites returns all sites for the given license (for dropdown).
-func (r *repository) FindAllSites(licenseId int) ([]SiteBasicInfo, error) {
+func (r *repository) FindAllSites(tenantId int) ([]SiteBasicInfo, error) {
 	var items []SiteBasicInfo
 	err := r.db.Model(&SiteInfo{}).
 		Select("id, site_name").
-		Where("license_id = ?", licenseId).
+		Where("tenant_id = ?", tenantId).
 		Order("site_name ASC").
 		Find(&items).Error
 	return items, err
 }
 
 // FindSiteByNameAndLicense returns a site with the given name and license (for duplicate check).
-func (r *repository) FindSiteByNameAndLicense(name string, licenseId int) (*SiteInfo, error) {
+func (r *repository) FindSiteByNameAndLicense(name string, tenantId int) (*SiteInfo, error) {
 	var site SiteInfo
-	err := r.db.Where("site_name = ? AND license_id = ?", name, licenseId).First(&site).Error
+	err := r.db.Where("site_name = ? AND tenant_id = ?", name, tenantId).First(&site).Error
 	if err != nil {
 		return nil, err
 	}

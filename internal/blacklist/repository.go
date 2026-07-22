@@ -24,10 +24,10 @@ type Repository interface {
 	FindAll(query *gorm.DB) ([]ElementBlackList, error)
 	Count(query *gorm.DB) (int64, error)
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[ElementBlackList], error)
-	FindBySNAndDeviceType(licenseId int, sn, deviceType string) (*ElementBlackList, error)
-	List(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error)
+	FindBySNAndDeviceType(tenantId int, sn, deviceType string) (*ElementBlackList, error)
+	List(tenantId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error)
 	InsertOperationLog(log *BlackListOperationLog) error
-	ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error)
+	ListOperationLogs(tenantId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error)
 	LoadAllToRedis() error
 }
 
@@ -48,9 +48,9 @@ func NewRepository(db *gorm.DB) Repository {
 }
 
 // FindBySNAndDeviceType returns an existing entry (duplicate check).
-func (r *repository) FindBySNAndDeviceType(licenseId int, sn, deviceType string) (*ElementBlackList, error) {
+func (r *repository) FindBySNAndDeviceType(tenantId int, sn, deviceType string) (*ElementBlackList, error) {
 	var entry ElementBlackList
-	err := r.db.Where("license_id = ? AND sn = ? AND device_type = ?", licenseId, sn, deviceType).First(&entry).Error
+	err := r.db.Where("tenant_id = ? AND sn = ? AND device_type = ?", tenantId, sn, deviceType).First(&entry).Error
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (r *repository) FindBySNAndDeviceType(licenseId int, sn, deviceType string)
 }
 
 // List returns paginated blacklist entries.
-func (r *repository) List(licenseId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
+func (r *repository) List(tenantId int, query ListBlackListQuery) ([]ListDeviceBlackListVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -67,8 +67,8 @@ func (r *repository) List(licenseId int, query ListBlackListQuery) ([]ListDevice
 		pageSize = 20
 	}
 
-	baseWhere := "license_id = ?"
-	args := []interface{}{licenseId}
+	baseWhere := "tenant_id = ?"
+	args := []interface{}{tenantId}
 	if query.SN != "" {
 		baseWhere += " AND sn LIKE ?"
 		args = append(args, "%"+query.SN+"%")
@@ -94,7 +94,7 @@ func (r *repository) List(licenseId int, query ListBlackListQuery) ([]ListDevice
 			Username:    e.Username,
 			AddTime:     e.AddTime,
 			DeviceType:  e.DeviceType,
-			TenancyName: tenancyNames[e.LicenseId],
+			TenancyName: tenancyNames[e.TenantId],
 			Reason:      e.Reason,
 		}
 	}
@@ -107,7 +107,7 @@ func (r *repository) InsertOperationLog(log *BlackListOperationLog) error {
 }
 
 // ListOperationLogs returns paginated operation logs.
-func (r *repository) ListOperationLogs(licenseId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
+func (r *repository) ListOperationLogs(tenantId int, query ListBlackListOperationLogQuery) ([]ListBlackListOperationLogVO, int64, error) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
 		page = 1
@@ -116,8 +116,8 @@ func (r *repository) ListOperationLogs(licenseId int, query ListBlackListOperati
 		pageSize = 20
 	}
 
-	baseWhere := "license_id = ?"
-	args := []interface{}{licenseId}
+	baseWhere := "tenant_id = ?"
+	args := []interface{}{tenantId}
 	if query.DeviceSN != "" {
 		baseWhere += " AND device_sn LIKE ?"
 		args = append(args, "%"+query.DeviceSN+"%")
@@ -169,7 +169,7 @@ func (r *repository) ListOperationLogs(licenseId int, query ListBlackListOperati
 			OperatorUsername: l.OperatorUsername,
 			OperationTime:    l.OperationTime,
 			OperationReason:  l.OperationReason,
-			TenancyName:      tenancyNames[l.LicenseId],
+			TenancyName:      tenancyNames[l.TenantId],
 		}
 	}
 	return vos, total, nil

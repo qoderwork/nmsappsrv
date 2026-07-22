@@ -54,7 +54,7 @@ func (t *NMSPMExportTask) Export() {
 	var tenancies []struct {
 		Id int `gorm:"column:id"`
 	}
-	if err := t.db.Table("license").Select("id").Find(&tenancies).Error; err != nil {
+	if err := t.db.Table("tenant").Select("id").Find(&tenancies).Error; err != nil {
 		logger.Errorf("NMSPMExportTask: failed to query tenancies: %v", err)
 		return
 	}
@@ -115,10 +115,10 @@ func (t *NMSPMExportTask) getRAMUsageFromRuntime() float64 {
 }
 
 // writePMData 写入PM数据到CSV文件
-func (t *NMSPMExportTask) writePMData(tenancyId int, timeStr string, cpuPercent, ramPercent float64) {
-	// 创建目录: {exportPath}/{tenancyId}/PM/{date}/
+func (t *NMSPMExportTask) writePMData(tenantId int, timeStr string, cpuPercent, ramPercent float64) {
+	// 创建目录: {exportPath}/{tenantId}/PM/{date}/
 	dateStr := time.Now().Format("2006-01-02")
-	pmDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", tenancyId), "PM", dateStr)
+	pmDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", tenantId), "PM", dateStr)
 	if err := os.MkdirAll(pmDir, 0755); err != nil {
 		logger.Errorf("NMSPMExportTask: failed to create PM directory %s: %v", pmDir, err)
 		return
@@ -170,5 +170,5 @@ func (t *NMSPMExportTask) writePMData(tenancyId int, timeStr string, cpuPercent,
 	}
 
 	logger.Debugf("NMSPMExportTask: wrote PM data for tenancy %d: CPU=%.2f%%, RAM=%.2f%%",
-		tenancyId, cpuPercent, ramPercent)
+		tenantId, cpuPercent, ramPercent)
 }

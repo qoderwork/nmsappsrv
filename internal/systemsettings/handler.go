@@ -25,9 +25,9 @@ func (h *SystemSettingsHandler) Service() *SystemSettingsService { return h.svc 
 
 // ListDeviceSettings returns the device configuration for the current tenancy.
 func (h *SystemSettingsHandler) ListDeviceSettings(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	cfg, err := h.svc.GetDeviceSettings(tenancyId)
+	cfg, err := h.svc.GetDeviceSettings(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -44,9 +44,9 @@ func (h *SystemSettingsHandler) UpdateDeviceSettings(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	if err := h.svc.UpdateDeviceSettings(&req, tenancyId); err != nil {
+	if err := h.svc.UpdateDeviceSettings(&req, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}
@@ -111,9 +111,9 @@ func (h *SystemSettingsHandler) UpdateLogSettings(c *gin.Context) {
 // GetNorthBoundConfig returns the northbound integration configuration for the
 // current tenancy (Java NorthBoundManagementController.getNorthBoundConfig).
 func (h *SystemSettingsHandler) GetNorthBoundConfig(c *gin.Context) {
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	cfg, err := h.svc.GetNorthBoundConfig(tenancyId)
+	cfg, err := h.svc.GetNorthBoundConfig(tenantId)
 	if err != nil {
 		utils.HandleError(c, err)
 		return
@@ -133,9 +133,9 @@ func (h *SystemSettingsHandler) UpdateNorthBoundConfig(c *gin.Context) {
 		return
 	}
 
-	tenancyId := middleware.GetLicenseId(c)
+	tenantId := middleware.GetTenantId(c)
 
-	if err := h.svc.UpdateNorthBoundConfig(&req, tenancyId); err != nil {
+	if err := h.svc.UpdateNorthBoundConfig(&req, tenantId); err != nil {
 		utils.HandleError(c, err)
 		return
 	}

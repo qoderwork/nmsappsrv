@@ -133,7 +133,7 @@ func (c *Collector) runOnce() {
 			logger.Errorf("pm collector: write %s: %v", path, err)
 			continue
 		}
-		tenancyId := 0 // The active-elements row doesn't carry tenancy; pm_file_log.tenancy_id is nullable in the schema.
+		tenantId := 0 // The active-elements row doesn't carry tenancy; pm_file_log.tenant_id is nullable in the schema.
 		collectionTime := now
 		startTime := now.Add(-1 * time.Hour)
 		log := &PMFileLog{
@@ -141,7 +141,7 @@ func (c *Collector) runOnce() {
 			FileName:       &fileName,
 			CollectionTime: &collectionTime,
 			StartTime:      &startTime,
-			TenancyId:      &tenancyId,
+			TenantId:      &tenantId,
 		}
 		if err := c.repo.CreatePMFileLog(log); err != nil {
 			logger.Errorf("pm collector: insert pm_file_log for %d: %v", row.NeNeid, err)
