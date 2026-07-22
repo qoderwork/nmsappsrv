@@ -7,8 +7,8 @@ import (
 	"nmsappsrv/internal/license"
 	"nmsappsrv/internal/user"
 	"nmsappsrv/pkg/logger"
+	"nmsappsrv/pkg/security"
 
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -181,11 +181,11 @@ func ensureAdminUser(db *gorm.DB, tenantId int, roleId string) error {
 		return nil
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(DefaultAdminPassword), bcrypt.DefaultCost)
+	hashedStr, err := security.HashPassword(DefaultAdminPassword, DefaultAdminUsername, 0,
+		security.NewRedisDBBackedSaltHolder(db))
 	if err != nil {
 		return err
 	}
-	hashedStr := string(hashed)
 	now := time.Now()
 	enable := true
 	status := 1
@@ -205,7 +205,6 @@ func ensureAdminUser(db *gorm.DB, tenantId int, roleId string) error {
 		return err
 	}
 
-	// Link user ↔ role
 	link := user.UserHasRole{
 		UserId: usr.Id,
 		RoleId: roleId,

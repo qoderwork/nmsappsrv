@@ -2,16 +2,17 @@ package user
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
 
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"nmsappsrv/pkg/apperror"
 	"nmsappsrv/pkg/logger"
 	"nmsappsrv/pkg/redis"
+	"nmsappsrv/pkg/security"
 )
 
 // Service defines the business-logic contract for user management.
@@ -47,12 +48,19 @@ type Service interface {
 
 // service is the concrete implementation of Service.
 type service struct {
-	repo Repository
+	repo       Repository
+	saltHolder security.SaltHolder
+	db         *gorm.DB
 }
 
 // NewService creates a Service backed by a fresh Repository.
+// Also wires up a SaltHolder (Redis + DB fallback) matching Java's per-user salt contract.
 func NewService(db *gorm.DB) Service {
-	return &service{repo: NewRepository(db)}
+	return &service{
+		repo:       NewRepository(db),
+		saltHolder: security.NewRedisDBBackedSaltHolder(db),
+		db:         db,
+	}
 }
 
 // isAdminUser reports whether the username is the built-in super-admin.
@@ -133,8 +141,17 @@ func (s *service) Login(username, password string) (*SysUser, error) {
 		return nil, apperror.ErrInvalidCredentials
 	}
 
-	// 3) Verify the password.
-	if err := bcrypt.CompareHashAndPassword([]byte(*u.Password), []byte(password)); err != nil {
+	// 3) Verify the password using Java SHA256+salt algorithm.
+	//    Admin: no salt (pure SHA256). Non-admin: per-user salt from SaltHolder.
+	var uname string
+	if u.Username != nil {
+		uname = *u.Username
+	}
+	ok, err := security.VerifyPassword(password, *u.Password, uname, u.Id, s.saltHolder)
+	if err != nil {
+		return nil, apperror.Wrap(err, "VERIFY_PASSWORD_FAILED", 500, "failed to verify password")
+	}
+	if !ok {
 		// Admin is exempt from failure tracking (mirrors Java checkIsNeedToLock).
 		// Only increment counter and potentially lock for non-admin users.
 		if !isAdminUser(username) {
@@ -259,28 +276,25 @@ func (s *service) ListUsers(page, pageSize int, excludeAdmin bool, creatorName s
 // CreateUser auto-generates a password if not provided, hashes it, and persists a new user.
 // Returns the generated password for display to the admin.
 // Mirrors Java SystemUserManagementServiceImpl.addUser.
+// NOTE: Because per-user salt storage depends on the user's id, this method
+//       INSERTs the row first (with a dummy empty password), obtains the id,
+//       generates & persists the salt, hashes the password, then UPDATEs back.
+//       The write is wrapped in a transaction so partial writes never leak.
 func (s *service) CreateUser(u *SysUser) (string, error) {
 	var generatedPassword string
-	var err error
+	var plainPassword string
 
-	// Auto-generate password if not provided (mirrors Java behavior)
 	if u.Password == nil || *u.Password == "" {
+		var err error
 		generatedPassword, err = GeneratePassword(12)
 		if err != nil {
 			return "", apperror.Wrap(err, "PASSWORD_GENERATE_FAILED", 500, "failed to generate password")
 		}
-		u.Password = &generatedPassword
+		plainPassword = generatedPassword
+	} else {
+		plainPassword = *u.Password
 	}
 
-	// Hash the password
-	hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
-	}
-	hashed := string(hash)
-	u.Password = &hashed
-
-	// Set defaults
 	if u.Enable == nil {
 		enabled := true
 		u.Enable = &enabled
@@ -290,16 +304,47 @@ func (s *service) CreateUser(u *SysUser) (string, error) {
 		u.LoginErrorTimes = &zero
 	}
 
-	// Set timestamps (mirrors Java: sysUser.setCreateTime(new Date()); sysUser.setUpdateTime(new Date());)
 	now := time.Now()
 	u.CreateTime = &now
 	u.UpdateTime = &now
 
-	if err := s.repo.CreateUser(u); err != nil {
+	dummy := ""
+	u.Password = &dummy
+
+	var uname string
+	if u.Username != nil {
+		uname = *u.Username
+	}
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		repo := NewRepository(tx)
+		sh := security.NewRedisDBBackedSaltHolder(tx)
+
+		if err := repo.CreateUser(u); err != nil {
+			return err
+		}
+
+		var salt string
+		if !security.IsAdminUser(uname) {
+			salt = security.GenerateSalt()
+			if err := sh.SaveSalt(salt, u.Id); err != nil {
+				return fmt.Errorf("create user: save salt: %w", err)
+			}
+		}
+		hashed, err := security.HashPassword(plainPassword, uname, u.Id, sh)
+		if err != nil {
+			return fmt.Errorf("create user: hash password: %w", err)
+		}
+		if err := repo.UpdateUserFields(u.Id, map[string]interface{}{"password": hashed}); err != nil {
+			return err
+		}
+		u.Password = &hashed
+		return nil
+	})
+	if err != nil {
 		return "", apperror.Wrap(err, "CREATE_USER_FAILED", 500, "failed to create user")
 	}
 
-	// Return the plaintext password for display (only for auto-generated)
 	return generatedPassword, nil
 }
 
@@ -307,14 +352,17 @@ func (s *service) CreateUser(u *SysUser) (string, error) {
 // changed it is re-hashed before saving.
 func (s *service) UpdateUser(u *SysUser) error {
 	if u.Password != nil && *u.Password != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(*u.Password), bcrypt.DefaultCost)
+		var uname string
+		existing, err := s.repo.FindUserByID(u.Id)
+		if err == nil && existing.Username != nil {
+			uname = *existing.Username
+		}
+		hashed, err := security.HashPassword(*u.Password, uname, u.Id, s.saltHolder)
 		if err != nil {
 			return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 		}
-		hashed := string(hash)
 		u.Password = &hashed
 	}
-	// Update timestamp (mirrors Java behavior on modification)
 	now := time.Now()
 	u.UpdateTime = &now
 
@@ -377,30 +425,29 @@ func (s *service) ModifyPassword(username, oldPassword, newPassword string) erro
 		return apperror.ErrUserNotFound
 	}
 
-	// Validate old password
 	if u.Password == nil {
 		return apperror.ErrInvalidCredentials.WithMessage("invalid old password")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(*u.Password), []byte(oldPassword)); err != nil {
+	ok, err := security.VerifyPassword(oldPassword, *u.Password, username, u.Id, s.saltHolder)
+	if err != nil {
+		return apperror.Wrap(err, "VERIFY_PASSWORD_FAILED", 500, "failed to verify old password")
+	}
+	if !ok {
 		return apperror.ErrInvalidCredentials.WithMessage("invalid old password")
 	}
 
-	// Validate new password strength
 	if err := validatePasswordStrength(newPassword, username); err != nil {
 		return err
 	}
 
-	// Check password history (last 24 passwords)
 	if err := s.checkPasswordHistory(username, newPassword, 24); err != nil {
 		return err
 	}
 
-	// Hash and save new password
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashed, err := security.HashPassword(newPassword, username, u.Id, s.saltHolder)
 	if err != nil {
 		return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 	}
-	hashed := string(hash)
 
 	now := time.Now()
 	if err := s.repo.UpdateUserFields(u.Id, map[string]interface{}{
@@ -410,10 +457,8 @@ func (s *service) ModifyPassword(username, oldPassword, newPassword string) erro
 		return apperror.Wrap(err, "MODIFY_PASSWORD_FAILED", 500, "failed to modify password")
 	}
 
-	// Save to password history
 	s.savePasswordHistory(username, hashed)
 
-	// Force re-login
 	s.invalidateUser(username)
 
 	return nil
@@ -463,31 +508,26 @@ func (s *service) ResetPassword(adminId, userId int) (string, error) {
 		return "", apperror.ErrUserNotFound.WithMessage("user has no username")
 	}
 
-	// Generate a new random password
 	generatedPassword, err := GeneratePassword(12)
 	if err != nil {
 		return "", apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to generate password")
 	}
 
-	// Hash the new password
-	hash, err := bcrypt.GenerateFromPassword([]byte(generatedPassword), bcrypt.DefaultCost)
+	hashed, err := security.HashPassword(generatedPassword, *u.Username, u.Id, s.saltHolder)
 	if err != nil {
 		return "", apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
 	}
-	hashed := string(hash)
 
-	// Update password and reset login error times
 	now := time.Now()
 	if err := s.repo.UpdateUserFields(userId, map[string]interface{}{
 		"password":             hashed,
 		"login_error_times":    0,
 		"last_login_time":      now,
-		"password_modify_time": nil, // Reset to nil so user must change on first login
+		"password_modify_time": nil,
 	}); err != nil {
 		return "", apperror.Wrap(err, "RESET_PASSWORD_FAILED", 500, "failed to update password")
 	}
 
-	// Force logout
 	s.invalidateUser(*u.Username)
 
 	return generatedPassword, nil
@@ -498,7 +538,6 @@ func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 	ctx := context.Background()
 	redisKey := RedisKeyPwdReset + key
 
-	// Validate the reset key
 	storedUsername, err := redis.Get(ctx, redisKey)
 	if err != nil {
 		return apperror.ErrInvalidInput.WithMessage("invalid or expired reset link")
@@ -507,31 +546,27 @@ func (s *service) ResetPasswordByLink(username, key, newPassword string) error {
 		return apperror.ErrInvalidInput.WithMessage("reset link does not match user")
 	}
 
-	// Delete the key (one-time use)
 	_ = redis.Del(ctx, redisKey)
 
-	// Validate password strength
 	if err := validatePasswordStrength(newPassword, username); err != nil {
 		return err
 	}
 
-	// Check password history (last 5 passwords for reset)
 	if err := s.checkPasswordHistory(username, newPassword, 5); err != nil {
 		return err
 	}
 
-	// Hash and save
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
-	}
-	hashed := string(hash)
-
-	now := time.Now()
 	u, err := s.repo.FindUserByUsername(username)
 	if err != nil {
 		return apperror.ErrUserNotFound
 	}
+
+	hashed, err := security.HashPassword(newPassword, username, u.Id, s.saltHolder)
+	if err != nil {
+		return apperror.Wrap(err, "PASSWORD_HASH_FAILED", 500, "failed to hash password")
+	}
+
+	now := time.Now()
 	if err := s.repo.UpdateUserFields(u.Id, map[string]interface{}{
 		"password":             hashed,
 		"password_modify_time": now,
@@ -735,15 +770,24 @@ func (s *service) invalidateUser(username string) {
 }
 
 // checkPasswordHistory checks if the new password matches any of the last N passwords.
+// Uses the same per-user salt (Java SHA256+salt convention) because all historical
+// hashes for a user were produced with that same salt value.
 func (s *service) checkPasswordHistory(username, newPassword string, limit int) error {
+	u, err := s.repo.FindUserByUsername(username)
+	if err != nil {
+		logger.Warnf("checkPasswordHistory: %v", err)
+		return nil
+	}
+
 	history, err := s.repo.FindRecentPasswords(username, limit)
 	if err != nil {
 		logger.Warnf("checkPasswordHistory: %v", err)
-		return nil // Don't block on error
+		return nil
 	}
 	for _, h := range history {
 		if h.Password != nil {
-			if err := bcrypt.CompareHashAndPassword([]byte(*h.Password), []byte(newPassword)); err == nil {
+			ok, err := security.VerifyPassword(newPassword, *h.Password, username, u.Id, s.saltHolder)
+			if err == nil && ok {
 				return apperror.ErrInvalidInput.WithMessage("new password cannot be the same as a recent password")
 			}
 		}

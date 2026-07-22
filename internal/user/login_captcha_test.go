@@ -44,7 +44,7 @@ func TestLoginCaptchaGate(t *testing.T) {
 			getRoleNamesForUserFn: func(userId, tenantId int) ([]string, error) {
 				return []string{"admin"}, nil
 			},
-			recordLoginFn: func(username, ip string, licId int, result int) error { return nil },
+			recordLoginFn: func(username, ip string, licId int, result int, info string) error { return nil },
 		}
 	}
 

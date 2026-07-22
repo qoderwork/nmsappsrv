@@ -166,6 +166,10 @@ func (m *mockService) TenantExists(id int) bool {
 	return true
 }
 
+func (m *mockService) ListLoginLogs(tenantId int, page, pageSize int) ([]LoginLog, int64, error) {
+	return nil, 0, nil
+}
+
 func (m *mockService) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error) {
 	if m.getLoginFailedTimesFn != nil {
 		return m.getLoginFailedTimesFn(userId)
