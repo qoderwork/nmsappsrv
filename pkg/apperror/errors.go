@@ -83,6 +83,12 @@ var (
 	// ErrUserLocked is returned when the account is locked due to too many
 	// consecutive failed login attempts within the lock window.
 	ErrUserLocked = ErrUnauthorized.WithMessage("account is locked due to too many failed login attempts")
+	// ErrUserNoRole is returned when a non-admin user has no roles assigned.
+	// Mirrors Java LockedException("10162").
+	ErrUserNoRole = ErrUnauthorized.WithMessage("no role assigned, contact your administrator")
+	// ErrUserInactive is returned when a non-admin user hasn't logged in for
+	// UserLockedDays (90 days). Mirrors Java LockedException("10072").
+	ErrUserInactive = ErrUnauthorized.WithMessage("account is inactive due to prolonged inactivity, contact your administrator")
 	ErrAlarmNotFound      = ErrNotFound.WithMessage("alarm not found")
 	// ErrDefaultGroupProtected is returned when an attempt is made to delete a
 	// device group that is flagged as the system default group. Default groups

@@ -74,7 +74,11 @@ func NewRepository(db *gorm.DB) Repository {
 // FindMmlSets returns all MML sets for the given license.
 func (r *repository) FindMmlSets(licenseId int) ([]MmlSet, error) {
 	var sets []MmlSet
-	if err := r.db.Where("license_id = ?", licenseId).Find(&sets).Error; err != nil {
+	query := r.db.Model(&MmlSet{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Find(&sets).Error; err != nil {
 		logger.Errorf("FindMmlSets error: %v", err)
 		return nil, err
 	}

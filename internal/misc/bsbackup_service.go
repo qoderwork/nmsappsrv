@@ -55,9 +55,12 @@ func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoReques
 	db := s.repo.DB()
 	offset := (req.Page - 1) * req.PageSize
 
-	// Base query: non-deleted devices belonging to this license / tenancy.
+	// Base query: non-deleted devices, optionally filtered by license / tenancy.
 	baseQuery := db.Model(&device.CpeElement{}).
-		Where("license_id = ? AND deleted = ?", tenancyId, false)
+		Where("deleted = ?", false)
+	if tenancyId > 0 {
+		baseQuery = baseQuery.Where("license_id = ?", tenancyId)
+	}
 
 	if req.SearchText != "" {
 		like := "%" + req.SearchText + "%"
@@ -88,8 +91,11 @@ func (s *service) ListBaseStationBackupInfo(req *ListBaseStationBackupInfoReques
 
 		// Look up the latest backup record from config_upload_log.
 		var cul ConfigUploadLog
-		err := db.Where("element_id = ? AND license_id = ?", elem.NeNeid, tenancyId).
-			Order("upload_time DESC").
+		culQuery := db.Where("element_id = ?", elem.NeNeid)
+		if tenancyId > 0 {
+			culQuery = culQuery.Where("license_id = ?", tenancyId)
+		}
+		err := culQuery.Order("upload_time DESC").
 			First(&cul).Error
 		if err == nil {
 			vo.HasBackup = true
@@ -170,8 +176,11 @@ func (s *service) ExportConfigFile(elementIds []int64, tenancyId int) (string, e
 
 	// Fetch the latest config_upload_log per device.
 	var logs []ConfigUploadLog
-	if err := db.Where("element_id IN ? AND license_id = ?", elementIds, tenancyId).
-		Order("upload_time DESC").
+	logQuery := db.Where("element_id IN ?", elementIds)
+	if tenancyId > 0 {
+		logQuery = logQuery.Where("license_id = ?", tenancyId)
+	}
+	if err := logQuery.Order("upload_time DESC").
 		Find(&logs).Error; err != nil {
 		return "", fmt.Errorf("query config logs: %w", err)
 	}
@@ -415,7 +424,10 @@ func (s *service) ListBSBackupTasks(tenancyId int, page, pageSize int) ([]Backup
 	offset := (page - 1) * pageSize
 
 	var total int64
-	baseQuery := db.Model(&BackupOrRestoreTask{}).Where("tenancy_id = ?", tenancyId)
+	baseQuery := db.Model(&BackupOrRestoreTask{})
+	if tenancyId > 0 {
+		baseQuery = baseQuery.Where("tenancy_id = ?", tenancyId)
+	}
 	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count tasks: %w", err)
 	}

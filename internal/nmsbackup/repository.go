@@ -33,7 +33,7 @@ type Repository interface {
 	FindPage(baseQuery *gorm.DB, orderCol string, offset, limit int) (*baserepo.PageResult[NMSBackupAndRevert], error)
 
 	// Module-specific queries
-	ListSchedules(licenseId int, page, pageSize int) ([]NMSBackupAndRevert, int64, error)
+	ListSchedules(page, pageSize int) ([]NMSBackupAndRevert, int64, error)
 	FindScheduledSchedules() ([]NMSBackupAndRevert, error)
 	FindByBackupName(name string) ([]NMSBackupAndRevert, error)
 	FindAnyRunning() (*NMSBackupAndRevert, error)
@@ -68,12 +68,12 @@ func NewRepository(db *gorm.DB) Repository {
 // NMSBackupAndRevert – module-specific queries (base provides Create/Save/FindByID/DeleteByID)
 // ---------------------------------------------------------------------------
 
-// ListSchedules returns paginated backup schedules for the given license.
-func (r *repository) ListSchedules(licenseId int, page, pageSize int) ([]NMSBackupAndRevert, int64, error) {
+// ListSchedules returns paginated backup schedules (global, no tenant filter — matches Java findAll).
+func (r *repository) ListSchedules(page, pageSize int) ([]NMSBackupAndRevert, int64, error) {
 	var schedules []NMSBackupAndRevert
 	var total int64
 
-	query := r.db.Model(&NMSBackupAndRevert{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&NMSBackupAndRevert{})
 	query.Count(&total)
 
 	offset := (page - 1) * pageSize

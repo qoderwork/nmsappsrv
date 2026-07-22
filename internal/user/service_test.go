@@ -18,9 +18,10 @@ import (
 type mockRepository struct {
 	findUserByUsernameFn func(string) (*SysUser, error)
 	findUserByIDFn      func(int) (*SysUser, error)
-	findUsersFn         func(int, int, int) ([]SysUser, int64, error)
+	findUsersFn         func(int, int, bool, string) ([]SysUser, int64, error)
 	createUserFn        func(*SysUser) error
 	updateUserFieldsFn  func(int, map[string]interface{}) error
+	findUserRolesFn     func(int) ([]UserHasRole, error)
 }
 
 func (m *mockRepository) FindUserByUsername(username string) (*SysUser, error) {
@@ -37,9 +38,9 @@ func (m *mockRepository) FindUserByID(id int) (*SysUser, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockRepository) FindUsers(licenseId int, offset, limit int) ([]SysUser, int64, error) {
+func (m *mockRepository) FindUsers(offset, limit int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 	if m.findUsersFn != nil {
-		return m.findUsersFn(licenseId, offset, limit)
+		return m.findUsersFn(offset, limit, excludeAdmin, creatorName)
 	}
 	return nil, 0, errors.New("not implemented")
 }
@@ -77,7 +78,11 @@ func (m *mockRepository) SavePermissions(roleId string, permissionIds []string) 
 	panic("not implemented")
 }
 func (m *mockRepository) FindUserRoles(userId int) ([]UserHasRole, error) {
-	panic("not implemented")
+	if m.findUserRolesFn != nil {
+		return m.findUserRolesFn(userId)
+	}
+	// Default: user has a role, so the login no-role gate passes.
+	return []UserHasRole{{UserId: userId, RoleId: "admin_id"}}, nil
 }
 func (m *mockRepository) SaveUserRoles(userId int, roleIds []string) error {
 	panic("not implemented")
@@ -216,6 +221,49 @@ func TestService_Login(t *testing.T) {
 		assert.Contains(t, err.Error(), "account is disabled")
 	})
 
+	t.Run("user with no roles returns ErrUserNoRole", func(t *testing.T) {
+		userNoRole := &SysUser{
+			Id:       8,
+			Username: strPtr("norole"),
+			Password: &hashedPwd,
+		}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return userNoRole, nil
+			},
+			findUserRolesFn: func(userId int) ([]UserHasRole, error) {
+				return []UserHasRole{}, nil // no roles assigned
+			},
+		}
+		svc := newTestService(repo)
+
+		u, err := svc.Login("norole", "correct-password")
+		assert.Error(t, err)
+		assert.Nil(t, u)
+		assert.Contains(t, err.Error(), "no role assigned")
+	})
+
+	t.Run("inactive user (90+ days) returns ErrUserInactive", func(t *testing.T) {
+		old := time.Now().Add(-(UserLockedDays + 1) * 24 * time.Hour)
+		inactiveUser := &SysUser{
+			Id:            9,
+			Username:      strPtr("inactive"),
+			Password:      &hashedPwd,
+			LastLoginTime: &old,
+		}
+		repo := &mockRepository{
+			findUserByUsernameFn: func(username string) (*SysUser, error) {
+				return inactiveUser, nil
+			},
+		}
+		svc := newTestService(repo)
+
+		u, err := svc.Login("inactive", "correct-password")
+		assert.Error(t, err)
+		assert.Nil(t, u)
+		assert.Contains(t, err.Error(), "inactive")
+	})
+
 	t.Run("locked account within window returns ErrUserLocked", func(t *testing.T) {
 		recent := time.Now().Add(-time.Minute) // 1 min ago, inside the 30-min window
 		lockedUser := &SysUser{
@@ -343,8 +391,9 @@ func TestService_CreateUser(t *testing.T) {
 			Password: &plainPwd,
 		}
 
-		err := svc.CreateUser(u)
+		generated, err := svc.CreateUser(u)
 		assert.NoError(t, err)
+		assert.Equal(t, "", generated) // caller supplied a password -> nothing generated
 		assert.NotNil(t, captured)
 
 		// Password should have been hashed, not the original plaintext.
@@ -377,13 +426,13 @@ func TestService_CreateUser(t *testing.T) {
 			Enable:   boolPtr(false),
 		}
 
-		err := svc.CreateUser(u)
+		_, err := svc.CreateUser(u)
 		assert.NoError(t, err)
 		assert.NotNil(t, captured.Enable)
 		assert.False(t, *captured.Enable)
 	})
 
-	t.Run("empty password is not hashed", func(t *testing.T) {
+	t.Run("empty password is auto-generated and hashed", func(t *testing.T) {
 		var captured *SysUser
 		repo := &mockRepository{
 			createUserFn: func(u *SysUser) error {
@@ -399,9 +448,11 @@ func TestService_CreateUser(t *testing.T) {
 			Password: &emptyPwd,
 		}
 
-		err := svc.CreateUser(u)
+		generated, err := svc.CreateUser(u)
 		assert.NoError(t, err)
-		assert.Equal(t, "", *captured.Password)
+		assert.NotEmpty(t, generated) // a password was auto-generated
+		// The stored password must be the bcrypt hash of the generated one.
+		assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(*captured.Password), []byte(generated)))
 	})
 
 	t.Run("repo error is propagated", func(t *testing.T) {
@@ -413,7 +464,7 @@ func TestService_CreateUser(t *testing.T) {
 		svc := newTestService(repo)
 
 		u := &SysUser{Username: strPtr("failuser"), Password: strPtr("pass")}
-		err := svc.CreateUser(u)
+		_, err := svc.CreateUser(u)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "db connection lost")
 	})
@@ -424,52 +475,56 @@ func TestService_CreateUser(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestService_ListUsers(t *testing.T) {
-	var capturedLicenseId, capturedOffset, capturedLimit int
+	var capturedOffset, capturedLimit int
+	var capturedExcludeAdmin bool
+	var capturedCreatorName string
 
 	repo := &mockRepository{
-		findUsersFn: func(licenseId, offset, limit int) ([]SysUser, int64, error) {
-			capturedLicenseId = licenseId
+		findUsersFn: func(offset, limit int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 			capturedOffset = offset
 			capturedLimit = limit
+			capturedExcludeAdmin = excludeAdmin
+			capturedCreatorName = creatorName
 			return []SysUser{{Id: 1}, {Id: 2}}, int64(100), nil
 		},
 	}
 	svc := newTestService(repo)
 
 	t.Run("page 1 with pageSize 10", func(t *testing.T) {
-		users, total, err := svc.ListUsers(1, 1, 10)
+		users, total, err := svc.ListUsers(1, 10, true, "")
 		assert.NoError(t, err)
-		assert.Equal(t, 1, capturedLicenseId)
 		assert.Equal(t, 0, capturedOffset) // (1-1)*10
 		assert.Equal(t, 10, capturedLimit)
+		assert.True(t, capturedExcludeAdmin)
+		assert.Equal(t, "", capturedCreatorName)
 		assert.Len(t, users, 2)
 		assert.Equal(t, int64(100), total)
 	})
 
-	t.Run("page 3 with pageSize 20", func(t *testing.T) {
-		_, _, err := svc.ListUsers(5, 3, 20)
+	t.Run("page 3 with pageSize 20 passes creator filter", func(t *testing.T) {
+		_, _, err := svc.ListUsers(3, 20, true, "bob")
 		assert.NoError(t, err)
-		assert.Equal(t, 5, capturedLicenseId)
 		assert.Equal(t, 40, capturedOffset) // (3-1)*20
 		assert.Equal(t, 20, capturedLimit)
+		assert.Equal(t, "bob", capturedCreatorName)
 	})
 
 	t.Run("page less than 1 defaults to 1", func(t *testing.T) {
-		_, _, err := svc.ListUsers(1, 0, 10)
+		_, _, err := svc.ListUsers(0, 10, true, "")
 		assert.NoError(t, err)
 		assert.Equal(t, 0, capturedOffset)
 	})
 
 	t.Run("pageSize less than 1 defaults to 20", func(t *testing.T) {
-		_, _, err := svc.ListUsers(1, 1, 0)
+		_, _, err := svc.ListUsers(1, 0, true, "")
 		assert.NoError(t, err)
 		assert.Equal(t, 20, capturedLimit)
 	})
 
 	t.Run("negative page and pageSize use defaults", func(t *testing.T) {
-		_, _, err := svc.ListUsers(1, -5, -1)
+		_, _, err := svc.ListUsers(-5, -1, true, "")
 		assert.NoError(t, err)
 		assert.Equal(t, 0, capturedOffset) // page->1, (1-1)*20
-		assert.Equal(t, 20, capturedLimit)  // pageSize->20
+		assert.Equal(t, 20, capturedLimit) // pageSize->20
 	})
 }

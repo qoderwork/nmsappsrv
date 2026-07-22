@@ -194,7 +194,11 @@ func (r *repository) DeleteKPIAlarmTemplate(id int) error {
 
 func (r *repository) FindDashboardData(tenancyId int, startTime, endTime time.Time) ([]DashboardPmStatisticData, error) {
 	var items []DashboardPmStatisticData
-	err := r.db.Where("tenancy_id = ? AND time BETWEEN ? AND ?", tenancyId, startTime, endTime).Find(&items).Error
+	query := r.db.Where("time BETWEEN ? AND ?", startTime, endTime)
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
+	err := query.Find(&items).Error
 	return items, err
 }
 
@@ -204,7 +208,11 @@ func (r *repository) FindDashboardData(tenancyId int, startTime, endTime time.Ti
 
 func (r *repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time) ([]PDCPTraffic, error) {
 	var items []PDCPTraffic
-	err := r.db.Where("tenancy_id = ? AND statistic_time BETWEEN ? AND ?", tenancyId, startTime, endTime).Find(&items).Error
+	query := r.db.Where("statistic_time BETWEEN ? AND ?", startTime, endTime)
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
+	err := query.Find(&items).Error
 	return items, err
 }
 
@@ -215,10 +223,13 @@ func (r *repository) FindPDCPTraffic(tenancyId int, startTime, endTime time.Time
 // FindAllActiveElements queries all non-deleted devices for the given license.
 func (r *repository) FindAllActiveElements(licenseId int) ([]elementRow, error) {
 	var rows []elementRow
-	err := r.db.Table("cpe_element").
+	query := r.db.Table("cpe_element").
 		Select("ne_neid, device_type, generation, model_name").
-		Where("deleted = 0 AND license_id = ?", licenseId).
-		Find(&rows).Error
+		Where("deleted = 0")
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	err := query.Find(&rows).Error
 	return rows, err
 }
 

@@ -109,7 +109,10 @@ func (r *repository) FindBackupOrRestoreTasks(tenancyId int, offset, limit int) 
 	var tasks []BackupOrRestoreTask
 	var total int64
 
-	query := r.db.Model(&BackupOrRestoreTask{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&BackupOrRestoreTask{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindBackupOrRestoreTasks count error: %v", err)
@@ -132,7 +135,10 @@ func (r *repository) FindBatchConfigLogs(tenancyId int, offset, limit int) ([]Ba
 	var logs []BatchConfigurationLog
 	var total int64
 
-	query := r.db.Model(&BatchConfigurationLog{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&BatchConfigurationLog{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindBatchConfigLogs count error: %v", err)
@@ -181,7 +187,11 @@ func (r *repository) CreateZTPLog(log *ZTPLog) error {
 // FindNorthReports returns all north reports for the given license.
 func (r *repository) FindNorthReports(licenseId int) ([]NorthReport, error) {
 	var reports []NorthReport
-	if err := r.db.Where("license_id = ? AND (deleted = ? OR deleted IS NULL)", licenseId, 0).Find(&reports).Error; err != nil {
+	query := r.db.Where("(deleted = ? OR deleted IS NULL)", 0)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Find(&reports).Error; err != nil {
 		logger.Errorf("FindNorthReports error: %v", err)
 		return nil, err
 	}
@@ -209,7 +219,11 @@ func (r *repository) DeleteNorthReport(id int) error {
 // FindRadius returns all RADIUS configurations for the given tenancy.
 func (r *repository) FindRadius(tenancyId int) ([]Radius, error) {
 	var list []Radius
-	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&list).Error; err != nil {
+	query := r.db.Model(&Radius{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
+	if err := query.Find(&list).Error; err != nil {
 		logger.Errorf("FindRadius error: %v", err)
 		return nil, err
 	}
@@ -239,7 +253,10 @@ func (r *repository) FindOperatorLogs(tenancyId int, offset, limit int) ([]Syste
 	var logs []SystemOperatorLog
 	var total int64
 
-	query := r.db.Model(&SystemOperatorLog{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&SystemOperatorLog{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindOperatorLogs count error: %v", err)
@@ -283,7 +300,11 @@ func (r *repository) DeleteUploadFile(id string) error {
 // FindErrorInfos returns all error info records for the given tenancy.
 func (r *repository) FindErrorInfos(tenancyId int) ([]ErrorInfo, error) {
 	var infos []ErrorInfo
-	if err := r.db.Where("tenancy_id = ?", tenancyId).Find(&infos).Error; err != nil {
+	query := r.db.Model(&ErrorInfo{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
+	if err := query.Find(&infos).Error; err != nil {
 		logger.Errorf("FindErrorInfos error: %v", err)
 		return nil, err
 	}
@@ -309,7 +330,10 @@ func (r *repository) FindBatchAddObjectTasks(tenancyId int, offset, limit int) (
 	var tasks []BatchAddObjectTask
 	var total int64
 
-	query := r.db.Model(&BatchAddObjectTask{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&BatchAddObjectTask{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindBatchAddObjectTasks count error: %v", err)
@@ -703,7 +727,10 @@ func (r *repository) FindReadyForZTPAOS() ([]int64, error) {
 func (r *repository) FindTBGs(licenseId int, name string, offset, limit int) ([]TBG, int64, error) {
 	var list []TBG
 	var total int64
-	query := r.db.Model(&TBG{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&TBG{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 	if name != "" {
 		query = query.Where("name LIKE ?", "%"+name+"%")
 	}
@@ -746,7 +773,10 @@ func (r *repository) CreateTBGsFromRows(tbgs []TBG) error {
 func (r *repository) FindPSAPIDs(licenseId int, psapId string, offset, limit int) ([]PSAPID, int64, error) {
 	var list []PSAPID
 	var total int64
-	query := r.db.Model(&PSAPID{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&PSAPID{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 	if psapId != "" {
 		query = query.Where("psap_id LIKE ?", "%"+psapId+"%")
 	}
@@ -809,7 +839,11 @@ func (r *repository) FindPSAPIDSyncLogs(offset, limit int) ([]PSAPIDSyncLog, int
 // FindSpatialFileMarkets returns all spatial file markets for a license.
 func (r *repository) FindSpatialFileMarkets(licenseId int) ([]SpatialFileMarket, error) {
 	var list []SpatialFileMarket
-	if err := r.db.Where("license_id = ?", licenseId).Find(&list).Error; err != nil {
+	query := r.db.Model(&SpatialFileMarket{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Find(&list).Error; err != nil {
 		logger.Errorf("FindSpatialFileMarkets error: %v", err)
 		return nil, err
 	}

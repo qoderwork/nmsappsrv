@@ -66,7 +66,7 @@ func (t *AlarmSyncTask) syncAlarmsForTenancy(ctx context.Context, tenancyId int)
 	var elements []enbElementRow
 	if err := t.db.Table("cpe_element").
 		Select("ne_neid, serial_number").
-		Where("deleted = ? AND serial_number IS NOT NULL AND serial_number != '' AND device_type = ? AND tenancy_id = ?", false, "enb", tenancyId).
+		Where("deleted = ? AND serial_number IS NOT NULL AND serial_number != '' AND device_type = ? AND license_id = ?", false, "enb", tenancyId).
 		Find(&elements).Error; err != nil {
 		logger.Errorf("AlarmSyncTask: query enb devices for tenancy %d failed: %v", tenancyId, err)
 		return 0

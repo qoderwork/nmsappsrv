@@ -69,7 +69,10 @@ func (r *repository) DeleteFile(fileId string) error {
 func (r *repository) FindFiles(licenseId int, fileName string, offset, limit int) ([]MNormalFile, int64, error) {
 	var list []MNormalFile
 	var total int64
-	query := r.db.Model(&MNormalFile{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&MNormalFile{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 	if fileName != "" {
 		query = query.Where("file_name LIKE ?", "%"+fileName+"%")
 	}

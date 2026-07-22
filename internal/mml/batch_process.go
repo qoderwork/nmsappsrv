@@ -59,8 +59,11 @@ func (BatchProcessLog) TableName() string { return "batch_process_log" }
 // FindBatchProcessFiles returns all batch process files for the given license.
 func (r *repository) FindBatchProcessFiles(licenseId int) ([]BatchProcessFile, error) {
 	var files []BatchProcessFile
-	if err := r.db.Where("license_id = ?", licenseId).
-		Order("upload_time DESC").
+	query := r.db.Model(&BatchProcessFile{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Order("upload_time DESC").
 		Find(&files).Error; err != nil {
 		logger.Errorf("FindBatchProcessFiles error: %v", err)
 		return nil, err

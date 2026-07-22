@@ -78,13 +78,13 @@ func TestRepository_FindPage(t *testing.T) {
 
 	// GORM issues a COUNT query first, then the SELECT query.
 	countRows := sqlmock.NewRows([]string{"count(*)"}).AddRow(2)
-	mock.ExpectQuery("SELECT count\\(\\*\\) FROM `cpe_element` WHERE license_id = .+ AND deleted = .+").
+	mock.ExpectQuery("SELECT count\\(\\*\\) FROM `cpe_element` WHERE deleted = .+ AND license_id = .+").
 		WillReturnRows(countRows)
 
 	dataRows := sqlmock.NewRows([]string{"ne_neid", "serial_number", "device_name", "deleted"}).
 		AddRow(2, "SN002", "Device2", false).
 		AddRow(1, "SN001", "Device1", false)
-	mock.ExpectQuery("SELECT \\* FROM `cpe_element` WHERE license_id = .+ AND deleted = .+ ORDER BY ne_neid DESC").
+	mock.ExpectQuery("SELECT \\* FROM `cpe_element` WHERE deleted = .+ AND license_id = .+ ORDER BY ne_neid DESC").
 		WillReturnRows(dataRows)
 
 	elems, total, err := repo.FindPage(1, "", 0, 20)

@@ -288,7 +288,7 @@ func (r *repository) ListUpgradeFiles(licenseId int, offset, limit int) ([]map[s
 	var files []map[string]interface{}
 	var total int64
 
-	query := r.db.Table("upgrade_file").Where("license_id = ?", licenseId)
+	query := r.db.Table("upgrade_file").Where("tenancy_id = ?", licenseId)
 	query.Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&files).Error
@@ -297,7 +297,7 @@ func (r *repository) ListUpgradeFiles(licenseId int, offset, limit int) ([]map[s
 
 func (r *repository) DeleteUpgradeFile(id int, licenseId int) error {
 	return r.db.Table("upgrade_file").
-		Where("id = ? AND license_id = ?", id, licenseId).
+		Where("id = ? AND tenancy_id = ?", id, licenseId).
 		Delete(nil).Error
 }
 
@@ -325,7 +325,7 @@ func (r *repository) ListUpgradeTasks(licenseId int, offset, limit int) ([]map[s
 	var tasks []map[string]interface{}
 	var total int64
 
-	query := r.db.Table("upgrade_task").Where("license_id = ?", licenseId)
+	query := r.db.Table("upgrade_task").Where("tenancy_id = ?", licenseId)
 	query.Count(&total)
 
 	err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&tasks).Error

@@ -66,7 +66,10 @@ func (r *repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo
 	var infos []CbsdInfo
 	var total int64
 
-	query := r.db.Model(&CbsdInfo{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&CbsdInfo{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindCbsdInfos count error: %v", err)
@@ -82,7 +85,11 @@ func (r *repository) FindCbsdInfos(licenseId int, offset, limit int) ([]CbsdInfo
 // FindCbsdInfoBySN looks up a CBSD info by serial number and license.
 func (r *repository) FindCbsdInfoBySN(sn string, licenseId int) (*CbsdInfo, error) {
 	var info CbsdInfo
-	if err := r.db.Where("cbsd_serial_number = ? AND license_id = ?", sn, licenseId).First(&info).Error; err != nil {
+	query := r.db.Where("cbsd_serial_number = ?", sn)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.First(&info).Error; err != nil {
 		return nil, err
 	}
 	return &info, nil
@@ -135,7 +142,10 @@ func (r *repository) FindCertFileSendTasks(tenancyId int, offset, limit int) ([]
 	var tasks []CBSDCertFileSendTask
 	var total int64
 
-	query := r.db.Model(&CBSDCertFileSendTask{}).Where("tenancy_id = ?", tenancyId)
+	query := r.db.Model(&CBSDCertFileSendTask{})
+	if tenancyId > 0 {
+		query = query.Where("tenancy_id = ?", tenancyId)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("FindCertFileSendTasks count error: %v", err)
@@ -174,10 +184,12 @@ func (r *repository) CountCbsdByStatus(licenseId int) ([]CbsdStatusCountItem, er
 		Cnt            int64  `gorm:"column:cnt"`
 	}
 	var rows []row
-	err := r.db.Model(&CbsdInfo{}).
-		Select("operation_state, COUNT(*) as cnt").
-		Where("license_id = ?", licenseId).
-		Group("operation_state").
+	query := r.db.Model(&CbsdInfo{}).
+		Select("operation_state, COUNT(*) as cnt")
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	err := query.Group("operation_state").
 		Find(&rows).Error
 	if err != nil {
 		return nil, err
@@ -200,7 +212,11 @@ func (r *repository) BulkCreateCbsdInfos(infos []CbsdInfo) error {
 // FindSasConfigs returns all SAS configs for the given license.
 func (r *repository) FindSasConfigs(licenseId int) ([]SasConfig, error) {
 	var configs []SasConfig
-	if err := r.db.Where("license_id = ?", licenseId).Find(&configs).Error; err != nil {
+	query := r.db.Model(&SasConfig{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Find(&configs).Error; err != nil {
 		return nil, err
 	}
 	return configs, nil

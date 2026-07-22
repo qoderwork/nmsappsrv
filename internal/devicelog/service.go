@@ -136,9 +136,14 @@ func (s *service) ListLogCollectionResults(c *gin.Context, req *ListLogCollectio
 
 	// Tenant isolation: every caller is scoped to its own license; filter the
 	// joined ne_log rows by license_id so one tenant cannot read another's logs.
+	// Admin users (licenseId=0) bypass the filter to see all data.
 	licenseId := middleware.GetLicenseId(c)
+	var licenseFilter *int
+	if licenseId > 0 {
+		licenseFilter = &licenseId
+	}
 	offset := (req.Page - 1) * req.PageSize
-	results, total, err := s.repo.FindByFilter(&licenseId, req.ElementId, req.DeviceType, req.Status, offset, req.PageSize)
+	results, total, err := s.repo.FindByFilter(licenseFilter, req.ElementId, req.DeviceType, req.Status, offset, req.PageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -218,9 +223,14 @@ func (s *service) ListLogFiles(c *gin.Context, req *ListLogFileRequest) ([]LogFi
 
 	// Tenant isolation: scope the element's log files to the caller's license so
 	// a user cannot read another tenant's files by passing a foreign elementId.
+	// Admin users (licenseId=0) bypass the filter to see all data.
 	licenseId := middleware.GetLicenseId(c)
+	var licenseFilter *int
+	if licenseId > 0 {
+		licenseFilter = &licenseId
+	}
 	offset := (req.Page - 1) * req.PageSize
-	logs, total, err := s.repo.FindByElementId(req.ElementId, &licenseId, offset, req.PageSize)
+	logs, total, err := s.repo.FindByElementId(req.ElementId, licenseFilter, offset, req.PageSize)
 	if err != nil {
 		return nil, 0, err
 	}

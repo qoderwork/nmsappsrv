@@ -54,7 +54,11 @@ func NewRepository(db *gorm.DB) Repository {
 
 func (r *repository) FindMonitorTasks(licenseId int) ([]MonitorTask, error) {
 	var items []MonitorTask
-	err := r.db.Where("license_id = ?", licenseId).Find(&items).Error
+	query := r.db.Model(&MonitorTask{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	err := query.Find(&items).Error
 	return items, err
 }
 

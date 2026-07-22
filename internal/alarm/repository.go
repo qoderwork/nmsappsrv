@@ -72,7 +72,10 @@ func (r *Repository) FindAlarms(licenseId int, severity string, alarmType int, o
 	var alarms []Alarm
 	var total int64
 
-	query := r.db.Model(&Alarm{}).Where("license_id = ?", licenseId)
+	query := r.db.Model(&Alarm{})
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 
 	if severity != "" {
 		query = query.Where("severity = ?", severity)
@@ -142,7 +145,11 @@ func (r *Repository) BatchClearAlarms(ids []int64, clearUser string, clearedTime
 func (r *Repository) FindActiveAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 	var filters []AlarmFilter
 	enabled := true
-	if err := r.db.Where("license_id = ? AND enable = ?", licenseId, enabled).Find(&filters).Error; err != nil {
+	q := r.db.Where("enable = ?", enabled)
+	if licenseId > 0 {
+		q = q.Where("license_id = ?", licenseId)
+	}
+	if err := q.Find(&filters).Error; err != nil {
 		return nil, err
 	}
 	return filters, nil
@@ -221,9 +228,14 @@ func (r *Repository) UpdateAlarmTemplate(t *AlarmTemplate) error {
 // ---------------------------------------------------------------------------
 
 // FindAlarmFilters returns all alarm filters for the given license.
+// If licenseId is 0 (platform admin), returns filters across all tenants.
 func (r *Repository) FindAlarmFilters(licenseId int) ([]AlarmFilter, error) {
 	var filters []AlarmFilter
-	if err := r.db.Where("license_id = ?", licenseId).Find(&filters).Error; err != nil {
+	q := r.db.Model(&AlarmFilter{})
+	if licenseId > 0 {
+		q = q.Where("license_id = ?", licenseId)
+	}
+	if err := q.Find(&filters).Error; err != nil {
 		return nil, err
 	}
 	return filters, nil
@@ -460,8 +472,11 @@ func (r *Repository) FindAlarmStatistic(licenseId int) (*AlarmStatistic, error) 
 		BySource:   map[string]int64{},
 	}
 	// Totals.
-	if err := r.db.Model(&Alarm{}).Where("license_id = ?", licenseId).
-		Count(new(int64)).Error; err != nil {
+	totalsQ := r.db.Model(&Alarm{})
+	if licenseId > 0 {
+		totalsQ = totalsQ.Where("license_id = ?", licenseId)
+	}
+	if err := totalsQ.Count(new(int64)).Error; err != nil {
 		return nil, err
 	}
 	// Use a single grouped query to avoid three round-trips.
@@ -472,10 +487,12 @@ func (r *Repository) FindAlarmStatistic(licenseId int) (*AlarmStatistic, error) 
 		Cnt        int64
 	}
 	var rows []row
-	if err := r.db.Model(&Alarm{}).
-		Select("alarm_type, severity, alarm_source, COUNT(*) AS cnt").
-		Where("license_id = ?", licenseId).
-		Group("alarm_type, severity, alarm_source").
+	groupQ := r.db.Model(&Alarm{}).
+		Select("alarm_type, severity, alarm_source, COUNT(*) AS cnt")
+	if licenseId > 0 {
+		groupQ = groupQ.Where("license_id = ?", licenseId)
+	}
+	if err := groupQ.Group("alarm_type, severity, alarm_source").
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -515,9 +532,12 @@ func (r *Repository) DeleteAlarmLibrary(id int) error {
 // listActiveAlarmProbableCause.
 func (r *Repository) FindActiveProbableCauses(licenseId int) ([]string, error) {
 	var causes []string
-	err := r.db.Model(&Alarm{}).
-		Where("license_id = ? AND alarm_type = ? AND probable_cause IS NOT NULL AND probable_cause <> ''", licenseId, AlarmTypeActive).
-		Distinct("probable_cause").
+	q := r.db.Model(&Alarm{}).
+		Where("alarm_type = ? AND probable_cause IS NOT NULL AND probable_cause <> ''", AlarmTypeActive)
+	if licenseId > 0 {
+		q = q.Where("license_id = ?", licenseId)
+	}
+	err := q.Distinct("probable_cause").
 		Pluck("probable_cause", &causes).Error
 	return causes, err
 }
@@ -526,9 +546,12 @@ func (r *Repository) FindActiveProbableCauses(licenseId int) ([]string, error) {
 // license. Mirrors Java getAlarmEventType.
 func (r *Repository) FindAlarmEventTypes(licenseId int) ([]string, error) {
 	var types []string
-	err := r.db.Model(&Alarm{}).
-		Where("license_id = ? AND event_type IS NOT NULL AND event_type <> ''", licenseId).
-		Distinct("event_type").
+	q := r.db.Model(&Alarm{}).
+		Where("event_type IS NOT NULL AND event_type <> ''")
+	if licenseId > 0 {
+		q = q.Where("license_id = ?", licenseId)
+	}
+	err := q.Distinct("event_type").
 		Pluck("event_type", &types).Error
 	return types, err
 }

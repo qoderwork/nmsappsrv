@@ -25,7 +25,7 @@ func (s *service) UploadUpgradeFile(c *gin.Context, fileName string, filePath st
 		"file_name":   fileName,
 		"file_path":   filePath,
 		"file_size":   fileSize,
-		"license_id":  licenseId,
+		"tenancy_id":  licenseId,
 		"user":        username,
 		"upload_time": now,
 		"create_time": now,
@@ -109,7 +109,7 @@ func (s *service) CreateUpgradeTask(c *gin.Context, req *RestUpgradeTaskRequest)
 		"upgrade_file_id": req.UpgradeFileId,
 		"element_ids":     string(elementIdJSON),
 		"status":          1, // pending
-		"license_id":      licenseId,
+		"tenancy_id":      licenseId,
 		"user":            username,
 		"create_time":     now,
 		"update_time":     now,

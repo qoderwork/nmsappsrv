@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/big"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // SysUser 对应 sys_user 表
@@ -151,7 +153,9 @@ type Role struct {
 func (Role) TableName() string { return "role" }
 
 // BeforeCreate auto-generates a UUID v4 primary key if not already set.
-func (r *Role) BeforeCreate(tx interface{ Error() error }) error {
+// Signature must be exactly BeforeCreate(*gorm.DB) error to satisfy GORM's
+// BeforeCreateInterface; otherwise the hook is never invoked.
+func (r *Role) BeforeCreate(tx *gorm.DB) error {
 	if r.Id == "" {
 		r.Id = generateUUID()
 	}

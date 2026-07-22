@@ -119,7 +119,11 @@ func (r *repository) CreateMmlCommandParam(p *MmlCommandParam) error {
 // (top-level and nested), 对齐 Java mmlSetService.getByVersionAndLicenseId.
 func (r *repository) FindMmlSetsByVersionAndLicense(version string, licenseId int) ([]MmlSet, error) {
 	var sets []MmlSet
-	if err := r.db.Where("version = ? AND license_id = ?", version, licenseId).Find(&sets).Error; err != nil {
+	query := r.db.Where("version = ?", version)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Find(&sets).Error; err != nil {
 		logger.Errorf("FindMmlSetsByVersionAndLicense error: %v", err)
 		return nil, err
 	}
@@ -130,7 +134,11 @@ func (r *repository) FindMmlSetsByVersionAndLicense(version string, licenseId in
 // the version+license.
 func (r *repository) FindTopMmlSets(version string, licenseId int) ([]MmlSet, error) {
 	var sets []MmlSet
-	if err := r.db.Where("version = ? AND license_id = ? AND parent_id IS NULL", version, licenseId).Find(&sets).Error; err != nil {
+	query := r.db.Where("version = ? AND parent_id IS NULL", version)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Find(&sets).Error; err != nil {
 		logger.Errorf("FindTopMmlSets error: %v", err)
 		return nil, err
 	}
@@ -151,7 +159,10 @@ func (r *repository) FindChildMmlSets(parentId int) ([]MmlSet, error) {
 // license (used for idempotent import, 对齐 Java getByParentIdAndName).
 func (r *repository) FindMmlSetByParentIdAndName(parentId *int, name string, licenseId int) ([]MmlSet, error) {
 	var sets []MmlSet
-	q := r.db.Where("name = ? AND license_id = ?", name, licenseId)
+	q := r.db.Where("name = ?", name)
+	if licenseId > 0 {
+		q = q.Where("license_id = ?", licenseId)
+	}
 	if parentId != nil {
 		q = q.Where("parent_id = ?", *parentId)
 	} else {
@@ -194,9 +205,11 @@ func (r *repository) FindMmlCommandParamsByCommandIds(ids []int) ([]MmlCommandPa
 // 对齐 Java mmlSetService.getByLicenseId -> distinct version.
 func (r *repository) FindMmlVersions(licenseId int) ([]string, error) {
 	var versions []string
-	if err := r.db.Model(&MmlSet{}).
-		Where("license_id = ? AND version IS NOT NULL", licenseId).
-		Distinct("version").
+	query := r.db.Model(&MmlSet{}).Where("version IS NOT NULL")
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
+	if err := query.Distinct("version").
 		Pluck("version", &versions).Error; err != nil {
 		logger.Errorf("FindMmlVersions error: %v", err)
 		return nil, err

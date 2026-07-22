@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"strings"
 	"time"
 	"unicode"
 
@@ -52,6 +53,13 @@ func NewService(db *gorm.DB) Service {
 	return &service{repo: NewRepository(db)}
 }
 
+// isAdminUser reports whether the username is the built-in super-admin.
+// Admin is exempt from account lockout, failure tracking, and inactive-user
+// checks — mirroring the Java MyAuthenticationProvider behaviour.
+func isAdminUser(username string) bool {
+	return strings.EqualFold(username, "admin")
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -74,12 +82,35 @@ func (s *service) Login(username, password string) (*SysUser, error) {
 	}
 
 	// 1) Account disabled by an administrator.
-	if u.Enable != nil && !*u.Enable {
+	//    Admin is exempt (mirrors Java: !"admin".equals(name) guard around enable check).
+	if !isAdminUser(username) && u.Enable != nil && !*u.Enable {
 		return nil, apperror.ErrUserDisabled
 	}
 
+	// 1b) Non-admin users must have at least one role assigned.
+	//     Mirrors Java: if roles are empty, throw LockedException("10162").
+	if !isAdminUser(username) {
+		roles, err := s.repo.FindUserRoles(u.Id)
+		if err != nil {
+			logger.Warnf("login: failed to check roles for %q: %v", username, err)
+		}
+		if len(roles) == 0 {
+			return nil, apperror.ErrUserNoRole
+		}
+	}
+
+	// 1c) Non-admin users who haven't logged in for UserLockedDays (90 days) are
+	//     considered inactive and locked. Admin is exempt.
+	//     Mirrors Java: !"admin".equalsIgnoreCase(name) && lastLoginTime check.
+	if !isAdminUser(username) && u.LastLoginTime != nil {
+		if time.Since(*u.LastLoginTime) > UserLockedDays*24*time.Hour {
+			return nil, apperror.ErrUserInactive
+		}
+	}
+
 	// 2) Account locked due to too many failed attempts?
-	if u.LoginErrorTimes != nil && *u.LoginErrorTimes >= DefaultMaxLoginFailedTimes {
+	//    Admin is exempt from lockout (mirrors Java: !"admin".equals(user.getUsername()))
+	if !isAdminUser(username) && u.LoginErrorTimes != nil && *u.LoginErrorTimes >= DefaultMaxLoginFailedTimes {
 		locked := u.LastLockTime != nil && time.Since(*u.LastLockTime) < UserLockMinutes*time.Minute
 		if locked {
 			return nil, apperror.ErrUserLocked
@@ -102,20 +133,23 @@ func (s *service) Login(username, password string) (*SysUser, error) {
 
 	// 3) Verify the password.
 	if err := bcrypt.CompareHashAndPassword([]byte(*u.Password), []byte(password)); err != nil {
-		// Increment the failure counter and lock the account at the threshold.
-		newCount := 1
-		if u.LoginErrorTimes != nil {
-			newCount = *u.LoginErrorTimes + 1
-		}
-		fields := map[string]interface{}{
-			"login_error_times": newCount,
-			"login_error_time":  time.Now(),
-		}
-		if newCount >= DefaultMaxLoginFailedTimes {
-			fields["last_lock_time"] = time.Now()
-		}
-		if err := s.repo.UpdateUserFields(u.Id, fields); err != nil {
-			logger.Warnf("login: failed to record failed attempt for %q: %v", username, err)
+		// Admin is exempt from failure tracking (mirrors Java checkIsNeedToLock).
+		// Only increment counter and potentially lock for non-admin users.
+		if !isAdminUser(username) {
+			newCount := 1
+			if u.LoginErrorTimes != nil {
+				newCount = *u.LoginErrorTimes + 1
+			}
+			fields := map[string]interface{}{
+				"login_error_times": newCount,
+				"login_error_time":  time.Now(),
+			}
+			if newCount >= DefaultMaxLoginFailedTimes {
+				fields["last_lock_time"] = time.Now()
+			}
+			if err := s.repo.UpdateUserFields(u.Id, fields); err != nil {
+				logger.Warnf("login: failed to record failed attempt for %q: %v", username, err)
+			}
 		}
 		return nil, apperror.ErrInvalidCredentials
 	}

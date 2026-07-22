@@ -61,7 +61,6 @@ func (s *service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 	}
 
 	username := middleware.GetUsername(c)
-	licenseId := middleware.GetLicenseId(c)
 	now := time.Now()
 
 	schedule := &NMSBackupAndRevert{
@@ -70,7 +69,6 @@ func (s *service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 		BackupName:     strPtr(req.BackupName),
 		BackupType:     intPtr(req.BackupType),
 		BackupStatus:   intPtr(0), // ready
-		LicenseId:      intPtr(licenseId),
 	}
 
 	if req.BackupType == 1 {
@@ -106,8 +104,6 @@ func (s *service) AddBackupSchedule(c *gin.Context, req *AddNMSBackupTaskRequest
 
 // ListBackupSchedules returns paginated list of backup schedules
 func (s *service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequest) ([]NMSBackupTaskVo, int64, error) {
-	licenseId := middleware.GetLicenseId(c)
-
 	page := req.Page
 	pageSize := req.PageSize
 	if page <= 0 {
@@ -117,7 +113,7 @@ func (s *service) ListBackupSchedules(c *gin.Context, req *ListNMSBackupTaskRequ
 		pageSize = 10
 	}
 
-	schedules, total, err := s.repo.ListSchedules(licenseId, page, pageSize)
+	schedules, total, err := s.repo.ListSchedules(page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}

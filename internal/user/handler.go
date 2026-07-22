@@ -91,7 +91,7 @@ func (h *Handler) Login(c *gin.Context) {
 		h.captchaMgr.OnSuccess(req.Username, ip)
 	}
 
-	licenseId := 1 // default license ID
+	licenseId := 0 // 0 = platform user (Admin/Operator), no tenant filter (aligns with Java SecurityUtil.getTenancyId() returning null)
 	if u.LicenseId != nil && *u.LicenseId > 0 {
 		licenseId = *u.LicenseId
 	}

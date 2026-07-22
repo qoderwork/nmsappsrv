@@ -81,7 +81,9 @@ func TestLoginCaptchaGate(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		var resp map[string]interface{}
 		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-		assert.Equal(t, true, resp["required"])
+		data, ok := resp["data"].(map[string]interface{})
+		assert.True(t, ok, "data should be a map")
+		assert.Equal(t, true, data["required"])
 	})
 
 	t.Run("with valid captcha -> 200 and requirement cleared", func(t *testing.T) {
@@ -108,6 +110,8 @@ func TestLoginCaptchaGate(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		var resp map[string]interface{}
 		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-		assert.Equal(t, true, resp["required"])
+		data, ok := resp["data"].(map[string]interface{})
+		assert.True(t, ok, "data should be a map")
+		assert.Equal(t, true, data["required"])
 	})
 }

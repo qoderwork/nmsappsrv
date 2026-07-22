@@ -165,9 +165,13 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 		FROM reboot_task rt
 		LEFT JOIN task_to_event_log tel ON tel.task_id = rt.id AND tel.task_type IN ('reboot','softReboot')
 		LEFT JOIN event_log el ON el.id = tel.event_log_id
-		WHERE rt.tenancy_id = ?`
+		WHERE 1=1`
 
-	args := []interface{}{tenancyId}
+	args := []interface{}{}
+	if tenancyId > 0 {
+		baseSQL += " AND rt.tenancy_id = ?"
+		args = append(args, tenancyId)
+	}
 
 	if query.TaskName != "" {
 		baseSQL += " AND rt.name LIKE ?"
@@ -191,8 +195,12 @@ func (r *repository) ListTasks(tenancyId int, query ListRebootTaskQuery) ([]Rebo
 	}
 
 	// Count total
-	countSQL := "SELECT COUNT(*) FROM reboot_task rt WHERE rt.tenancy_id = ?"
-	countArgs := []interface{}{tenancyId}
+	countSQL := "SELECT COUNT(*) FROM reboot_task rt WHERE 1=1"
+	countArgs := []interface{}{}
+	if tenancyId > 0 {
+		countSQL += " AND rt.tenancy_id = ?"
+		countArgs = append(countArgs, tenancyId)
+	}
 	if query.TaskName != "" {
 		countSQL += " AND rt.name LIKE ?"
 		countArgs = append(countArgs, "%"+query.TaskName+"%")

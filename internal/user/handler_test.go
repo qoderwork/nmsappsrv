@@ -27,8 +27,8 @@ type mockService struct {
 	logoutFn              func(string, string) error
 	recordLoginFn         func(string, string, int, int) error
 	recordLogoutFn        func(string, string, int) error
-	listUsersFn           func(int, int, int) ([]SysUser, int64, error)
-	createUserFn          func(*SysUser) error
+	listUsersFn           func(int, int, bool, string) ([]SysUser, int64, error)
+	createUserFn          func(*SysUser) (string, error)
 	updateUserFn          func(*SysUser) error
 	deleteUserFn          func(int) error
 	kickOutUserFn         func(int) error
@@ -78,18 +78,18 @@ func (m *mockService) RecordLogout(username, ip string, licenseId int) error {
 	return nil
 }
 
-func (m *mockService) ListUsers(licenseId int, page, pageSize int) ([]SysUser, int64, error) {
+func (m *mockService) ListUsers(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 	if m.listUsersFn != nil {
-		return m.listUsersFn(licenseId, page, pageSize)
+		return m.listUsersFn(page, pageSize, excludeAdmin, creatorName)
 	}
 	return nil, 0, nil
 }
 
-func (m *mockService) CreateUser(u *SysUser) error {
+func (m *mockService) CreateUser(u *SysUser) (string, error) {
 	if m.createUserFn != nil {
 		return m.createUserFn(u)
 	}
-	return nil
+	return "", nil
 }
 
 func (m *mockService) UpdateUser(u *SysUser) error {
@@ -355,12 +355,15 @@ func TestHandler_ListUsers(t *testing.T) {
 	setupHandlerEnv(t)
 
 	t.Run("returns paginated user list", func(t *testing.T) {
-		var capturedPage, capturedPageSize, capturedLicenseId int
+		var capturedPage, capturedPageSize int
+		var capturedExcludeAdmin bool
+		var capturedCreatorName string
 		svc := &mockService{
-			listUsersFn: func(licenseId, page, pageSize int) ([]SysUser, int64, error) {
-				capturedLicenseId = licenseId
+			listUsersFn: func(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 				capturedPage = page
 				capturedPageSize = pageSize
+				capturedExcludeAdmin = excludeAdmin
+				capturedCreatorName = creatorName
 				return []SysUser{
 					{Id: 1, Username: strPtr("alice")},
 					{Id: 2, Username: strPtr("bob")},
@@ -373,40 +376,74 @@ func TestHandler_ListUsers(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router := gin.New()
-		// Inject license_id into context (simulates auth middleware).
+		// Inject auth context (simulates auth middleware): admin sees all users.
 		router.Use(func(c *gin.Context) {
-			c.Set("license_id", 7)
+			c.Set("username", "root")
+			c.Set("role_names", []string{"admin"})
 			c.Next()
 		})
 		router.GET("/users", h.ListUsers)
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Equal(t, 7, capturedLicenseId)
 		assert.Equal(t, 2, capturedPage)
 		assert.Equal(t, 10, capturedPageSize)
+		assert.True(t, capturedExcludeAdmin)
+		assert.Equal(t, "", capturedCreatorName) // admin -> no creator filter
 
 		var resp map[string]interface{}
 		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 		assert.Equal(t, float64(200), resp["code"])
-		assert.Equal(t, float64(50), resp["total"])
-		assert.Equal(t, float64(2), resp["page"])
-		assert.Equal(t, float64(10), resp["page_size"])
 
-		data, ok := resp["data"].([]interface{})
+		data, ok := resp["data"].(map[string]interface{})
 		assert.True(t, ok)
-		assert.Len(t, data, 2)
+		assert.Equal(t, float64(50), data["total"])
+		assert.Equal(t, float64(2), data["page"])
+		assert.Equal(t, float64(10), data["page_size"])
+
+		list, ok := data["list"].([]interface{})
+		assert.True(t, ok)
+		assert.Len(t, list, 2)
 
 		// DTO should not contain password or salt fields.
-		first := data[0].(map[string]interface{})
+		first := list[0].(map[string]interface{})
 		assert.Nil(t, first["password"])
 		assert.Nil(t, first["salt"])
+	})
+
+	t.Run("non-admin caller is scoped to own created users", func(t *testing.T) {
+		var capturedCreatorName string
+		var capturedExcludeAdmin bool
+		svc := &mockService{
+			listUsersFn: func(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
+				capturedExcludeAdmin = excludeAdmin
+				capturedCreatorName = creatorName
+				return []SysUser{}, int64(0), nil
+			},
+		}
+		h := newTestHandler(svc)
+
+		req := httptest.NewRequest(http.MethodGet, "/users", nil)
+		w := httptest.NewRecorder()
+
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("username", "bob")
+			c.Set("role_names", []string{"Monitoring"})
+			c.Next()
+		})
+		router.GET("/users", h.ListUsers)
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.True(t, capturedExcludeAdmin)
+		assert.Equal(t, "bob", capturedCreatorName) // non-admin -> filtered by creator
 	})
 
 	t.Run("defaults to page 1 and pageSize 20", func(t *testing.T) {
 		var capturedPage, capturedPageSize int
 		svc := &mockService{
-			listUsersFn: func(licenseId, page, pageSize int) ([]SysUser, int64, error) {
+			listUsersFn: func(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 				capturedPage = page
 				capturedPageSize = pageSize
 				return []SysUser{}, int64(0), nil
@@ -419,7 +456,8 @@ func TestHandler_ListUsers(t *testing.T) {
 
 		router := gin.New()
 		router.Use(func(c *gin.Context) {
-			c.Set("license_id", 1)
+			c.Set("username", "root")
+			c.Set("role_names", []string{"admin"})
 			c.Next()
 		})
 		router.GET("/users", h.ListUsers)
@@ -432,7 +470,7 @@ func TestHandler_ListUsers(t *testing.T) {
 
 	t.Run("service error returns 500", func(t *testing.T) {
 		svc := &mockService{
-			listUsersFn: func(licenseId, page, pageSize int) ([]SysUser, int64, error) {
+			listUsersFn: func(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error) {
 				return nil, 0, assert.AnError
 			},
 		}
@@ -443,7 +481,8 @@ func TestHandler_ListUsers(t *testing.T) {
 
 		router := gin.New()
 		router.Use(func(c *gin.Context) {
-			c.Set("license_id", 1)
+			c.Set("username", "root")
+			c.Set("role_names", []string{"admin"})
 			c.Next()
 		})
 		router.GET("/users", h.ListUsers)

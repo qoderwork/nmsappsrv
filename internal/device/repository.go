@@ -76,7 +76,10 @@ func (r *repository) FindPage(licenseId int, keyword string, offset, limit int) 
 	var elems []CpeElement
 	var total int64
 
-	query := r.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	query := r.db.Model(&CpeElement{}).Where("deleted = ?", false)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 
 	if keyword != "" {
 		like := "%" + keyword + "%"
@@ -120,9 +123,14 @@ func (r *repository) Update(elem *CpeElement) error {
 // ---------------------------------------------------------------------------
 
 // FindGroups returns all device groups for the given license.
+// If licenseId is 0 (platform admin), returns groups across all tenants.
 func (r *repository) FindGroups(licenseId int) ([]DeviceGroup, error) {
 	var groups []DeviceGroup
-	if err := r.db.Where("license_id = ?", licenseId).Find(&groups).Error; err != nil {
+	q := r.db.Model(&DeviceGroup{})
+	if licenseId > 0 {
+		q = q.Where("license_id = ?", licenseId)
+	}
+	if err := q.Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil
@@ -276,7 +284,10 @@ func (r *repository) GetLicenseQuota(licenseId int, deviceType string) (int, err
 // matching the original inline query in the service.
 func (r *repository) CountNonDeleted(licenseId int, deviceType string) (int64, error) {
 	var existing int64
-	query := r.db.Model(&CpeElement{}).Where("license_id = ? AND deleted = ?", licenseId, false)
+	query := r.db.Model(&CpeElement{}).Where("deleted = ?", false)
+	if licenseId > 0 {
+		query = query.Where("license_id = ?", licenseId)
+	}
 	switch deviceType {
 	case "enb":
 		query = query.Where("device_type = ?", "enb")
