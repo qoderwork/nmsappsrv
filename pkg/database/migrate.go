@@ -7,6 +7,7 @@ import (
 	"nmsappsrv/internal/corenet"
 	"nmsappsrv/internal/device"
 	"nmsappsrv/internal/devicelog"
+	"nmsappsrv/internal/diagnostics"
 	"nmsappsrv/internal/eventlog"
 	"nmsappsrv/internal/heartbeat"
 	"nmsappsrv/internal/license"
@@ -69,7 +70,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&corenet.CoreNetworkStatisticData{},
 		&corenet.CoreNetworkData{},
 
-		// parameter (10)
+		// parameter (12)
 		&parameter.Parameter{},
 		&parameter.ParameterAttributes{},
 		&parameter.ParameterLog{},
@@ -80,6 +81,8 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&parameter.ParameterTemplateHasParameter{},
 		&parameter.ParameterDeploymentTemplate{},
 		&parameter.ParameterDeploymentTemplateHasElement{},
+		&parameter.TR069Parameter{},
+		&parameter.ParameterDeploymentLog{},
 
 		// upgrade (10)
 		&upgrade.UpgradeTask{},
@@ -142,7 +145,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&cbsd.CbrsLog{},
 		&cbsd.SasConfig{},
 
-		// misc (31)
+		// misc (35)
 		&misc.BatchAddObjectTask{},
 		&misc.BatchAddObjectTaskLog{},
 		&misc.BatchConfigurationLog{},
@@ -174,6 +177,10 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&misc.CallTraceFileLog{},
 		&misc.MACPMFileLog{},
 		&misc.RPCMethod{},
+		&misc.PSAPID{},
+		&misc.PSAPIDSyncLog{},
+		&misc.TBG{},
+		&misc.SpatialFileMarket{},
 
 		// mnormalfile (4)
 		&mnormalfile.MNormalFile{},
@@ -217,6 +224,9 @@ func AutoMigrateAll(db *gorm.DB) error {
 
 		// heartbeat (1)
 		&heartbeat.HeartbeatRecord{},
+
+		// diagnostics (1) — parameter_value shared with TR-069 engine
+		&diagnostics.ParameterValue{},
 
 		// pmfile (2)
 		&pmfile.PMFile{},
