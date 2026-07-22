@@ -39,4 +39,9 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	// Cert file send tasks
 	rg.POST("/cbsd/cert-tasks", h.CreateCertFileSendTask)
 	rg.GET("/cbsd/cert-tasks", h.ListCertFileSendTasks)
+
+	// Certificate file management
+	rg.GET("/cbsd/certificate", h.ListCbsdCertificates)
+	rg.POST("/cbsd/certificate", h.UploadCbsdCertificate)
+	rg.DELETE("/cbsd/certificate/:id", h.DeleteCbsdCertificate)
 }

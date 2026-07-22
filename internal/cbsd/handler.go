@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nmsappsrv/internal/config"
 	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/utils"
 
@@ -19,11 +20,13 @@ import (
 // Handler exposes HTTP handlers for CBSD endpoints.
 type Handler struct {
 	svc Service
+	db  *gorm.DB
+	cfg *config.Config
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{svc: NewService(db)}
+func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
+	return &Handler{svc: NewService(db), db: db, cfg: cfg}
 }
 
 // getTenantId extracts tenant_id from gin context as int.

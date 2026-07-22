@@ -11,4 +11,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/diagnostics/trace-route", h.DiagnosticsTraceRoute)
 	rg.POST("/diagnostics/download", h.DiagnosticsDownload)
 	rg.POST("/diagnostics/upload", h.DiagnosticsUpload)
+
+	// Diagnostics task history
+	rg.GET("/diagnostics/tasks", h.ListDiagnosticsTasks)
+	rg.GET("/diagnostics/tasks/:id", h.GetDiagnosticsTask)
 }

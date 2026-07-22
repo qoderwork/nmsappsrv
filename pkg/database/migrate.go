@@ -144,6 +144,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&cbsd.SendCBSDCertFileLog{},
 		&cbsd.CbrsLog{},
 		&cbsd.SasConfig{},
+		&cbsd.CbsdCertificate{},
 
 		// misc (35)
 		&misc.BatchAddObjectTask{},

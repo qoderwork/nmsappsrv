@@ -271,7 +271,7 @@ func main() {
 	monitorH := monitor.NewHandler(db)
 	siteH := site.NewHandler(db)
 	mmlH := mml.NewHandler(db)
-	cbsdH := cbsd.NewHandler(db)
+	cbsdH := cbsd.NewHandler(db, cfg)
 	corenetH := corenet.NewHandler(db)
 	miscH := misc.NewHandler(db, cfg)
 	miscH.EnqueueZTPFunc = tr069.EnqueueZTPProvision
