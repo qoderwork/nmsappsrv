@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/qoderwork/go-infra/licensing"
 
+	"nmsappsrv/internal/middleware"
 	"nmsappsrv/pkg/utils"
 
 	"gorm.io/gorm"
@@ -80,15 +81,11 @@ func (h *Handler) UpdateLicense(c *gin.Context) {
 // SASConfig endpoints
 // ---------------------------------------------------------------------------
 
-// GetSASConfig handles GET /licenses/:id/sas
+// GetSASConfig handles GET /license/sas-config
 func (h *Handler) GetSASConfig(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid license id")
-		return
-	}
+	tenantId := middleware.GetTenantId(c)
 
-	data, err := h.svc.GetSASConfig(id)
+	data, err := h.svc.GetSASConfig(tenantId)
 	if err != nil {
 		utils.Error(c, http.StatusNotFound, "sas config not found")
 		return
@@ -96,20 +93,16 @@ func (h *Handler) GetSASConfig(c *gin.Context) {
 	utils.Success(c, data)
 }
 
-// SaveSASConfig handles PUT /licenses/:id/sas
+// SaveSASConfig handles POST /license/sas-config
 func (h *Handler) SaveSASConfig(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid license id")
-		return
-	}
+	tenantId := middleware.GetTenantId(c)
 
 	var cfg SASConfig
 	if err := c.ShouldBindJSON(&cfg); err != nil {
 		utils.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	cfg.TenantId = &id
+	cfg.TenantId = &tenantId
 
 	if err := h.svc.SaveSASConfig(&cfg); err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to save sas config")

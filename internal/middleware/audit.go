@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,6 +67,7 @@ func AuditMiddleware(writer AuditLogWriter) gin.HandlerFunc {
 			}
 		}
 
+		bodyBytes = maskSensitiveFields(bodyBytes)
 		recordDetail := string(bodyBytes)
 		if len(recordDetail) > maxAuditBodyLen {
 			recordDetail = recordDetail[:maxAuditBodyLen]
@@ -72,7 +75,7 @@ func AuditMiddleware(writer AuditLogWriter) gin.HandlerFunc {
 
 		writer.Write(&AuditLogEntry{
 			Username:           GetUsername(c),
-			IPAddress:          c.ClientIP(),
+			IPAddress:          realClientIP(c),
 			LogName:            c.Request.Method + " " + route,
 			RecordDetail:       recordDetail,
 			Results:            results,
@@ -82,6 +85,59 @@ func AuditMiddleware(writer AuditLogWriter) gin.HandlerFunc {
 			TenantID:           tenantIDOf(c),
 		})
 	}
+}
+
+// realClientIP resolves the real client IP behind reverse proxies (nginx, compose, etc.).
+// Checks X-Real-IP first, then X-Forwarded-For, then falls back to c.ClientIP().
+func realClientIP(c *gin.Context) string {
+	if ip := c.GetHeader("X-Real-IP"); ip != "" {
+		return ip
+	}
+	if fwd := c.GetHeader("X-Forwarded-For"); fwd != "" {
+		// Take the first (original client) IP from the comma-separated list.
+		if idx := strings.IndexByte(fwd, ','); idx > 0 {
+			return strings.TrimSpace(fwd[:idx])
+		}
+		return strings.TrimSpace(fwd)
+	}
+	return c.ClientIP()
+}
+
+// maskSensitiveFields replaces values of known sensitive JSON keys (password,
+// secret, token) with "***" to avoid storing credentials in audit logs.
+func maskSensitiveFields(b []byte) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return b
+	}
+	sensitive := map[string]bool{
+		"password":      true,
+		"oldPassword":   true,
+		"newPassword":   true,
+		"confirmPassword": true,
+		"secret":        true,
+		"token":         true,
+		"secretKey":     true,
+		"privateKey":    true,
+	}
+	masked := false
+	for k := range m {
+		if sensitive[k] && m[k] != nil {
+			m[k] = "***"
+			masked = true
+		}
+	}
+	if !masked {
+		return b
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return b
+	}
+	return out
 }
 
 // tenantIDOf resolves tenancy id from context.

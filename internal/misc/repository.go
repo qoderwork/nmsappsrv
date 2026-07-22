@@ -313,8 +313,8 @@ func (r *repository) FindOperatorLogsFiltered(tenantId int, q OperatorLogQuery) 
 	var total int64
 
 	query := r.db.Table("system_operator_log").
-		Select("system_operator_log.*, t.tenancy_name").
-		Joins("LEFT JOIN tenancy t ON system_operator_log.tenant_id = t.license_id")
+		Select("system_operator_log.*, t.license_name AS tenancy_name").
+		Joins("LEFT JOIN tenant t ON system_operator_log.tenant_id = t.id")
 
 	if tenantId > 0 {
 		query = query.Where("system_operator_log.tenant_id = ?", tenantId)
