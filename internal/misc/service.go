@@ -35,7 +35,7 @@ type Service interface {
 	SetZTPStatus(req *SetZTPStatusRequest) error
 	BatchReZTP(req *BatchReZTPRequest) error
 	DeleteZTPFiles(req *DeleteZTPFileRequest) error
-	GenerateAOSFile(elementId int64) (string, error)
+	GenerateAOSFile(elementId int64, setReady bool) (string, error)
 	ScanAndGenerateAOSFiles() (int, error)
 
 	ListBackupRestoreTasks(tenantId int, page, pageSize int) ([]BackupOrRestoreTask, int64, error)
@@ -72,12 +72,22 @@ type Service interface {
 
 	// AOS Management — PSAPID
 	ListPSAPIDs(tenantId int, req *ListPSAPIDRequest) ([]PSAPID, int64, error)
-	SyncPSAPIDs(tenantId int, operator string) (int, error)
+	SyncPSAPIDs(req *SyncPSAPIDRequest, operator string) (int, error)
 	ListPSAPIDSyncLogs(page, pageSize int) ([]PSAPIDSyncLog, int64, error)
 
 	// AOS Management — SpatialFile
 	ListSpatialFileMarkets(tenantId int) ([]SpatialFileMarket, error)
 	GetMarketCoordinates(marketId int) ([]PSAPID, error)
+
+	// AOS Management — NR AOS import
+	ImportNrAOSFile(filePath string, tenantId int) (taskId string, count int, err error)
+
+	// AOS Management — File download & geofence
+	DownloadZTPTemplatePath() (string, error)
+	DownloadAOSFilePath(elementId int64) (string, string, error)
+	DownloadHistoryFilePath(logId int64) (string, string, error)
+	GetAOSTaskProgress(taskId string) (*AOSTaskProgressVO, error)
+	UpdateEnableGeofence(tbgId int64, enableGeofence *int) error
 }
 
 // service is the concrete implementation of Service.

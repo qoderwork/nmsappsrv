@@ -62,7 +62,7 @@ type Thread struct {
 	db         *gorm.DB
 	svc        misc.Service // GetZTPSetting + GenerateAOSFile
 	transports *external.Transports
-	alarmSvc   alarm.Service // raises ztp_failed alarms on gate/skip conditions
+	alarmSvc   alarm.Service             // raises ztp_failed alarms on gate/skip conditions
 	tplat      *external.TPlatformClient // T-Platform alert outcall (event-driven)
 }
 
@@ -274,7 +274,7 @@ func (t *Thread) processElement(ctx context.Context, elementId int64, setting *m
 	}
 
 	// Ensure the AOS pull-file exists.
-	aosFile, err := t.svc.GenerateAOSFile(elementId)
+	aosFile, err := t.svc.GenerateAOSFile(elementId, true)
 	if err != nil {
 		setFault(fmt.Sprintf("AOS generation failed: %v", err))
 		return err
@@ -554,7 +554,7 @@ func (t *Thread) raiseZTPFailedAlarm(dev device.CpeElement, faultInfo string) {
 		Severity:              strPtr("Critical"),
 		SpecificProblem:       strPtr("ZTP Failed"),
 		ElementId:             &dev.NeNeid,
-		TenantId:             dev.TenantId,
+		TenantId:              dev.TenantId,
 		UpdateTime:            &now,
 		AdditionalInformation: strPtr(faultInfo),
 	}
@@ -736,9 +736,9 @@ func vincentyDistance(lat1, lon1, lat2, lon2 float64) float64 {
 // pointer helpers
 // ---------------------------------------------------------------------------
 
-func intPtr(i int) *int    { return &i }
-func boolPtr(b bool) *bool { return &b }
-func strPtr(s string) *string { return &s }
+func intPtr(i int) *int              { return &i }
+func boolPtr(b bool) *bool           { return &b }
+func strPtr(s string) *string        { return &s }
 func timePtr(t time.Time) *time.Time { return &t }
 
 // strOrEmpty dereferences a *string, returning "" for nil.

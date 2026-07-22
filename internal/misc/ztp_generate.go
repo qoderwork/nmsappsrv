@@ -74,7 +74,7 @@ func strOrEmpty(p *string) string {
 // of scope here and handled as config-gated no-ops elsewhere, per the ztp
 // backfill spec (only the core — config generation + state machine — is in
 // scope; external calls are pluggable/skippable).
-func (s *service) GenerateAOSFile(elementId int64) (string, error) {
+func (s *service) GenerateAOSFile(elementId int64, setReady bool) (string, error) {
 	var dev cpeElementAOSView
 	if err := s.repo.DB().Select(
 		"ne_neid, serial_number, manufacturer, product, device_type, ztp_parameters, wifi_or_gps_info",
@@ -169,9 +169,17 @@ func (s *service) GenerateAOSFile(elementId int64) (string, error) {
 	}
 
 	// Record the generated file name on the device so resolveZtpFile serves it.
+	// When setReady is true (normal ZTP path) we also flip read_to_ztp so the
+	// device pulls the file; when false (manual NR AOS import) we leave
+	// read_to_ztp untouched — mirroring Java's updateAOSFileNameAndReadyToZTP
+	// with FALSE.
+	updates := map[string]interface{}{"aos_file_name": fileName}
+	if setReady {
+		updates["read_to_ztp"] = true
+	}
 	if err := s.repo.DB().Table("cpe_element").
 		Where("ne_neid = ?", elementId).
-		Updates(map[string]interface{}{"aos_file_name": fileName, "read_to_ztp": true}).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		return "", fmt.Errorf("update cpe_element.aos_file_name for device %d: %w", elementId, err)
 	}
 
@@ -195,7 +203,7 @@ func (s *service) ScanAndGenerateAOSFiles() (int, error) {
 
 	generated := 0
 	for _, id := range ids {
-		if _, err := s.GenerateAOSFile(id); err != nil {
+		if _, err := s.GenerateAOSFile(id, true); err != nil {
 			logger.Warnf("ztp-aos-gen: device %d skipped: %v", id, err)
 			continue
 		}

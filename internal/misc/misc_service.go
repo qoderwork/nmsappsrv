@@ -226,24 +226,9 @@ func (s *service) ListPSAPIDs(tenantId int, req *ListPSAPIDRequest) ([]PSAPID, i
 	return s.repo.FindPSAPIDs(tenantId, req.PsapId, offset, pageSize)
 }
 
-// SyncPSAPIDs synchronizes PSAP ID records from the external source.
-func (s *service) SyncPSAPIDs(tenantId int, operator string) (int, error) {
-	// In a full implementation this would call an external PSAP service.
-	// For now, we create a sync log and return.
-	now := time.Now()
-	status := 1 // 1=success
-	detail := "sync completed"
-	log := &PSAPIDSyncLog{
-		Operator:   &operator,
-		Status:     &status,
-		Detail:     &detail,
-		CreateTime: &now,
-	}
-	if err := s.repo.CreatePSAPIDSyncLog(log); err != nil {
-		return 0, err
-	}
-	return 0, nil
-}
+// SyncPSAPIDs is implemented in psap_sync.go (real external PSAP sync:
+// reverse-geocode via Spectrum Spatial → update psap_id → optional GMLC
+// push). It mirrors Java's @Async syncPSADID.
 
 // ListPSAPIDSyncLogs returns a paginated list of PSAP ID sync logs.
 func (s *service) ListPSAPIDSyncLogs(page, pageSize int) ([]PSAPIDSyncLog, int64, error) {

@@ -803,7 +803,7 @@ func main() {
 
 	// ZTPFailedTask (every 1 min): cleans up failed ZTP logs after timeout,
 	// removes AOS file references and geo cache. Mirrors Java ZTPTask.deleteFailedTask.
-	ztpFailedTask := scheduledtask.NewZTPFailedTask(db, cfg.FileServer.Root, 30)
+	ztpFailedTask := scheduledtask.NewZTPFailedTask(db, cfg.FileServer.Root, 15)
 	if err := mainScheduler.AddJob("ztp-failed-cleanup", "0 */1 * * * *", func() {
 		ztpFailedTask.CleanupFailed()
 	}); err != nil {

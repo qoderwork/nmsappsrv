@@ -79,6 +79,14 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/psap-id/sync", h.SyncPSAPID)
 	rg.POST("/psap-id/sync-logs", h.ListPSAPIDSyncLogs)
 
+	// AOS Management — NR AOS import
+	rg.POST("/aos/import", h.ImportNrAOSFile)
+	rg.GET("/aos/template", h.DownloadZTPTemplate)
+	rg.POST("/aos/download", h.DownloadAOSFile)
+	rg.POST("/aos/download-history", h.DownloadHistoryZTPFile)
+	rg.POST("/aos/generate-progress", h.GetGenerateAOSFileTaskProgress)
+	rg.POST("/aos/update-geofence", h.UpdateEnableGeofence)
+
 	// AOS Management — SpatialFile
 	rg.GET("/spatial-file/markets", h.ListSpatialFileMarkets)
 	rg.POST("/spatial-file/market-coordinates", h.GetMarketCoordinates)

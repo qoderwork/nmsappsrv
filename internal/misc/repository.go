@@ -69,6 +69,7 @@ type Repository interface {
 	SaveSystemConfigValue(key, value string) error
 	DeleteZTPLogsByElementIds(elementIds []int64) error
 	DeleteZTPFileSendLogsByElementIds(elementIds []int64) error
+	FindZTPFileSendLogByID(id int64) (*ZTPFileSendLog, error)
 	ClearDeviceAOSFile(elementIds []int64) error
 	DeleteGnbIdUsedByElementId(elementId int64) error
 	GetDeviceSerialNumber(elementId int64) (string, error)
@@ -764,6 +765,15 @@ func (r *repository) DeleteZTPLogsByElementIds(elementIds []int64) error {
 // DeleteZTPFileSendLogsByElementIds removes file send logs for the given devices.
 func (r *repository) DeleteZTPFileSendLogsByElementIds(elementIds []int64) error {
 	return r.db.Where("element_id IN (?)", elementIds).Delete(&ZTPFileSendLog{}).Error
+}
+
+// FindZTPFileSendLogByID returns a single ztp_file_send_log row by primary key.
+func (r *repository) FindZTPFileSendLogByID(id int64) (*ZTPFileSendLog, error) {
+	var log ZTPFileSendLog
+	if err := r.db.Where("id = ?", id).First(&log).Error; err != nil {
+		return nil, err
+	}
+	return &log, nil
 }
 
 // ClearDeviceAOSFile resets the aos_file_name and read_to_ztp flag on devices.

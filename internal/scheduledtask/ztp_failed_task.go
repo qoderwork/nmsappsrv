@@ -3,6 +3,7 @@ package scheduledtask
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,13 +15,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// ZTPFailedTask ZTP失败任务清理（每1分钟）
-// 查询 ztp_log 表中 has_fault=true 且超过一定时间（如30分钟）的记录
-// 删除相关的：
-//   - AOS 文件（aos_file 表）
-//   - geo 缓存（Redis key `geo_{elementId}`）
-//   - ZTP 日志本身
-// 发送 ztp_failed 通知到北向
+// ZTPFailedTask ZTP失败任务（每1分钟）
+// 对齐 Java ZTPTask.deleteFailedTask + ZTPFailedConsumer：
+//   Phase 1 (publishFailedOne): 检测→写重试日志→LPUSH Redis ztp_failed_notify→删除 ztp_log→CSV导出
+//   Phase 2 (consumeFailedNotifications): RPOP Redis→清除 e911_data→清除 aos_file→删除 geo 缓存
+// Redis 队列替代 Java RabbitMQ ztpFailedNotify。
 type ZTPFailedTask struct {
 	db           *gorm.DB
 	exportPath   string // 北向导出路径
@@ -46,6 +45,18 @@ type ztpLogRow struct {
 	HasFault  *bool      `gorm:"column:has_fault"`
 }
 
+// ztpFailedNotifyMsg is the JSON payload pushed to the Redis ztp_failed_notify
+// queue, replacing Java's RabbitMQ ztpFailedNotify.
+type ztpFailedNotifyMsg struct {
+	ElementId    int64  `json:"elementId"`
+	SerialNumber string `json:"serialNumber"`
+	DeviceName   string `json:"deviceName"`
+	Info         string `json:"info"`
+	TenantId     int    `json:"tenantId"`
+}
+
+const ztpFailedNotifyQueue = "ztp_failed_notify"
+
 // NewZTPFailedTask 创建 ZTPFailedTask 实例
 func NewZTPFailedTask(db *gorm.DB, exportPath string, timeoutMins int) *ZTPFailedTask {
 	if timeoutMins <= 0 {
@@ -58,21 +69,22 @@ func NewZTPFailedTask(db *gorm.DB, exportPath string, timeoutMins int) *ZTPFaile
 	}
 }
 
-// CleanupFailed 执行失败 ZTP 记录清理
-// 1. 查询 has_fault=true 且 end_time < now-timeoutMins 的 ztp_log 记录
-// 2. 对每条记录：
-//    - 删除 aos_file 记录（如果存在）
-//    - 删除 Redis geo 缓存
-//    - 导出失败通知到北向
-//    - 删除 ztp_log 记录
+// CleanupFailed 执行失败 ZTP 记录检测与通知（对齐 Java ZTPTask.deleteFailedTask）
+// 1. 查询 has_fault=true 或超时的 ztp_log
+// 2. 对每条记录：写重试日志 → LPUSH Redis ztp_failed_notify（替代 Java RabbitMQ）
+//    → 删除 ztp_log → CSV 北向导出
+// 3. 消费 Redis 队列，对每条通知执行设备清理（对齐 Java ZTPFailedConsumer）
 func (t *ZTPFailedTask) CleanupFailed() {
 	ctx := context.Background()
-	cutoff := time.Now().Add(-time.Duration(t.timeoutMins) * time.Minute)
+	timeout := t.timeoutMins
+	if to := t.loadZTPTimeoutMinutes(); to > 0 {
+		timeout = to
+	}
+	cutoff := time.Now().Add(-time.Duration(timeout) * time.Minute)
 
-	// 查询失败的 ZTP 日志：has_fault=true 且 end_time 早于 cutoff
 	var logs []ztpLogRow
 	if err := t.db.Table("ztp_log").
-		Where("has_fault = ? AND end_time IS NOT NULL AND end_time < ?", true, cutoff).
+		Where("has_fault = ? OR (end_time IS NULL AND start_time < ?)", true, cutoff).
 		Order("id ASC").
 		Find(&logs).Error; err != nil {
 		logger.Errorf("ZTPFailedTask: query ztp_log failed: %v", err)
@@ -83,72 +95,144 @@ func (t *ZTPFailedTask) CleanupFailed() {
 		return
 	}
 
+	// Phase 1: detection + notification (Java ZTPTask.deleteFailedTask).
 	for _, log := range logs {
-		t.cleanupOne(ctx, log)
+		t.publishFailedOne(ctx, log)
 	}
+
+	// Phase 2: consume + cleanup (Java ZTPFailedConsumer).
+	t.consumeFailedNotifications(ctx)
 }
 
-// cleanupOne 清理单条失败的 ZTP 记录
-func (t *ZTPFailedTask) cleanupOne(ctx context.Context, log ztpLogRow) {
+// publishFailedOne 检测到失败设备后，写重试日志、推送 Redis 通知、删除 ztp_log、
+// 导出 CSV（替代 RabbitMQ 的北向通知）。设备侧清理（e911/geo/aos）交由消费端处理。
+func (t *ZTPFailedTask) publishFailedOne(ctx context.Context, log ztpLogRow) {
 	elementId := int64Val2(log.ElementId)
 	if elementId == 0 {
 		return
 	}
 
-	// 1. 删除 aos_file 记录（如果存在）
-	// AOS 文件路径存储在 cpe_element.aos_file_name 中
-	var aosFileName string
-	t.db.Table("cpe_element").
-		Select("aos_file_name").
-		Where("ne_neid = ?", elementId).
-		Scan(&aosFileName)
+	// 1. 记录重试日志（Java: ZTPTask.deleteFailedTask 写 ZTPRetryLog）。
+	now := time.Now()
+	info := nullString2(log.Info)
+	if info == "" {
+		info = "ZTP failed"
+	}
+	t.db.Table("ztp_retry_log").Create(map[string]interface{}{
+		"element_id": elementId,
+		"retry_time": now,
+		"info":       info,
+	})
 
-	if aosFileName != "" {
-		// 删除 AOS 文件记录（如果存在独立表）
-		// 注意：当前系统中 AOS 文件名直接存储在 cpe_element.aos_file_name
-		// 这里清理 cpe_element 中的 aos_file_name 字段
-		t.db.Table("cpe_element").
-			Where("ne_neid = ?", elementId).
-			Updates(map[string]interface{}{
-				"aos_file_name": nil,
-				"read_to_ztp":   false,
-			})
+	// 2. 推送 Redis 通知（替代 Java RabbitMQ ztpFailedNotify）。
+	deviceInfo := t.lookupDeviceInfo(elementId)
+	msg := ztpFailedNotifyMsg{
+		ElementId:    elementId,
+		SerialNumber: deviceInfo.SerialNumber,
+		DeviceName:   deviceInfo.DeviceName,
+		Info:         info,
+		TenantId:     deviceInfo.TenantId,
+	}
+	msgJSON, _ := json.Marshal(msg)
+	if err := redis.LPush(ctx, ztpFailedNotifyQueue, string(msgJSON)); err != nil {
+		logger.Errorf("ZTPFailedTask: LPUSH failed for element %d: %v", elementId, err)
 	}
 
-	// 2. 删除 Redis geo 缓存
-	geoKey := fmt.Sprintf("geo_%d", elementId)
-	redis.Del(ctx, geoKey)
-
-	// 3. 导出失败通知到北向（CSV 文件）
-	t.exportFailedNotification(log, elementId)
-
-	// 4. 删除 ztp_log 记录
+	// 3. 删除 ztp_log（Java: ZTPTask 删除日志后发 RabbitMQ）。
 	if err := t.db.Table("ztp_log").Where("id = ?", log.Id).Delete(nil).Error; err != nil {
 		logger.Errorf("ZTPFailedTask: failed to delete ztp_log %d: %v", log.Id, err)
-		return
 	}
 
-	logger.Infof("ZTPFailedTask: cleaned up failed ZTP log %d for element %d", log.Id, elementId)
+	// 4. 导出 CSV 北向通知（Go 补充的离线记录，保留）。
+	t.exportFailedNotification(log, elementId)
+
+	logger.Infof("ZTPFailedTask: published failed notification for element %d to Redis", elementId)
 }
 
-// exportFailedNotification 导出 ZTP 失败通知到北向 CSV
-func (t *ZTPFailedTask) exportFailedNotification(log ztpLogRow, elementId int64) {
-	// 查询设备信息
-	var deviceInfoRow struct {
+// consumeFailedNotifications 逐条消费 Redis ztp_failed_notify 队列，执行设备清理
+//（对齐 Java ZTPFailedConsumer：清除 E911 引用 / aos_file_name / geo 缓存）。
+func (t *ZTPFailedTask) consumeFailedNotifications(ctx context.Context) {
+	for {
+		raw, err := redis.RPop(ctx, ztpFailedNotifyQueue)
+		if err != nil || raw == "" {
+			return
+		}
+		var msg ztpFailedNotifyMsg
+		if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+			logger.Warnf("ZTPFailedTask: bad notify msg: %v", err)
+			continue
+		}
+		t.applyFailedCleanup(ctx, msg)
+	}
+}
+
+// applyFailedCleanup 对单个失败设备执行清理：清除本地 e911_data、删除 geo 缓存、
+// 清除 aos_file_name 并停止重新下发（对齐 Java ZTPFailedConsumer）。
+func (t *ZTPFailedTask) applyFailedCleanup(ctx context.Context, msg ztpFailedNotifyMsg) {
+	elementId := msg.ElementId
+
+	// 1. 清除本地 e911_data 引用（Java 消费端同时远程注销 E911 系统，暂注：
+	//    remote de-reg 通过 ztp/external 做，此处因包依赖限制未引入）。
+	t.db.Table("cpe_element").
+		Where("ne_neid = ?", elementId).
+		Update("e911_data", nil)
+
+	// 2. 清除 AOS 文件引用并停止重新下发（Java: updateAOSFileNameAndReadyToZTP(id, null, FALSE)）。
+	t.db.Table("cpe_element").
+		Where("ne_neid = ?", elementId).
+		Updates(map[string]interface{}{
+			"aos_file_name": nil,
+			"read_to_ztp":   false,
+		})
+
+	// 3. 删除 Redis geo 缓存（Java key: device_geo_<id>）。
+	geoKey := fmt.Sprintf("device_geo_%d", elementId)
+	redis.Del(ctx, geoKey)
+
+	logger.Infof("ZTPFailedNotify consumer: cleaned up device %d (%s)", elementId, msg.SerialNumber)
+}
+
+// lookupDeviceInfo queries cpe_element for serial_number, device_name, tenant_id.
+func (t *ZTPFailedTask) lookupDeviceInfo(elementId int64) ztpDeviceInfo {
+	var row struct {
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceName   string `gorm:"column:device_name"`
-		TenantId    int    `gorm:"column:tenant_id"`
+		TenantId     int    `gorm:"column:tenant_id"`
 	}
 	t.db.Table("cpe_element").
 		Select("serial_number, device_name, tenant_id").
 		Where("ne_neid = ?", elementId).
-		Scan(&deviceInfoRow)
-
-	deviceInfo := ztpDeviceInfo{
-		SerialNumber: deviceInfoRow.SerialNumber,
-		DeviceName:   deviceInfoRow.DeviceName,
-		TenantId:    deviceInfoRow.TenantId,
+		Scan(&row)
+	return ztpDeviceInfo{
+		SerialNumber: row.SerialNumber,
+		DeviceName:   row.DeviceName,
+		TenantId:     row.TenantId,
 	}
+}
+
+// loadZTPTimeoutMinutes reads ztpTimeoutTime (minutes) from system_config,
+// mirroring Java's ZTPSetting.ztpTimeoutTime (default 15 min). Returns 0 when
+// unset so the constructor's default (15) applies.
+func (t *ZTPFailedTask) loadZTPTimeoutMinutes() int {
+	var cfg string
+	if err := t.db.Table("system_config").Select("config").Where("id = ?", "ztp_config").Scan(&cfg).Error; err != nil || cfg == "" {
+		return 0
+	}
+	var s struct {
+		ZTPTimeoutTime *int `json:"ztpTimeoutTime"`
+	}
+	if err := json.Unmarshal([]byte(cfg), &s); err != nil {
+		return 0
+	}
+	if s.ZTPTimeoutTime != nil {
+		return *s.ZTPTimeoutTime
+	}
+	return 0
+}
+
+// exportFailedNotification 导出 ZTP 失败通知到北向 CSV
+func (t *ZTPFailedTask) exportFailedNotification(log ztpLogRow, elementId int64) {
+	deviceInfo := t.lookupDeviceInfo(elementId)
 
 	// 创建导出目录: {exportPath}/{tenantId}/ZTP/
 	exportDir := filepath.Join(t.exportPath, fmt.Sprintf("%d", deviceInfo.TenantId), "ZTP")

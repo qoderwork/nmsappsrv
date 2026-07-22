@@ -1,8 +1,13 @@
 package misc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"time"
+
+	"nmsappsrv/pkg/redis"
 )
 
 // ---------------------------------------------------------------------------
@@ -56,44 +61,133 @@ func (s *service) ListHistoryZTPFiles(elementId int64, page, pageSize int) ([]Hi
 	return s.repo.FindHistoryZTPFiles(elementId, page, pageSize)
 }
 
-// SetZTPStatus enables or disables ZTP for the given devices.
+// SetZTPStatus enables or disables ZTP for the given devices. Mirrors Java's
+// setZTPStatus -> neElementService.updateReadyToZTP(elementId, status == 1):
+// a pure ready_to_ztp toggle. Go's AOS-generation cron (ztp-aos-gen) is gated
+// on (aos_file_name IS NULL AND read_to_ztp = 1), so an "enable" also clears
+// aos_file_name so the engine regenerates + re-provisions the device (Java
+// reaches the same re-provisioning because its regen is gated on
+// aos_file_name IS NULL alone). "disable" only clears the ready flag.
 func (s *service) SetZTPStatus(req *SetZTPStatusRequest) error {
+	ready := 0
 	if req.Status == "enable" {
-		// Reset aos_file_name to nil and read_to_ztp to 0 so the ZTP thread picks them up.
-		return s.repo.ClearDeviceAOSFile(req.ElementIds)
+		ready = 1
 	}
-	// "disable": just clear the read_to_ztp flag.
+	updates := map[string]interface{}{"read_to_ztp": ready}
+	if ready == 1 {
+		updates["aos_file_name"] = nil
+	}
 	return s.repo.DB().Table("cpe_element").
 		Where("ne_neid IN (?)", req.ElementIds).
-		Update("read_to_ztp", 0).Error
+		Updates(updates).Error
 }
 
-// BatchReZTP triggers re-provisioning for a batch of devices.
+// BatchReZTP triggers re-provisioning for a batch of devices. Mirrors Java's
+// @Async batchReztp: it only re-triggers devices whose ztp_log progress == 6
+// (completed), across the chosen scope (element / deviceGroup / market). Java's
+// market scope additionally filters by point-in-polygon against the spatial
+// KML; Go stores market as a flat cpe_element column, so we match by market and
+// let the ztp orchestrator engine (internal/ztp) re-validate each device's
+// polygon on the next scan.
 func (s *service) BatchReZTP(req *BatchReZTPRequest) error {
-	elementIds := s.resolveReZTPDeviceIds(req)
-	if len(elementIds) == 0 {
+	candidates := s.resolveReZTPDeviceIds(req)
+	if len(candidates) == 0 {
 		return fmt.Errorf("no devices resolved for re-ZTP")
 	}
 
-	// Clean up old ZTP data for these devices.
-	_ = s.repo.DeleteZTPLogsByElementIds(elementIds)
-	_ = s.repo.DeleteZTPFileSendLogsByElementIds(elementIds)
-	for _, id := range elementIds {
-		_ = s.repo.DeleteGnbIdUsedByElementId(id)
+	// Only completed devices (progress == 6) are re-triggered, matching Java.
+	var completed []int64
+	if err := s.repo.DB().Table("ztp_log").
+		Where("progress = ? AND element_id IN (?)", 6, candidates).
+		Pluck("element_id", &completed).Error; err != nil {
+		return err
+	}
+	if len(completed) == 0 {
+		return fmt.Errorf("no completed (progress=6) devices found for re-ZTP")
 	}
 
-	// Reset device AOS file so the ZTP thread picks them up again.
-	return s.repo.ClearDeviceAOSFile(elementIds)
+	for _, id := range completed {
+		if err := s.RetryZtp(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// DeleteZTPFiles deletes ZTP files and related data for the given devices.
+// DeleteZTPFiles re-triggers ZTP for the given devices. Mirrors Java's
+// deleteZTPFile -> retryZtp: the whole request fails if any device is currently
+// upgrading, otherwise each device is retried.
 func (s *service) DeleteZTPFiles(req *DeleteZTPFileRequest) error {
-	_ = s.repo.DeleteZTPLogsByElementIds(req.ElementIds)
-	_ = s.repo.DeleteZTPFileSendLogsByElementIds(req.ElementIds)
+	ctx := context.Background()
+	// Java fails the entire request if ANY device is upgrading.
 	for _, id := range req.ElementIds {
-		_ = s.repo.DeleteGnbIdUsedByElementId(id)
+		if isDeviceUpgrading(ctx, id) {
+			return fmt.Errorf("During the device upgrade, this operation is prohibited")
+		}
 	}
-	return s.repo.ClearDeviceAOSFile(req.ElementIds)
+	for _, id := range req.ElementIds {
+		if err := s.RetryZtp(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RetryZtp re-triggers ZTP for a single device, mirroring Java's retryZtp +
+// ZTPFailedConsumer.ztpFailedNotify. Order follows Java:
+//  1. clear the local E911 registration reference (Java also de-registers the
+//     remote E911 systems via E911Helper; that remote rollback is owned by the
+//     ztp orchestrator engine, internal/ztp/external, on the next failed scan)
+//  2. delete the geo redis cache (Java key: "device_geo_<id>")
+//  3. clear aos_file_name + set read_to_ztp=1 so the engine regenerates and
+//     re-provisions the device (Java: updateAOSFileNameAndReadyToZTP(id, null,
+//     FALSE) then the AOS-regen gate re-readies the device)
+//  4. delete the ztp_log
+//  5. record a ZTP retry log
+func (s *service) RetryZtp(elementId int64) error {
+	ctx := context.Background()
+
+	// 1. clear local e911_data reference.
+	s.repo.DB().Table("cpe_element").
+		Where("ne_neid = ?", elementId).
+		Update("e911_data", nil)
+
+	// 2. delete geo redis cache.
+	redis.Del(ctx, "device_geo_"+strconv.FormatInt(elementId, 10))
+
+	// 3. clear AOS file + re-ready for regeneration.
+	if err := s.repo.DB().Table("cpe_element").
+		Where("ne_neid = ?", elementId).
+		Updates(map[string]interface{}{"aos_file_name": nil, "read_to_ztp": 1}).Error; err != nil {
+		return err
+	}
+
+	// 4. delete ztp_log.
+	if err := s.repo.DeleteZTPLogsByElementIds([]int64{elementId}); err != nil {
+		return err
+	}
+
+	// 5. record retry log.
+	now := time.Now()
+	if err := s.repo.DB().Create(&ZTPRetryLog{
+		ElementId: &elementId,
+		RetryTime: &now,
+		Info:      strPtr("User-triggered ZTP retry"),
+	}).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// isDeviceUpgrading reports whether a device is currently upgrading (Java:
+// tr069Helper.isInUpgrade). Go records this in Redis as
+// "device_upgrade_status_<id>" = "yes" from the TR-069 Inform handler.
+func isDeviceUpgrading(ctx context.Context, elementId int64) bool {
+	val, err := redis.Get(ctx, "device_upgrade_status_"+strconv.FormatInt(elementId, 10))
+	if err != nil {
+		return false
+	}
+	return val == "yes"
 }
 
 // resolveReZTPDeviceIds extracts device IDs from the batch re-ZTP request.

@@ -352,6 +352,38 @@ type ZTPFileSendLog struct {
 
 func (ZTPFileSendLog) TableName() string { return "ztp_file_send_log" }
 
+// ---------- AOS download / geofence / task-progress DTOs ----------
+
+// DownloadAOSFileDTO is the JSON body for POST /ztp/download-aos.
+type DownloadAOSFileDTO struct {
+	ElementId int64 `json:"elementId" binding:"required"`
+}
+
+// DownloadHistoryZTPFileDTO is the JSON body for POST /ztp/download-history.
+type DownloadHistoryZTPFileDTO struct {
+	Id int64 `json:"id" binding:"required"`
+}
+
+// AOSTaskProgressDTO is the JSON body for POST /ztp/generate-progress.
+type AOSTaskProgressDTO struct {
+	Id string `json:"id" binding:"required"`
+}
+
+// UpdateEnableGeofenceDTO is the JSON body for POST /ztp/update-geofence.
+type UpdateEnableGeofenceDTO struct {
+	Id             int64 `json:"id" binding:"required"`
+	EnableGeofence int   `json:"enableGeofence"`
+}
+
+// AOSTaskProgressVO mirrors Java GetGenerateAOSFileTaskProgressVO.
+type AOSTaskProgressVO struct {
+	Complete        bool   `json:"complete"`
+	CurrentProgress int    `json:"currentProgress"`
+	TotalProgress   int    `json:"totalProgress"`
+	Message         string `json:"message"`
+	HasFault        bool   `json:"hasFault"`
+}
+
 // ZTPGnbIdUsed 对应 ztp_gnbid_used 表 (UUID主键)
 type ZTPGnbIdUsed struct {
 	Id        string  `gorm:"primaryKey;type:varchar(32)" json:"id"`
@@ -711,13 +743,15 @@ func (RPCMethod) TableName() string { return "rpc_method" }
 
 // TBG 对应 tbg 表 (Tunnel Border Gateway)
 type TBG struct {
-	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name       *string    `gorm:"column:name;type:varchar(255)" json:"name"`
-	IP         *string    `gorm:"column:ip;type:varchar(255)" json:"ip"`
-	Port       *int       `gorm:"column:port" json:"port"`
-	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
-	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
-	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
+	Id             int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           *string    `gorm:"column:name;type:varchar(255)" json:"name"`
+	IP             *string    `gorm:"column:ip;type:varchar(255)" json:"ip"`
+	Port           *int       `gorm:"column:port" json:"port"`
+	TenantId       *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	EnableGeofence *int       `gorm:"column:enable_geofence" json:"enable_geofence"`
+	RadiusThreshold *int      `gorm:"column:radius_threshold" json:"radius_threshold"`
+	CreateTime     *time.Time `gorm:"column:create_time" json:"create_time"`
+	UpdateTime     *time.Time `gorm:"column:update_time" json:"update_time"`
 }
 
 func (TBG) TableName() string { return "tbg" }
@@ -794,8 +828,20 @@ type ListPSAPIDRequest struct {
 }
 
 // SyncPSAPIDRequest is the JSON body for POST /psap-id/sync.
+//
+// Scope mirrors Java's syncPSADID scope switch:
+//   - "element"     → sync only the devices in ElementIds
+//   - "deviceGroup" → sync every device in the groups in DeviceGroupIds
+//   - "market"      → sync every device whose market column is in Markets
+//   - "" (empty)    → all non-deleted devices (Java's market scope is
+//     polygon-based; Go stores market as a flat column, so we match by the
+//     column to stay consistent with BatchReZTP's market scope).
 type SyncPSAPIDRequest struct {
-	TenantId int `json:"tenantId"`
+	TenantId      int      `json:"tenantId"`
+	Scope         string   `json:"scope"`
+	ElementIds    []int64  `json:"elementIds"`
+	DeviceGroupIds []string `json:"deviceGroupIds"`
+	Markets       []string `json:"markets"`
 }
 
 // MarketCoordinateRequest is the JSON body for POST /spatial-file/market-coordinates.

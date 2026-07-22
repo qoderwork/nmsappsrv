@@ -2,11 +2,15 @@ package misc
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 
 	"nmsappsrv/internal/config"
@@ -20,13 +24,14 @@ import (
 // Handler exposes HTTP handlers for miscellaneous endpoints.
 type Handler struct {
 	svc Service
+	cfg *config.Config
 	// EnqueueZTPFunc is injected from main to avoid an import cycle with tr069.
 	EnqueueZTPFunc func(ctx context.Context, elementId int64, serialNumber, operationType, operationUser string) error
 }
 
 // NewHandler creates a Handler backed by a fresh Service.
 func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
-	return &Handler{svc: NewService(db, cfg)}
+	return &Handler{svc: NewService(db, cfg), cfg: cfg}
 }
 
 // getTenantId extracts tenant_id from gin context as int.
@@ -338,7 +343,7 @@ func (h *Handler) ProvisionZTP(c *gin.Context) {
 // records cpe_element.aos_file_name. Exposed on the Handler so the tr069 ZTP
 // worker can invoke it without importing config (avoids a cycle).
 func (h *Handler) GenerateAOSFile(elementId int64) (string, error) {
-	return h.svc.GenerateAOSFile(elementId)
+	return h.svc.GenerateAOSFile(elementId, true)
 }
 
 // ScanAndGenerateAOSFiles runs the ZTPTask-style scan for ready devices.
@@ -702,7 +707,7 @@ func (h *Handler) ImportTBGFile(c *gin.Context) {
 			Name:       &name,
 			IP:         &ip,
 			Port:       &port,
-			TenantId:  &tenantId,
+			TenantId:   &tenantId,
 			CreateTime: &now,
 			UpdateTime: &now,
 		})
@@ -767,7 +772,8 @@ func (h *Handler) SyncPSAPID(c *gin.Context) {
 	}
 	username := middleware.GetUsername(c)
 	tenantId := middleware.GetTenantId(c)
-	count, err := h.svc.SyncPSAPIDs(tenantId, username)
+	req.TenantId = tenantId
+	count, err := h.svc.SyncPSAPIDs(&req, username)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to sync PSAP ID")
 		return
@@ -784,6 +790,43 @@ func (h *Handler) ListPSAPIDSyncLogs(c *gin.Context) {
 		return
 	}
 	utils.Paginated(c, data, total, page, pageSize)
+}
+
+// ---------- AOS Management — NR AOS import ----------
+
+// ImportNrAOSFile handles POST /aos/import: it receives an uploaded xlsm
+// template, saves it to a temp location, and triggers the NR AOS import which
+// upserts devices, generates per-device AOS parameters and the AOS pull-file.
+func (h *Handler) ImportNrAOSFile(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		utils.Error(c, http.StatusBadRequest, "file is required")
+		return
+	}
+	tenantId := middleware.GetTenantId(c)
+
+	dir := h.cfg.FileServer.ZtpDir
+	if dir == "" {
+		dir = filepath.Join(os.TempDir(), "nms")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to prepare upload dir")
+		return
+	}
+	fileName := fmt.Sprintf("%s_%d.xlsm", uuid.New().String(), tenantId)
+	path := filepath.Join(dir, fileName)
+	if err := c.SaveUploadedFile(file, path); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to save uploaded file")
+		return
+	}
+	defer os.Remove(path)
+
+	taskId, count, err := h.svc.ImportNrAOSFile(path, tenantId)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, map[string]interface{}{"taskId": taskId, "count": count})
 }
 
 // ---------- AOS Management — SpatialFile ----------
@@ -810,4 +853,75 @@ func (h *Handler) GetMarketCoordinates(c *gin.Context) {
 		return
 	}
 	utils.Success(c, data)
+}
+
+// ---------- AOS Management — File download & geofence ----------
+
+// DownloadZTPTemplate serves the NR AOS xlsm template for download.
+func (h *Handler) DownloadZTPTemplate(c *gin.Context) {
+	path, err := h.svc.DownloadZTPTemplatePath()
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	c.FileAttachment(path, "ZTP_Template.xlsm")
+}
+
+// DownloadAOSFile serves a device's generated AOS XML file for download.
+func (h *Handler) DownloadAOSFile(c *gin.Context) {
+	var req DownloadAOSFileDTO
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "elementId is required")
+		return
+	}
+	path, fileName, err := h.svc.DownloadAOSFilePath(req.ElementId)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	c.FileAttachment(path, fileName)
+}
+
+// DownloadHistoryZTPFile serves a historical ZTP file for download.
+func (h *Handler) DownloadHistoryZTPFile(c *gin.Context) {
+	var req DownloadHistoryZTPFileDTO
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "id is required")
+		return
+	}
+	path, fileName, err := h.svc.DownloadHistoryFilePath(req.Id)
+	if err != nil {
+		utils.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	c.FileAttachment(path, fileName)
+}
+
+// GetGenerateAOSFileTaskProgress returns the progress of an NR AOS import task.
+func (h *Handler) GetGenerateAOSFileTaskProgress(c *gin.Context) {
+	var req AOSTaskProgressDTO
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "id is required")
+		return
+	}
+	vo, err := h.svc.GetAOSTaskProgress(req.Id)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, vo)
+}
+
+// UpdateEnableGeofence toggles the enable_geofence flag on a TBG record.
+func (h *Handler) UpdateEnableGeofence(c *gin.Context) {
+	var req UpdateEnableGeofenceDTO
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "id is required")
+		return
+	}
+	if err := h.svc.UpdateEnableGeofence(req.Id, &req.EnableGeofence); err != nil {
+		utils.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.Success(c, nil)
 }
