@@ -162,6 +162,10 @@ func (m *mockService) SetTenancyForUser(userId, tenantId int) error {
 	return nil
 }
 
+func (m *mockService) TenantExists(id int) bool {
+	return true
+}
+
 func (m *mockService) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, error) {
 	if m.getLoginFailedTimesFn != nil {
 		return m.getLoginFailedTimesFn(userId)

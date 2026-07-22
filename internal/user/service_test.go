@@ -97,6 +97,9 @@ func (m *mockRepository) FindRecentPasswords(username string, limit int) ([]Pass
 func (m *mockRepository) CountUsersByTenantId(tenantId int) (int64, error) {
 	panic("not implemented")
 }
+func (m *mockRepository) TenantExists(id int) bool {
+	return true
+}
 func (m *mockRepository) FindUsersByCreatorId(creatorId int) ([]SysUser, error) {
 	panic("not implemented")
 }

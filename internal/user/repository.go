@@ -31,6 +31,7 @@ type Repository interface {
 	CreatePasswordHistory(h *PasswordHistory) error
 	FindRecentPasswords(username string, limit int) ([]PasswordHistory, error)
 	CountUsersByTenantId(tenantId int) (int64, error)
+	TenantExists(id int) bool
 	FindUsersByCreatorId(creatorId int) ([]SysUser, error)
 	UpdateLastLoginTime(username string, t time.Time) error
 }
@@ -270,6 +271,12 @@ func (r *repository) CountUsersByTenantId(tenantId int) (int64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (r *repository) TenantExists(id int) bool {
+	var count int64
+	r.db.Table("tenant").Where("id = ?", id).Count(&count)
+	return count > 0
 }
 
 // FindUsersByCreatorId returns users created by a specific user.

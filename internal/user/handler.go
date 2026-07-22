@@ -257,8 +257,11 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Set creator and license (tenancy) — mirrors Java SecurityUtil.getTenantId()
-	// Admin/Operator roles are not restricted by tenancy isolation (returns null in Java)
+	// Set creator and tenant assignment.
+	// - Admin/Operator: may optionally specify tenantId in the request body to
+	//   assign the new user to a specific tenant at creation time. If omitted,
+	//   user is platform-level (tenant_id = NULL).
+	// - Normal tenant user: always inherits the creator's own tenantId (cannot override).
 	creatorId := middleware.GetUserId(c)
 	u.CreateUserId = &creatorId
 	roleNames := middleware.GetRoleNames(c)
@@ -269,10 +272,21 @@ func (h *Handler) CreateUser(c *gin.Context) {
 			break
 		}
 	}
-	if !isAdminOrOperator {
+	if isAdminOrOperator {
+		// Admin may pass tenantId in body to assign tenant at creation time.
+		if u.TenantId != nil && *u.TenantId > 0 {
+			if !h.svc.TenantExists(*u.TenantId) {
+				utils.Error(c, http.StatusBadRequest, "specified tenant does not exist")
+				return
+			}
+		}
+	} else {
+		// Non-admin: force inherit creator's tenant, ignore any body value.
 		tenantId := middleware.GetTenantId(c)
 		if tenantId > 0 {
 			u.TenantId = &tenantId
+		} else {
+			u.TenantId = nil
 		}
 	}
 

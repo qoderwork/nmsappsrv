@@ -41,6 +41,7 @@ type Service interface {
 	GetRolePermissions(roleId string) ([]RoleHasPermission, error)
 	UpdateRolePermissions(roleId string, permissionIds []string) error
 	GetRoleNamesForUser(userId int, tenantId int) ([]string, error)
+	TenantExists(id int) bool
 }
 
 // service is the concrete implementation of Service.
@@ -701,6 +702,10 @@ func (s *service) GetRoleNamesForUser(userId int, tenantId int) ([]string, error
 		}
 	}
 	return names, nil
+}
+
+func (s *service) TenantExists(id int) bool {
+	return s.repo.TenantExists(id)
 }
 
 // ---------------------------------------------------------------------------
