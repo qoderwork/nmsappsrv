@@ -18,7 +18,7 @@ import (
 type Service interface {
 	Login(username, password string) (*SysUser, error)
 	Logout(username, jwtToken string) error
-	RecordLogin(username, ip string, tenantId int, result int) error
+	RecordLogin(username, ip string, tenantId int, result int, info string) error
 	RecordLogout(username, ip string, tenantId int) error
 	ListLoginLogs(tenantId int, page, pageSize int) ([]LoginLog, int64, error)
 	ListUsers(page, pageSize int, excludeAdmin bool, creatorName string) ([]SysUser, int64, error)
@@ -190,14 +190,17 @@ func (s *service) Logout(username, jwtToken string) error {
 }
 
 // RecordLogin creates a login log entry.
-func (s *service) RecordLogin(username, ip string, tenantId int, result int) error {
+func (s *service) RecordLogin(username, ip string, tenantId int, result int, info string) error {
 	now := time.Now()
+	logType := LoginTypeLogin
 	log := LoginLog{
 		Username:  &username,
 		IpAddress: &ip,
 		LoginTime: &now,
 		Result:    &result,
-		TenantId: &tenantId,
+		TenantId:  &tenantId,
+		Type:      &logType,
+		Info:      &info,
 	}
 	if err := s.repo.CreateLoginLog(&log); err != nil {
 		return apperror.Wrap(err, "RECORD_LOGIN_FAILED", 500, "failed to record login")

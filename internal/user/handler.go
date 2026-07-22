@@ -60,7 +60,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	ip := c.ClientIP()
+	ip := resolveClientIP(c)
 
 	// Adaptive captcha gate: only enforced once failures have triggered it.
 	if h.captchaMgr != nil && h.captchaMgr.IsRequired(req.Username, ip) {
@@ -81,7 +81,7 @@ func (h *Handler) Login(c *gin.Context) {
 		if h.captchaMgr != nil {
 			h.captchaMgr.OnFailure(req.Username, ip)
 		}
-		_ = h.svc.RecordLogin(req.Username, c.ClientIP(), 0, 0)
+		_ = h.svc.RecordLogin(req.Username, ip, 0, 0, err.Error())
 		utils.HandleError(c, err)
 		return
 	}
@@ -105,10 +105,24 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// Record successful login.
-	_ = h.svc.RecordLogin(req.Username, c.ClientIP(), tenantId, 1)
+	// Record successful login (info empty — Java LoginLog sets null for success).
+	_ = h.svc.RecordLogin(req.Username, ip, tenantId, 1, "")
 
 	utils.Success(c, gin.H{"token": token})
+}
+
+// resolveClientIP resolves the real client IP behind reverse proxies.
+func resolveClientIP(c *gin.Context) string {
+	if ip := c.GetHeader("X-Real-IP"); ip != "" {
+		return ip
+	}
+	if fwd := c.GetHeader("X-Forwarded-For"); fwd != "" {
+		if idx := strings.IndexByte(fwd, ','); idx > 0 {
+			return strings.TrimSpace(fwd[:idx])
+		}
+		return strings.TrimSpace(fwd)
+	}
+	return c.ClientIP()
 }
 
 // CaptchaImage handles GET /captchaImage: issues a new digit captcha and

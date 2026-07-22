@@ -25,7 +25,7 @@ import (
 type mockService struct {
 	loginFn               func(string, string) (*SysUser, error)
 	logoutFn              func(string, string) error
-	recordLoginFn         func(string, string, int, int) error
+	recordLoginFn         func(string, string, int, int, string) error
 	recordLogoutFn        func(string, string, int) error
 	listUsersFn           func(int, int, bool, string) ([]SysUser, int64, error)
 	createUserFn          func(*SysUser) (string, error)
@@ -64,9 +64,9 @@ func (m *mockService) Logout(username, jwtToken string) error {
 	return nil
 }
 
-func (m *mockService) RecordLogin(username, ip string, tenantId int, result int) error {
+func (m *mockService) RecordLogin(username, ip string, tenantId int, result int, info string) error {
 	if m.recordLoginFn != nil {
-		return m.recordLoginFn(username, ip, tenantId, result)
+		return m.recordLoginFn(username, ip, tenantId, result, info)
 	}
 	return nil
 }
@@ -277,7 +277,7 @@ func TestHandler_Login(t *testing.T) {
 			getRoleNamesForUserFn: func(userId, tenantId int) ([]string, error) {
 				return []string{"admin"}, nil
 			},
-			recordLoginFn: func(username, ip string, licId int, result int) error {
+			recordLoginFn: func(username, ip string, licId int, result int, info string) error {
 				assert.Equal(t, "alice", username)
 				assert.Equal(t, 1, result) // success
 				return nil
@@ -311,7 +311,7 @@ func TestHandler_Login(t *testing.T) {
 			loginFn: func(username, password string) (*SysUser, error) {
 				return nil, apperror.ErrInvalidCredentials
 			},
-			recordLoginFn: func(username, ip string, licId int, result int) error {
+			recordLoginFn: func(username, ip string, licId int, result int, info string) error {
 				recordedResult = result
 				return nil
 			},
