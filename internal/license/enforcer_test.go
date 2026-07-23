@@ -78,8 +78,10 @@ func TestEnforcerVerifyStoreAndLoad(t *testing.T) {
 	if lic == nil || status != "active" {
 		t.Fatalf("unexpected active state: status=%s", status)
 	}
-	if lic.Subject != "Acme Corp" {
-		t.Fatalf("subject = %q", lic.Subject)
+	fields := licenseFields(lic)
+	subj, ok := fields["subject"].(string)
+	if !ok || subj != "Acme Corp" {
+		t.Fatalf("subject = %v (expected \"Acme Corp\")", fields["subject"])
 	}
 
 	// Simulate a restart: a fresh enforcer on the same InstallDir should

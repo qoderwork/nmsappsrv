@@ -120,7 +120,8 @@ func (s *service) Login(username, password string) (*SysUser, error) {
 
 	// 2) Account locked due to too many failed attempts?
 	//    Admin is exempt from lockout (mirrors Java: !"admin".equals(user.getUsername()))
-	if !isAdminUser(username) && u.LoginErrorTimes != nil && *u.LoginErrorTimes >= DefaultMaxLoginFailedTimes {
+	//    Java loginErrorTimes is int primitive (NOT NULL default 0), so direct numeric compare.
+	if !isAdminUser(username) && u.LoginErrorTimes >= DefaultMaxLoginFailedTimes {
 		locked := u.LastLockTime != nil && time.Since(*u.LastLockTime) < UserLockMinutes*time.Minute
 		if locked {
 			return nil, apperror.ErrUserLocked
@@ -133,7 +134,7 @@ func (s *service) Login(username, password string) (*SysUser, error) {
 		}); err != nil {
 			logger.Warnf("login: failed to auto-unlock user %q: %v", username, err)
 		}
-		u.LoginErrorTimes = intPtr(0)
+		u.LoginErrorTimes = 0
 		u.LastLockTime = nil
 	}
 
@@ -154,11 +155,9 @@ func (s *service) Login(username, password string) (*SysUser, error) {
 	if !ok {
 		// Admin is exempt from failure tracking (mirrors Java checkIsNeedToLock).
 		// Only increment counter and potentially lock for non-admin users.
+		// loginErrorTimes is int primitive (NOT NULL default 0), so safe to +1.
 		if !isAdminUser(username) {
-			newCount := 1
-			if u.LoginErrorTimes != nil {
-				newCount = *u.LoginErrorTimes + 1
-			}
+			newCount := u.LoginErrorTimes + 1
 			fields := map[string]interface{}{
 				"login_error_times": newCount,
 				"login_error_time":  time.Now(),
@@ -299,10 +298,7 @@ func (s *service) CreateUser(u *SysUser) (string, error) {
 		enabled := true
 		u.Enable = &enabled
 	}
-	if u.LoginErrorTimes == nil {
-		zero := 0
-		u.LoginErrorTimes = &zero
-	}
+	// loginErrorTimes is int primitive (NOT NULL default 0) — Go zero value is correct.
 
 	now := time.Now()
 	u.CreateTime = &now
@@ -608,10 +604,8 @@ func (s *service) GetLoginFailedTimes(userId int) (*LoginFailedTimesResponse, er
 	}
 
 	maxFailed := DefaultMaxLoginFailedTimes
-	failedTime := 0
-	if u.LoginErrorTimes != nil {
-		failedTime = *u.LoginErrorTimes
-	}
+	// loginErrorTimes is int primitive (NOT NULL default 0), so direct assign.
+	failedTime := u.LoginErrorTimes
 
 	// If already at max, return 0 (lock has been applied)
 	if failedTime >= maxFailed {

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/qoderwork/go-infra/licensing"
@@ -203,17 +204,7 @@ func (h *Handler) UploadLicenseFile(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, gin.H{
-		"message":    "license activated",
-		"subject":    lic.Subject,
-		"issuer":     lic.Issuer,
-		"product":    lic.Product,
-		"expiry":     lic.Expiry,
-		"not_before": lic.NotBefore,
-		"features":   lic.Features,
-		"capacity":   lic.Capacity,
-		"machine":    machineFP(lic),
-	})
+	utils.Success(c, merge(gin.H{"message": "license activated"}, licenseFields(lic)))
 }
 
 // GetLicenseInfo handles GET /license/info (public) — reports enforcement state.
@@ -229,22 +220,146 @@ func (h *Handler) GetLicenseInfo(c *gin.Context) {
 		"detail":   detail,
 	}
 	if lic != nil {
-		resp["subject"] = lic.Subject
-		resp["issuer"] = lic.Issuer
-		resp["product"] = lic.Product
-		resp["expiry"] = lic.Expiry
-		resp["not_before"] = lic.NotBefore
-		resp["features"] = lic.Features
-		resp["capacity"] = lic.Capacity
-		resp["machine_fingerprint"] = machineFP(lic)
+		for k, v := range licenseFields(lic) {
+			resp[k] = v
+		}
 	}
 	utils.Success(c, resp)
 }
 
-// machineFP returns the license's bound machine fingerprint, or "".
-func machineFP(lic *licensing.License) string {
-	if lic == nil || lic.Machine == nil {
+// ---------------------------------------------------------------------------
+// Backend-agnostic license → response projection.
+//
+// Enforces the same GET /license/info and POST /license/upload response
+// shape regardless of which verifier produced the license. Supports both
+// *licensing.License (go-infra backend) and *TrueLicenseContent (TrueLicense
+// backend) via a single type-switch helper so handler code stays free of
+// per-backend branches.
+// ---------------------------------------------------------------------------
+
+// licenseFields returns the common response fields for the given license
+// raw value (as returned by Enforcer.GetActive / VerifyAndStore).
+func licenseFields(lic interface{}) gin.H {
+	if lic == nil {
+		return gin.H{}
+	}
+	switch l := lic.(type) {
+	case *licensing.License:
+		fields := gin.H{
+			"subject":  l.Subject,
+			"issuer":   l.Issuer,
+			"product":  l.Product,
+			"expiry":   nullableTime(l.Expiry),
+			"features": l.Features,
+			"capacity": l.Capacity,
+		}
+		if !l.NotBefore.IsZero() {
+			fields["not_before"] = l.NotBefore
+		} else {
+			fields["not_before"] = nil
+		}
+		if l.Machine != nil {
+			fields["machine"] = l.Machine.Fingerprint
+			fields["machine_fingerprint"] = l.Machine.Fingerprint
+		} else {
+			fields["machine"] = ""
+			fields["machine_fingerprint"] = ""
+		}
+		return fields
+	case *TrueLicenseContent:
+		issuer := ""
+		if l.Issuer != nil {
+			issuer = l.Issuer["CN"]
+			if issuer == "" {
+				issuer = joinDN(l.Issuer)
+			}
+		}
+		holder := ""
+		if l.Holder != nil {
+			holder = l.Holder["CN"]
+			if holder == "" {
+				holder = joinDN(l.Holder)
+			}
+		}
+		capacity := int32(0)
+		if l.ConsumerAmount > 0 {
+			capacity = l.ConsumerAmount
+		} else if n, ok := extraAsInt32(l.Extra, ExtraEnbQuantity); ok {
+			capacity = n
+		}
+		product := holder
+		if p, ok := l.Extra[ExtraLicenseName]; ok && p != "" {
+			product = p
+		}
+		fields := gin.H{
+			"subject":              l.Subject,
+			"issuer":               issuer,
+			"product":              product,
+			"expiry":               nullableTime(l.NotAfter),
+			"not_before":           nullableTime(l.NotBefore),
+			"features":             l.Extra,
+			"capacity":             capacity,
+			"consumer_type":        l.ConsumerType,
+			"consumer_amount":      l.ConsumerAmount,
+			"info":                 l.Info,
+			"issued":               nullableTime(l.Issued),
+			"holder":               holder,
+			"machine":              l.Extra[ExtraMachineFp],
+			"machine_fingerprint":  l.Extra[ExtraMachineFp],
+			"truelicense_backend":  true,
+		}
+		return fields
+	default:
+		return gin.H{}
+	}
+}
+
+func merge(a, b gin.H) gin.H {
+	for k, v := range b {
+		a[k] = v
+	}
+	return a
+}
+
+func nullableTime(t time.Time) interface{} {
+	if t.IsZero() {
+		return nil
+	}
+	return t
+}
+
+func joinDN(attrs map[string]string) string {
+	if attrs == nil || len(attrs) == 0 {
 		return ""
 	}
-	return lic.Machine.Fingerprint
+	parts := make([]string, 0, len(attrs))
+	order := []string{"CN", "O", "OU", "L", "ST", "C"}
+	used := map[string]struct{}{}
+	for _, k := range order {
+		if v, ok := attrs[k]; ok && v != "" {
+			parts = append(parts, k+"="+v)
+			used[k] = struct{}{}
+		}
+	}
+	for k, v := range attrs {
+		if _, ok := used[k]; ok {
+			continue
+		}
+		if v == "" {
+			continue
+		}
+		parts = append(parts, k+"="+v)
+	}
+	return join(parts, ", ")
+}
+
+func join(parts []string, sep string) string {
+	res := ""
+	for i, p := range parts {
+		if i > 0 {
+			res += sep
+		}
+		res += p
+	}
+	return res
 }

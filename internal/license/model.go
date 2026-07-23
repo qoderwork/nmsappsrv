@@ -22,7 +22,7 @@ type License struct {
 	CpeQuantity          *int       `gorm:"column:cpe_quantity" json:"cpe_quantity"`
 }
 
-func (License) TableName() string { return "tenant" }
+func (License) TableName() string { return "license" }
 
 // BaseStationLicense 对应 base_station_license 表 (UUID主键)
 type BaseStationLicense struct {
@@ -44,7 +44,7 @@ type SASConfig struct {
 	AutoRegister *bool `gorm:"column:auto_register" json:"auto_register"`
 }
 
-func (SASConfig) TableName() string { return "sas_config" }
+func (SASConfig) TableName() string { return "sasconfig" }
 
 // EntraEndpoint 对应 entra_endpoint 表 (UUID主键)
 type EntraEndpoint struct {

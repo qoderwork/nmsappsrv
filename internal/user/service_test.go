@@ -316,7 +316,7 @@ func TestService_Login(t *testing.T) {
 			Id:              4,
 			Username:        strPtr("locked"),
 			Password:        &hashedPwd,
-			LoginErrorTimes: intPtr(DefaultMaxLoginFailedTimes),
+			LoginErrorTimes: DefaultMaxLoginFailedTimes, // Java int primitive NOT NULL
 			LastLockTime:    &recent,
 		}
 		repo := &mockRepository{
@@ -338,7 +338,7 @@ func TestService_Login(t *testing.T) {
 			Id:              5,
 			Username:        strPtr("expiredlock"),
 			Password:        &hashedPwd,
-			LoginErrorTimes: intPtr(DefaultMaxLoginFailedTimes),
+			LoginErrorTimes: DefaultMaxLoginFailedTimes,
 			LastLockTime:    &expired,
 		}
 		var captured map[string]interface{}
@@ -364,7 +364,7 @@ func TestService_Login(t *testing.T) {
 			Id:              6,
 			Username:        strPtr("incrementme"),
 			Password:        &hashedPwd,
-			LoginErrorTimes: intPtr(2),
+			LoginErrorTimes: 2,
 		}
 		var captured map[string]interface{}
 		repo := &mockRepository{
@@ -391,7 +391,7 @@ func TestService_Login(t *testing.T) {
 			Id:              7,
 			Username:        strPtr("lockme"),
 			Password:        &hashedPwd,
-			LoginErrorTimes: intPtr(DefaultMaxLoginFailedTimes - 1),
+			LoginErrorTimes: DefaultMaxLoginFailedTimes - 1,
 		}
 		var captured map[string]interface{}
 		repo := &mockRepository{

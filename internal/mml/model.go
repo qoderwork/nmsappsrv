@@ -64,6 +64,16 @@ type MmlExecuteResult struct {
 
 func (MmlExecuteResult) TableName() string { return "mml_execute_result" }
 
+// MmlExecuteResultFileLog 对应 mml_execute_result_file_log 表 (Java: MmlExecuteResultFileLog entity)
+type MmlExecuteResultFileLog struct {
+	Id        int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FileName  *string    `gorm:"column:file_name;type:varchar(255)" json:"file_name"`
+	UploadTime *time.Time `gorm:"column:upload_time" json:"upload_time"`
+	ElementId *int64     `gorm:"column:element_id" json:"element_id"`
+}
+
+func (MmlExecuteResultFileLog) TableName() string { return "mml_execute_result_file_log" }
+
 // GetMMLResultByEventLogIdsVO 对齐 Java GetMMLResultByEventLogIdsVO：
 // 按 eventLogId 列表轮询 MML 执行结果时返回的标量视图。
 type GetMMLResultByEventLogIdsVO struct {

@@ -84,12 +84,14 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&parameter.TR069Parameter{},
 		&parameter.ParameterDeploymentLog{},
 
-		// upgrade (10)
+		// upgrade (12)
 		&upgrade.UpgradeTask{},
 		&upgrade.UpgradeFile{},
 		&upgrade.UpgradeLog{},
 		&upgrade.RollbackTask{},
 		&upgrade.RebootTask{},
+		&upgrade.UpgradeTaskHasElement{},
+		&upgrade.RollbackTaskHasElement{},
 		&upgrade.ShutdownMyTask{},
 		&upgrade.ShutdownLog{},
 		&upgrade.EUAndRUBatchUpgradeLog{},
@@ -132,11 +134,12 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&site.SystemConfig{},
 		&site.SystemParameter{},
 
-		// mml (4)
+		// mml (5)
 		&mml.MmlCommand{},
 		&mml.MmlCommandParam{},
 		&mml.MmlSet{},
 		&mml.MmlExecuteResult{},
+		&mml.MmlExecuteResultFileLog{},
 
 		// cbsd (5)
 		&cbsd.CbsdInfo{},
@@ -146,7 +149,7 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&cbsd.SasConfig{},
 		&cbsd.CbsdCertificate{},
 
-		// misc (35)
+		// misc (40)
 		&misc.BatchAddObjectTask{},
 		&misc.BatchAddObjectTaskLog{},
 		&misc.BatchConfigurationLog{},
@@ -182,6 +185,10 @@ func AutoMigrateAll(db *gorm.DB) error {
 		&misc.PSAPIDSyncLog{},
 		&misc.TBG{},
 		&misc.SpatialFileMarket{},
+		&misc.DeviceFileDownloadLog{},
+		&misc.NMSUpgradeAndRollbackLog{},
+		&misc.CaptureLog{},
+		&misc.CaptureFileLog{},
 
 		// mnormalfile (4)
 		&mnormalfile.MNormalFile{},

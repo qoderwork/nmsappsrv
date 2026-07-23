@@ -195,10 +195,10 @@ func ensureAdminUser(db *gorm.DB, tenantId int, roleId string) error {
 		Password:           &hashedStr,
 		RealName:           strPtr("Administrator"),
 		Status:             &status,
-		LicenseId:          &tenantId,
+		TenantId:          &tenantId,
 		CreateTime:         &now,
 		Enable:             &enable,
-		LoginErrorTimes:    intPtr(0),
+		LoginErrorTimes:    0, // Java int primitive NOT NULL default 0
 		PasswordModifyTime: &now,
 	}
 	if err := db.Create(&usr).Error; err != nil {

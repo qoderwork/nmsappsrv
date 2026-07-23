@@ -321,6 +321,8 @@ func (MRUploadTaskHasElement) TableName() string { return "mr_upload_task_has_el
 type ZTPLog struct {
 	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	ElementId  *int64     `gorm:"column:element_id" json:"element_id"`
+	TenantId   *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	Mode       *string    `gorm:"column:mode;type:varchar(255)" json:"mode"`
 	Progress   *int       `gorm:"column:progress" json:"progress"`
 	Done       *bool      `gorm:"column:done" json:"done"`
 	Info       *string    `gorm:"column:info;type:longtext" json:"info"`
@@ -770,7 +772,7 @@ type PSAPID struct {
 
 func (PSAPID) TableName() string { return "psap_id" }
 
-// PSAPIDSyncLog 对应 psap_id_sync_log 表
+// PSAPIDSyncLog 对应 sync_psap_id_log 表 (Java: sync_psap_id_log)
 type PSAPIDSyncLog struct {
 	Id         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Operator   *string    `gorm:"column:operator;type:varchar(255)" json:"operator"`
@@ -779,7 +781,7 @@ type PSAPIDSyncLog struct {
 	CreateTime *time.Time `gorm:"column:create_time" json:"create_time"`
 }
 
-func (PSAPIDSyncLog) TableName() string { return "psap_id_sync_log" }
+func (PSAPIDSyncLog) TableName() string { return "sync_psap_id_log" }
 
 // SpatialFileMarket 对应 spatial_file_market 表
 type SpatialFileMarket struct {
@@ -848,3 +850,57 @@ type SyncPSAPIDRequest struct {
 type MarketCoordinateRequest struct {
 	MarketId int `json:"marketId" binding:"required"`
 }
+
+// DeviceFileDownloadLog 对应 device_file_download_log 表 (Java: DeviceFileDownloadLog entity)
+type DeviceFileDownloadLog struct {
+	Id           int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FileId       *int       `gorm:"column:file_id" json:"file_id"`
+	DeviceId     *int64     `gorm:"column:device_id" json:"device_id"`
+	EventLogId   *int64     `gorm:"column:event_log_id" json:"event_log_id"`
+	DeviceName   *string    `gorm:"column:device_name;type:varchar(255)" json:"device_name"`
+	SerialNumber *string    `gorm:"column:serial_number;type:varchar(255)" json:"serial_number"`
+	SendTime     *time.Time `gorm:"column:send_time" json:"send_time"`
+	DownloadTime *time.Time `gorm:"column:download_time" json:"download_time"`
+	Status       *int       `gorm:"column:status" json:"status"`
+	FaultInfo    *string    `gorm:"column:fault_info;type:text" json:"fault_info"`
+}
+
+func (DeviceFileDownloadLog) TableName() string { return "device_file_download_log" }
+
+// NMSUpgradeAndRollbackLog 对应 nms_upgrade_and_rollback_log 表 (Java: NMSUpgradeAndRollbackLog entity)
+type NMSUpgradeAndRollbackLog struct {
+	Id            int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	Action        *string    `gorm:"column:action;type:varchar(255)" json:"action"`
+	OldVersion    *string    `gorm:"column:old_version;type:varchar(255)" json:"old_version"`
+	NewVersion    *string    `gorm:"column:new_version;type:varchar(255)" json:"new_version"`
+	OperationUser *string    `gorm:"column:operation_user;type:varchar(255)" json:"operation_user"`
+	StartTime     *time.Time `gorm:"column:start_time" json:"start_time"`
+	StopTime      *time.Time `gorm:"column:stop_time" json:"stop_time"`
+}
+
+func (NMSUpgradeAndRollbackLog) TableName() string { return "nms_upgrade_and_rollback_log" }
+
+// CaptureLog 对应 capture_log 表 (Java: CaptureLog entity)
+type CaptureLog struct {
+	Id            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ElementId     *int64     `gorm:"column:element_id" json:"element_id"`
+	Info          *string    `gorm:"column:info;type:text" json:"info"`
+	Status        *int       `gorm:"column:status" json:"status"`
+	OperationTime *time.Time `gorm:"column:operation_time" json:"operation_time"`
+	Progress      *string    `gorm:"column:progress;type:varchar(255)" json:"progress"`
+	Type          *string    `gorm:"column:type;type:varchar(255)" json:"type"`
+	EventLogId    *int64     `gorm:"column:event_log_id" json:"event_log_id"`
+}
+
+func (CaptureLog) TableName() string { return "capture_log" }
+
+// CaptureFileLog 对应 capture_file_log 表 (Java: CaptureFileLog entity)
+type CaptureFileLog struct {
+	Id        int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FileName  *string    `gorm:"column:file_name;type:varchar(255)" json:"file_name"`
+	UploadTime *time.Time `gorm:"column:upload_time" json:"upload_time"`
+	ElementId *int64     `gorm:"column:element_id" json:"element_id"`
+	FileSize  *int64     `gorm:"column:file_size" json:"file_size"`
+}
+
+func (CaptureFileLog) TableName() string { return "capture_file_log" }

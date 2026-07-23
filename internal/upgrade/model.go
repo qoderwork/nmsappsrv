@@ -148,6 +148,24 @@ type RebootTask struct {
 
 func (RebootTask) TableName() string { return "reboot_task" }
 
+// UpgradeTaskHasElement 对应 upgrade_task_has_element 表 (Java: UpgradeTaskHasElement entity)
+type UpgradeTaskHasElement struct {
+	Id        int64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	TaskId    *int  `gorm:"column:task_id" json:"task_id"`
+	ElementId *int64 `gorm:"column:element_id" json:"element_id"`
+}
+
+func (UpgradeTaskHasElement) TableName() string { return "upgrade_task_has_element" }
+
+// RollbackTaskHasElement 对应 rollback_task_has_element 表 (Java: RollbackTaskHasElement entity)
+type RollbackTaskHasElement struct {
+	Id        int64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	TaskId    *int  `gorm:"column:task_id" json:"task_id"`
+	ElementId *int64 `gorm:"column:element_id" json:"element_id"`
+}
+
+func (RollbackTaskHasElement) TableName() string { return "rollback_task_has_element" }
+
 // ShutdownMyTask 对应 shutdown_my_task 表
 type ShutdownMyTask struct {
 	Id             int        `gorm:"primaryKey;autoIncrement" json:"id"`

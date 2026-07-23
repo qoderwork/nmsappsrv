@@ -36,23 +36,38 @@ var (
 
 // Login / security specific numeric codes. Thrown by Java as exception
 // message strings (e.g. throw new BadCredentialsException("10047")); translated
-// by the global exception handler into Result.code=100xx, Result.msg=lookup.
-// These MUST match the codes in MyAuthenticationProvider / Status.
+// by the global exception handler (GlobalExceptionHandler.getLoginFault)
+// into Result.code=100xx, Result.msg=lookup. Messages MUST match Java
+// byte-for-byte because the original frontend keyed on exact code+msg.
 var (
 	LoginCodeEncryptionFailure      = 10044
 	LoginMsgEncryptionFailure       = "Encryption failure"
 	LoginCodeUserDisabled           = 10045
-	LoginMsgUserDisabled            = "The current user has been locked"
+	LoginMsgUserDisabled            = "The user has been disabled"
+	LoginCodeInternalError          = 10046
+	LoginMsgInternalError           = "Internal error"
 	LoginCodeBadCredentials         = 10047
 	LoginMsgBadCredentials          = "The user name and password do not match"
 	LoginCodeUserLocked             = 10048
-	LoginMsgUserLocked              = "The account is locked due to too many failed login attempts"
+	LoginMsgUserLocked              = "The user has been locked due to excessive login failures"
+	LoginCodeAssignTenant           = 10049
+	LoginMsgAssignTenant            = "Assign a tenant to the current user"
+	LoginCodeTenantExpired          = 10050
+	LoginMsgTenantExpired           = "The tenant to which the current user belongs has expired"
+	LoginCodeCaptchaBad             = 10051
+	LoginMsgCaptchaBad              = "Verification code error"
+	LoginCodeAssignRole             = 10052
+	LoginMsgAssignRole              = "Assign a role to the current user"
 	LoginCodeNoRole                 = 10162
-	LoginMsgNoRole                  = "No role assigned, contact your administrator"
+	LoginMsgNoRole                  = "Users must be assigned roles"
+	LoginCodeRadiusUnavailable      = 10071
+	LoginMsgRadiusUnavailable       = "Radius server is unavailable"
 	LoginCodeInactive               = 10072
-	LoginMsgInactive                = "The account is inactive due to prolonged inactivity, contact your administrator"
+	LoginMsgInactive                = "The user has not logged in for a long time and is locked"
+	LoginCodeEmailCaptchaBad        = 10185
+	LoginMsgEmailCaptchaBad         = "The email verification code is incorrect"
 	LoginCodeIPLocked               = 10296
-	LoginMsgIPLocked                = "The IP address has been locked due to too many failed login attempts"
+	LoginMsgIPLocked                = "The IP address has been locked for too many login failures. Procedure Please try again in half an hour"
 	LoginCodeUsernameExists         = 10075
 	LoginMsgUsernameExists          = "The user name already exists. Please use another user name"
 	LoginCodeUsernameDeletedUsed    = 10282

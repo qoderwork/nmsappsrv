@@ -32,25 +32,32 @@ type Config struct {
 	ZTP           ZTPConfig           `mapstructure:"ztp"`
 }
 
-// LicenseConfig controls L-2 license enforcement (go-infra/licensing).
+// LicenseConfig controls L-2 license enforcement. Two backends are supported:
 //
-//	required                   gate all authenticated endpoints unless disabled
-//	                          (public build or runtime override). Default true.
-//	public_key_path           override the embedded default public key (PKIX PEM).
-//	                          Empty => embedded default is used.
-//	install_dir               where the active, verified license envelope is
-//	                          persisted on disk (survives restarts).
-//	max_clock_file            persisted "max time seen" (unix seconds) for the
-//	                          anti-rollback check. Empty => <install_dir>/.maxclock.
-//	machine_fingerprint_override  force the verifying fingerprint (dev/test only).
-//	                          Leave empty in production so the real host
-//	                          system-uuid (dmidecode -s system-uuid) is used.
+//  1. go-infra/licensing (embedded ed25519, dev/test default): uses public_key_path
+//  2. Java TrueLicense-compatible (production match): uses the truelicense_*
+//     fields below to load a JCEKS keystore and parse the signed license file.
+//
+// When `truelicense_public_keys_store_path` is non-empty the enforcer switches
+// to TrueLicense mode; otherwise it falls back to go-infra.
 type LicenseConfig struct {
 	Required                   bool   `mapstructure:"required"`
 	PublicKeyPath              string `mapstructure:"public_key_path"`
 	InstallDir                 string `mapstructure:"install_dir"`
 	MaxClockFile               string `mapstructure:"max_clock_file"`
 	MachineFingerprintOverride string `mapstructure:"machine_fingerprint_override"`
+
+	// --- TrueLicense-compatible backend (Java parity) ----------------------
+	TrueLicenseSubject             string `mapstructure:"truelicense_subject"`
+	TrueLicensePublicAlias         string `mapstructure:"truelicense_public_alias"`
+	TrueLicenseStorePass           string `mapstructure:"truelicense_store_pass"`
+	TrueLicenseKeyPass             string `mapstructure:"truelicense_key_pass"`
+	TrueLicensePublicKeysStorePath string `mapstructure:"truelicense_public_keys_store_path"`
+	// --- Alignment overrides (use only when the Java env differs from defaults)
+	TrueLicensePBEPassword  string `mapstructure:"truelicense_pbe_password"`   // override PrivacyGuard password (default: empty string)
+	TrueLicensePBECipher    string `mapstructure:"truelicense_pbe_cipher"`     // "des" (default) or "3des"/"tripledes"
+	TrueLicensePBEIterations int32 `mapstructure:"truelicense_pbe_iterations"` // default 20
+	TrueLicenseDSAHash       string `mapstructure:"truelicense_dsa_hash"`      // "SHA1" (default) or "SHA256"
 }
 
 // CaptchaConfig controls the login captcha (adaptive risk-control).

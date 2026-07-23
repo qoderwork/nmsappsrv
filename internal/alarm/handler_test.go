@@ -1,19 +1,17 @@
 package alarm
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"nmsappsrv/pkg/apperror"
-	"nmsappsrv/pkg/utils"
+	"nmsappsrv/pkg/dto"
 )
 
 // ---------------------------------------------------------------------------
@@ -271,180 +269,78 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// newTestRouter creates a gin engine with alarm routes wired to the given handler.
+// newTestRouter creates a gin engine with Java-style /api/v2 alarm routes wired
+// to the given handler (route plan B — no RESTful resource paths).
 func newTestRouter(h *Handler) *gin.Engine {
 	r := gin.New()
-	r.GET("/alarms/:id", h.GetAlarm)
-	r.PUT("/alarms/:id/clear", h.ClearAlarm)
-	r.GET("/alarms", h.ListAlarms)
-	r.PUT("/alarms/batch-clear", h.BatchClearAlarms)
-	r.POST("/alarms/:id/confirm", h.ConfirmAlarm)
-	r.POST("/alarms/:id/unconfirm", h.UnconfirmAlarm)
-	r.GET("/alarms/severity-count", h.GetSeverityCount)
+	rg := r.Group("/api/v2")
+	RegisterRoutes(rg, h)
 	return r
 }
 
-// parseResponse decodes the JSON body into a utils.Response.
-func parseResponse(w *httptest.ResponseRecorder) utils.Response {
-	var resp utils.Response
+// parseResult decodes the JSON body into a dto.Result envelope.
+// Uses dto.Result[any] because the concrete data type varies per endpoint.
+func parseResult(w *httptest.ResponseRecorder) dto.Result[any] {
+	var resp dto.Result[any]
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	return resp
 }
 
+// requestDataDTOJSON builds a RequestDataDTO body and returns its JSON bytes.
+func requestDataDTOJSON[Q, D any](query Q, data D) []byte {
+	req := dto.RequestDataDTO[Q, D]{
+		Query: query,
+		Data:  data,
+	}
+	b, _ := json.Marshal(req)
+	return b
+}
+
 // ---------------------------------------------------------------------------
-// Handler tests
+// Handler tests (Java route plan B)
 // ---------------------------------------------------------------------------
 
-func TestHandler_GetAlarm_Success(t *testing.T) {
+func TestHandler_ListAlarms_Success(t *testing.T) {
 	severity := "CRITICAL"
 	source := "BS-001"
-	expected := &Alarm{Id: 42, Severity: &severity, AlarmSource: &source}
+	alarm := Alarm{Id: 42, Severity: &severity, AlarmSource: &source}
 
 	svc := &mockService{
-		getAlarmFn: func(id int64) (*Alarm, error) {
-			assert.Equal(t, int64(42), id)
-			return expected, nil
+		listAlarmsFn: func(tenantId int, severityArg string, alarmType int, page, pageSize int) ([]Alarm, int64, error) {
+			assert.Equal(t, 0, tenantId)
+			assert.Equal(t, "CRITICAL", severityArg)
+			assert.Equal(t, 1, page)
+			assert.Equal(t, 50, pageSize)
+			return []Alarm{alarm}, 1, nil
 		},
 	}
 
 	h := &Handler{svc: svc}
 	router := newTestRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/alarms/42", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	resp := parseResponse(w)
-	assert.Equal(t, 200, resp.Code)
-	assert.Equal(t, "Success", resp.Message)
-	assert.NotNil(t, resp.Data)
-
-	// Verify the alarm data in the response.
-	dataMap, ok := resp.Data.(map[string]interface{})
-	assert.True(t, ok)
-	assert.Equal(t, float64(42), dataMap["id"])
-	assert.Equal(t, "CRITICAL", dataMap["severity"])
-}
-
-func TestHandler_GetAlarm_NotFound(t *testing.T) {
-	svc := &mockService{
-		getAlarmFn: func(id int64) (*Alarm, error) {
-			return nil, apperror.ErrAlarmNotFound
-		},
-	}
-
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	req := httptest.NewRequest(http.MethodGet, "/alarms/999", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-
-	resp := parseResponse(w)
-	assert.Equal(t, http.StatusNotFound, resp.Code)
-	assert.Equal(t, "alarm not found", resp.Message)
-}
-
-func TestHandler_GetAlarm_InvalidID(t *testing.T) {
-	svc := &mockService{}
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	req := httptest.NewRequest(http.MethodGet, "/alarms/not-a-number", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	resp := parseResponse(w)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
-	assert.Equal(t, "invalid alarm id", resp.Message)
-}
-
-func TestHandler_ClearAlarm_Success(t *testing.T) {
-	var capturedID int64
-
-	svc := &mockService{
-		clearAlarmFn: func(id int64) error {
-			capturedID = id
-			return nil
-		},
-	}
-
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	req := httptest.NewRequest(http.MethodPut, "/alarms/7/clear", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, int64(7), capturedID)
-
-	resp := parseResponse(w)
-	assert.Equal(t, 200, resp.Code)
-	assert.Equal(t, "Success", resp.Message)
-}
-
-func TestHandler_ClearAlarm_ServiceError(t *testing.T) {
-	svc := &mockService{
-		clearAlarmFn: func(id int64) error {
-			return apperror.Wrap(errors.New("db connection lost"), "CLEAR_ALARM_FAILED", 500, "failed to clear alarm")
-		},
-	}
-
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	req := httptest.NewRequest(http.MethodPut, "/alarms/1/clear", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-
-	resp := parseResponse(w)
-	assert.Equal(t, http.StatusInternalServerError, resp.Code)
-	assert.Equal(t, "failed to clear alarm", resp.Message)
-}
-
-func TestHandler_ClearAlarm_InvalidID(t *testing.T) {
-	svc := &mockService{}
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	req := httptest.NewRequest(http.MethodPut, "/alarms/abc/clear", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	resp := parseResponse(w)
-	assert.Equal(t, "invalid alarm id", resp.Message)
-}
-
-func TestHandler_BatchClearAlarms_Success(t *testing.T) {
-	svc := &mockService{
-		batchClearAlarmsFn: func(alarmIds []int64, clearUser string) (int64, []int64, error) {
-			assert.Equal(t, []int64{1, 2, 3}, alarmIds)
-			assert.Equal(t, "admin", clearUser)
-			return 2, []int64{3}, nil
-		},
-	}
-
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	body := `{"alarmIds":[1,2,3],"clearUser":"admin"}`
-	req := httptest.NewRequest(http.MethodPut, "/alarms/batch-clear", strings.NewReader(body))
+	body := requestDataDTOJSON(
+		AlarmQuery{Severity: &severity},
+		struct{}{},
+	)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/listAlarm", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+
+	resp := parseResult(w)
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "success", resp.Msg)
+	assert.NotNil(t, resp.Data)
+
+	// Verify the page content inside Result.Data
+	dataMap, ok := resp.Data.(map[string]interface{})
+	assert.True(t, ok, "data should be a SpringDataPage map")
+	content, ok := dataMap["content"].([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, content, 1)
+	assert.Equal(t, float64(1), dataMap["totalElements"])
 }
 
 func TestHandler_ConfirmAlarm_Success(t *testing.T) {
@@ -455,62 +351,69 @@ func TestHandler_ConfirmAlarm_Success(t *testing.T) {
 			return nil
 		},
 	}
+
 	h := &Handler{svc: svc}
 	router := newTestRouter(h)
 
-	req := httptest.NewRequest(http.MethodPost, "/alarms/5/confirm", nil)
+	idx := int64(7)
+	body := requestDataDTOJSON(
+		struct{}{},
+		ConfirmAlarmDTO{Index: &idx},
+	)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/confirmAlarm", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, int64(5), capturedID)
+	assert.Equal(t, int64(7), capturedID)
+
+	resp := parseResult(w)
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "success", resp.Msg)
 }
 
-func TestHandler_ConfirmAlarm_NotFound(t *testing.T) {
-	svc := &mockService{
-		confirmAlarmFn: func(id int64) error {
-			return apperror.ErrAlarmNotFound
-		},
-	}
-	h := &Handler{svc: svc}
-	router := newTestRouter(h)
-
-	req := httptest.NewRequest(http.MethodPost, "/alarms/404/confirm", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
-func TestHandler_ConfirmAlarm_InvalidID(t *testing.T) {
+func TestHandler_ConfirmAlarm_MissingIndex(t *testing.T) {
 	svc := &mockService{}
 	h := &Handler{svc: svc}
 	router := newTestRouter(h)
 
-	req := httptest.NewRequest(http.MethodPost, "/alarms/not-a-number/confirm", nil)
+	body := requestDataDTOJSON(struct{}{}, ConfirmAlarmDTO{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/confirmAlarm", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code) // HTTP=200 per Java contract
+	resp := parseResult(w)
+	assert.Equal(t, 400, resp.Code) // business BAD_REQUEST inside envelope
 }
 
-func TestHandler_UnconfirmAlarm_Success(t *testing.T) {
+func TestHandler_ClearAlarm_Success(t *testing.T) {
 	var capturedID int64
 	svc := &mockService{
-		unconfirmAlarmFn: func(id int64) error {
+		clearAlarmFn: func(id int64) error {
 			capturedID = id
 			return nil
 		},
 	}
+
 	h := &Handler{svc: svc}
 	router := newTestRouter(h)
 
-	req := httptest.NewRequest(http.MethodPost, "/alarms/9/unconfirm", nil)
+	idx := int64(7)
+	body := requestDataDTOJSON(struct{}{}, ConfirmAlarmDTO{Index: &idx})
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/clearAlarm", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, int64(9), capturedID)
+	assert.Equal(t, int64(7), capturedID)
+
+	resp := parseResult(w)
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "success", resp.Msg)
 }
 
 func TestHandler_GetSeverityCount_Success(t *testing.T) {
@@ -527,15 +430,62 @@ func TestHandler_GetSeverityCount_Success(t *testing.T) {
 	h := &Handler{svc: svc}
 	router := newTestRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/alarms/severity-count", nil)
+	body := requestDataDTOJSON(struct{}{}, struct{}{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/getCountOfSeverity", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	resp := parseResponse(w)
+	resp := parseResult(w)
 	assert.Equal(t, 200, resp.Code)
 
 	data, ok := resp.Data.([]interface{})
 	assert.True(t, ok)
 	assert.Len(t, data, 4)
+}
+
+func TestHandler_ListAlarmFilters_Success(t *testing.T) {
+	name := "Filter1"
+	svc := &mockService{
+		listAlarmFiltersFn: func(tenantId int) ([]AlarmFilter, error) {
+			return []AlarmFilter{
+				{Id: 1, FilterRuleName: &name},
+			}, nil
+		},
+	}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	body := requestDataDTOJSON(ListAlarmFilterTaskQuery{}, struct{}{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/listAlarmFilterTask", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := parseResult(w)
+	assert.Equal(t, 200, resp.Code)
+
+	dataMap, ok := resp.Data.(map[string]interface{})
+	assert.True(t, ok)
+	content, ok := dataMap["content"].([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, content, 1)
+}
+
+func TestHandler_DeleteAlarmFilter_MissingId(t *testing.T) {
+	svc := &mockService{}
+	h := &Handler{svc: svc}
+	router := newTestRouter(h)
+
+	body := requestDataDTOJSON(struct{}{}, IntegerIdDto{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/deleteAlarmFilterTask", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := parseResult(w)
+	assert.Equal(t, 400, resp.Code)
 }

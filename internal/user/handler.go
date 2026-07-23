@@ -113,8 +113,8 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	tenantId := 0 // 0 = platform user (Admin/Operator), no tenant filter (aligns with Java SecurityUtil.getTenantId() returning null)
-	if u.LicenseId != nil && *u.LicenseId > 0 {
-		tenantId = *u.LicenseId
+	if u.TenantId != nil && *u.TenantId > 0 {
+		tenantId = *u.TenantId
 	}
 
 	// Resolve role names for JWT claims (aligned with Java JWT structure)
@@ -244,8 +244,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	// Build lookup from license_id -> license_name
 	tenantIds := make(map[int]bool)
 	for _, u := range data {
-		if u.LicenseId != nil {
-			tenantIds[*u.LicenseId] = true
+		if u.TenantId != nil {
+			tenantIds[*u.TenantId] = true
 		}
 	}
 	var tenancyMap map[int]string
@@ -255,8 +255,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	for i := range dtos {
 		// Fill tenancy name
-		if data[i].LicenseId != nil && tenancyMap != nil {
-			dtos[i].Tenancy = tenancyMap[*data[i].LicenseId]
+		if data[i].TenantId != nil && tenancyMap != nil {
+			dtos[i].Tenancy = tenancyMap[*data[i].TenantId]
 		}
 		// Default createUsername to "admin" if empty (mirrors Java)
 		if dtos[i].CreateUsername == nil || *dtos[i].CreateUsername == "" {
@@ -327,8 +327,8 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	}
 	if isAdminOrOperator {
 		// Admin may pass tenantId in body to assign tenant at creation time.
-		if u.LicenseId != nil && *u.LicenseId > 0 {
-			if !h.svc.TenantExists(*u.LicenseId) {
+		if u.TenantId != nil && *u.TenantId > 0 {
+			if !h.svc.TenantExists(*u.TenantId) {
 				utils.Error(c, http.StatusBadRequest, "specified tenant does not exist")
 				return
 			}
@@ -337,9 +337,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		// Non-admin: force inherit creator's tenant, ignore any body value.
 		tenantId := middleware.GetTenantId(c)
 		if tenantId > 0 {
-			u.LicenseId = &tenantId
+			u.TenantId = &tenantId
 		} else {
-			u.LicenseId = nil
+			u.TenantId = nil
 		}
 	}
 

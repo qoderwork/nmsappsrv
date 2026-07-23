@@ -2,44 +2,63 @@ package alarm
 
 import "github.com/gin-gonic/gin"
 
-// RegisterRoutes registers all alarm management routes on the given router group.
+// RegisterRoutes registers ALL alarm management endpoints in Java AlarmManagementController
+// wire-compatible shape — BASE PATH is /api/v2 (attached from main.go), every endpoint
+// name is byte-for-byte the Java @PostMapping/@GetMapping value.
+//
+// Java Controller reference:
+// smallcell_nms_v4_appserv/api/station-new/src/main/java/com/waveoss/stationapinew/controller/AlarmManagementController.java
+//   @RestController
+//   @RequestMapping("/api/v2/")
+//   public class AlarmManagementController { … }
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// 告警
-	rg.GET("/alarms", h.ListAlarms)
-	rg.GET("/alarms/severity-count", h.GetSeverityCount)
-	rg.GET("/alarms/statistic/top-n", h.QueryAlarmStatisticTopN)
-	rg.POST("/alarms/statistic", h.QueryAlarmStatisticResult)
-	rg.GET("/alarms/active-probable-causes", h.ListActiveAlarmProbableCause)
-	rg.POST("/alarms/event-type", h.GetAlarmEventType)
-	rg.POST("/alarms/email-notice-results", h.ListEmailNoticeResult)
-	rg.GET("/alarms/:id", h.GetAlarm)
-	rg.DELETE("/alarms/:id", h.DeleteAlarm)
-	rg.POST("/alarms/:id/clear", h.ClearAlarm)
-	rg.POST("/alarms/:id/confirm", h.ConfirmAlarm)
-	rg.POST("/alarms/:id/unconfirm", h.UnconfirmAlarm)
-	rg.PUT("/alarms/batch-clear", h.BatchClearAlarms)
-	rg.POST("/alarms/:id/comment", h.AddCommentForAlarm)
-	rg.GET("/alarm-library", h.ListAlarmLibrary)
-	rg.DELETE("/alarm-library/:id", h.DeleteAlarmLibrary)
-	rg.POST("/alarm-library/import", h.ImportAlarmLibrary)
-	rg.GET("/alarm-library/template", h.DownloadAlarmLibraryTemplate)
-	rg.GET("/alarm-templates", h.ListAlarmTemplates)
-	rg.POST("/alarm-templates", h.CreateAlarmTemplate)
-	rg.PUT("/alarm-templates/:id", h.UpdateAlarmTemplate)
-	rg.GET("/alarm-templates/:id", h.GetAlarmTemplate)
-	rg.DELETE("/alarm-templates/:id", h.DeleteAlarmTemplate)
-	rg.PUT("/alarm-templates/:id/email-notification", h.UpdateAlarmTemplateEmailNotification)
-	rg.GET("/alarm-filters", h.ListAlarmFilters)
-	rg.POST("/alarm-filters", h.CreateAlarmFilter)
-	rg.PUT("/alarm-filters/:id", h.UpdateAlarmFilter)
-	rg.GET("/alarm-filters/:id", h.GetAlarmFilter)
-	rg.DELETE("/alarm-filters/:id", h.DeleteAlarmFilter)
-	rg.PUT("/alarm-filters/:id/enable", h.ToggleAlarmFilterEnable)
-	rg.GET("/alarm-sync-config", h.GetAlarmSyncConfig)
-	rg.PUT("/alarm-sync-config", h.UpdateAlarmSyncConfig)
-	rg.POST("/alarms/sync", h.SyncAlarms)
+	// ----- Alarm CRUD / state transitions -----
+	rg.POST("listAlarm", h.ListAlarms)
+	rg.POST("confirmAlarm", h.ConfirmAlarm)
+	rg.POST("unconfirmAlarm", h.UnconfirmAlarm)
+	rg.POST("clearAlarm", h.ClearAlarm)
+	rg.POST("deleteAlarm", h.DeleteAlarm)
 
-	// 邮件通知配置
-	rg.GET("/email-notification/config", h.ListEmailNotificationConfig)
-	rg.PUT("/email-notification/config", h.UpdateEmailNotificationConfig)
+	// ----- Alarm statistics & count -----
+	rg.POST("queryAlarmStatisticResult", h.QueryAlarmStatisticResult)
+	rg.POST("queryAlarmStatisticTopN", h.QueryAlarmStatisticTopN)
+	rg.POST("getCountOfSeverity", h.GetSeverityCount)
+
+	// ----- Alarm filter tasks -----
+	rg.POST("addAlarmFilterTask", h.AddAlarmFilterTask)
+	rg.POST("listAlarmFilterTask", h.ListAlarmFilters)
+	rg.POST("updateAlarmFilterTask", h.UpdateAlarmFilter)
+	rg.POST("deleteAlarmFilterTask", h.DeleteAlarmFilter)
+	rg.POST("viewAlarmFilterTask", h.GetAlarmFilter)
+	rg.POST("enableAlarmFilterTask", h.EnableAlarmFilterTask)
+	rg.POST("disableAlarmFilterTask", h.DisableAlarmFilterTask)
+
+	// ----- Alarm library (import / list / delete) + template download -----
+	rg.POST("importAlarmLibrary", h.ImportAlarmLibrary)
+	rg.POST("deleteAlarmLibrary", h.DeleteAlarmLibrary)
+	rg.POST("listAlarmLibrary", h.ListAlarmLibrary)
+	rg.GET("downloadAlarmLibraryTemplate", h.DownloadAlarmLibraryTemplate)
+
+	// ----- Alarm template -----
+	rg.POST("addAlarmTemplate", h.CreateAlarmTemplate)
+	rg.POST("listAlarmTemplate", h.ListAlarmTemplates)
+	rg.POST("viewAlarmTemplate", h.GetAlarmTemplate)
+	rg.POST("updateAlarmTemplate", h.UpdateAlarmTemplate)
+	rg.POST("deleteAlarmTemplate", h.DeleteAlarmTemplate)
+	rg.POST("updateEmailNotificationEnableInTemplate", h.UpdateEmailNotificationEnableInTemplate)
+
+	// ----- Email notification config -----
+	rg.POST("updateEmailNotificationConfig", h.UpdateEmailNotificationConfig)
+	rg.POST("listEmailNotificationConfig", h.ListEmailNotificationConfig)
+	rg.POST("listEmailNoticeResult", h.ListEmailNoticeResult)
+
+	// ----- Misc alarm helpers -----
+	rg.POST("listActiveAlarmProbableCause", h.ListActiveAlarmProbableCause)
+	rg.POST("getAlarmEventType", h.GetAlarmEventType)
+	rg.POST("getAlarmSyncConfig", h.GetAlarmSyncConfig)
+	rg.POST("updateAlarmSyncConfig", h.UpdateAlarmSyncConfig)
+	rg.POST("addCommentForAlarm", h.AddCommentForAlarm)
+
+	// Note: Alarm sync (old Go REST /alarms/sync) has no Java counterpart in
+	// AlarmManagementController, so it is intentionally removed per route B-plan.
 }

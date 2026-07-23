@@ -31,8 +31,9 @@ type Alarm struct {
 	// (the north-bound response shape) but not the corefunction domain
 	// entity. They are response-only enrichment fields; populated by a
 	// future join once the columns land in the shared schema.
+	// NOTE: HandleSuggestion is @Transient in Java and does not persist to DB.
 	Exported         *bool   `gorm:"column:exported" json:"exported"`
-	HandleSuggestion *string `gorm:"column:handle_suggestion;type:varchar(1024)" json:"handleSuggestion"`
+	HandleSuggestion *string `json:"handleSuggestion"`
 }
 
 // Alarm status values, mirroring nms-serv's alarm_status 4-state model.
@@ -226,4 +227,203 @@ func (EmailNoticeResult) TableName() string { return "email_notice_result" }
 type EmailNoticeResultQuery struct {
 	AlarmTemplateId *int   `json:"alarmTemplateId"`
 	EmailSubject    string `json:"emailSubject"`
+}
+
+// ============================================================================
+// Java wire-compatible Query + DTO + VO structs (1:1 with AlarmManagementController)
+// ============================================================================
+
+// AlarmQuery mirrors Java com.waveoss.stationapinew.comm.query.AlarmQuery.
+// Used as RequestDataDTO.Query in listAlarm.
+type AlarmQuery struct {
+	Index                *int64  `json:"index"`
+	AlarmType            *string `json:"alarmType"`
+	SearchText           *string `json:"searchText"`
+	Severity             *string `json:"severity"`
+	AlarmIdentifier      *string `json:"alarmIdentifier"`
+	EventType            *string `json:"eventType"`
+	ProbableCause        *string `json:"probableCause"`
+	AlarmSource          *string `json:"alarmSource"`
+	NetworkElement       *string `json:"networkElement"`
+	AlarmStatus          *int    `json:"alarmStatus"`
+	AlarmRaisedStartTime *int64  `json:"alarmRaisedStartTime"`
+	AlarmRaisedEndTime   *int64  `json:"alarmRaisedEndTime"`
+	TemplateId           *int    `json:"templateId"`
+	AlarmClearedStartTime *int64 `json:"alarmClearedStartTime"`
+	AlarmClearedEndTime  *int64  `json:"alarmClearedEndTime"`
+}
+
+// ConfirmAlarmDTO mirrors Java com.waveoss.stationapinew.comm.dto.ConfirmAlarmDTO.
+// Used as RequestDataDTO.Data in confirmAlarm / unconfirmAlarm / clearAlarm / deleteAlarm.
+type ConfirmAlarmDTO struct {
+	Index *int64 `json:"index"`
+}
+
+// AlarmLibraryQuery mirrors Java com.waveoss.stationapinew.comm.query.AlarmLibraryQuery.
+// Used as RequestDataDTO.Query in listAlarmLibrary.
+type AlarmLibraryQuery struct {
+	SearchText      *string  `json:"searchText"`
+	AlarmIdentifier *string  `json:"alarmIdentifier"`
+	EventType       *string  `json:"eventType"`
+	Severity        *string  `json:"severity"`
+	AlarmSource     []string `json:"alarmSource"`
+}
+
+// AlarmStatisticResultQuery mirrors Java AlarmStatisticResultQuery.
+type AlarmStatisticResultQuery struct {
+	StartTime      *int64  `json:"startTime"`
+	EndTime        *int64  `json:"endTime"`
+	StatisticType  *string `json:"statisticType"`
+	StatisticTime  *string `json:"statisticTime"`
+}
+
+// AlarmStatisticTopNQuery mirrors Java AlarmStatisticTopNQuery.
+type AlarmStatisticTopNQuery struct {
+	StatisticType   *string `json:"statisticType"`
+	StatisticObject *string `json:"statisticObject"`
+	StartTime       *int64  `json:"startTime"`
+	EndTime         *int64  `json:"endTime"`
+}
+
+// ListAlarmFilterTaskQuery mirrors Java ListAlarmFilterTaskQuery.
+type ListAlarmFilterTaskQuery struct {
+	FilterRuleName *string `json:"filterRuleName"`
+}
+
+// ListEmailNoticeResultQuery mirrors Java ListEmailNoticeResultQuery.
+type ListEmailNoticeResultQuery struct {
+	AlarmTemplateId *int    `json:"alarmTemplateId"`
+	EmailSubject    *string `json:"emailSubject"`
+}
+
+// AddAlarmFilterTaskDTO mirrors Java AddAlarmFilterTaskDTO.
+type AddAlarmFilterTaskDTO struct {
+	FilterRuleName            *string  `json:"filterRuleName"`
+	Enable                    *bool    `json:"enable"`
+	ExecutionAction           *int     `json:"executionAction"`
+	AlarmSources              []string `json:"alarmSources"`
+	ExecutionOnAllAlarm       *bool    `json:"executionOnAllAlarm"`
+	StartTime                 *int64   `json:"startTime"`
+	EndTime                   *int64   `json:"endTime"`
+	ExecuteOnAllBaseStation   *bool    `json:"executeOnAllBaseStation"`
+	ExecuteOnAllCPE           *bool    `json:"executeOnAllCPE"`
+	BaseStationIds            []int64  `json:"baseStationIds"`
+	CpeIds                    []int64  `json:"cpeIds"`
+	BaseStationDeviceGroupIds []string `json:"baseStationDeviceGroupIds"`
+	CpeDeviceGroupIds         []string `json:"cpeDeviceGroupIds"`
+	AlarmIds                  []string `json:"alarmIds"`
+}
+
+// UpdateAlarmFilterTaskDTO mirrors Java UpdateAlarmFilterTaskDTO (extends AddAlarmFilterTaskDTO + id).
+type UpdateAlarmFilterTaskDTO struct {
+	AddAlarmFilterTaskDTO
+	Id *int `json:"id"`
+}
+
+// IntegerIdDto mirrors Java com.waveoss.core.common.dto.IntegerIdDto.
+// Universal single-integer primary key envelope used across Java controllers.
+type IntegerIdDto struct {
+	Id *int `json:"id"`
+}
+
+// AddAlarmTemplateDTO mirrors Java AddAlarmTemplateDTO.
+type AddAlarmTemplateDTO struct {
+	Name                           *string  `json:"name"`
+	Description                    *string  `json:"description"`
+	ExecuteOnAllBaseStation        *bool    `json:"executeOnAllBaseStation"`
+	ExecuteOnAllCPE                *bool    `json:"executeOnAllCPE"`
+	BaseStationIds                 []int64  `json:"baseStationIds"`
+	CpeIds                         []int64  `json:"cpeIds"`
+	BaseStationDeviceGroupIds      []string `json:"baseStationDeviceGroupIds"`
+	CpeDeviceGroupIds              []string `json:"cpeDeviceGroupIds"`
+	ExecuteOnAllAlarm              *bool    `json:"executeOnAllAlarm"`
+	AlarmIds                       []string `json:"alarmIds"`
+	EnableEmailNotification        *bool    `json:"enableEmailNotification"`
+	ToleranceDuration              *int     `json:"toleranceDuration"`
+	Interval                       *int     `json:"interval"`
+	EnableNotifyDefaultRecipients  *bool    `json:"enableNotifyDefaultRecipients"`
+	AlarmSources                   []string `json:"alarmSources"`
+	Emails                         *string  `json:"emails"`
+}
+
+// UpdateAlarmTemplateDTO mirrors Java UpdateAlarmTemplateDTO.
+type UpdateAlarmTemplateDTO struct {
+	Id                             *int     `json:"id"`
+	Name                           *string  `json:"name"`
+	Description                    *string  `json:"description"`
+	ExecuteOnAllBaseStation        *bool    `json:"executeOnAllBaseStation"`
+	ExecuteOnAllCPE                *bool    `json:"executeOnAllCPE"`
+	BaseStationIds                 []int64  `json:"baseStationIds"`
+	CpeIds                         []int64  `json:"cpeIds"`
+	BaseStationDeviceGroupIds      []string `json:"baseStationDeviceGroupIds"`
+	CpeDeviceGroupIds              []string `json:"cpeDeviceGroupIds"`
+	ExecuteOnAllAlarm              *bool    `json:"executeOnAllAlarm"`
+	AlarmIds                       []string `json:"alarmIds"`
+	EnableEmailNotification        *bool    `json:"enableEmailNotification"`
+	ToleranceDuration              *int     `json:"toleranceDuration"`
+	Interval                       *int     `json:"interval"`
+	EnableNotifyDefaultRecipients  *bool    `json:"enableNotifyDefaultRecipients"`
+	AlarmSources                   []string `json:"alarmSources"`
+	Emails                         *string  `json:"emails"`
+}
+
+// AddCommentForAlarmDTO mirrors Java AddCommentForAlarmDTO.
+type AddCommentForAlarmDTO struct {
+	AlarmIndex *int64  `json:"alarmIndex"`
+	Comment    *string `json:"comment"`
+}
+
+// GetAlarmSyncConfigVO mirrors Java GetAlarmSyncConfigVO.
+type GetAlarmSyncConfigVO struct {
+	Enable *bool `json:"enable"`
+	Period *int  `json:"period"`
+}
+
+// EmailNotificationConfigDTO mirrors Java com.waveoss.core.common.dto.EmailNotificationConfigDTO.
+// NOTE: shape is completely different from the Go-only EmailNotificationConfig above —
+// Java exposes only two fields: emailNotification (on/off) and defaultRecipients (CSV string).
+type EmailNotificationConfigDTO struct {
+	EmailNotification  *bool   `json:"emailNotification"`
+	DefaultRecipients  *string `json:"defaultRecipients"`
+}
+
+// UpdateEmailNotificationEnableInTemplateDTO mirrors Java UpdateEmailNotificationEnableInTemplateDTO.
+type UpdateEmailNotificationEnableInTemplateDTO struct {
+	TemplateId             *int  `json:"templateId"`
+	EnableEmailNotification *bool `json:"enableEmailNotification"`
+}
+
+// ============================================================================
+// Java Spring Data Page response envelope
+// ============================================================================
+
+// SpringDataPage mirrors org.springframework.data.domain.Page wire format as
+// consumed by the original frontend — same field names, same semantics.
+// number is 0-based (Java convention), size = pageSize, totalElements = total rows.
+type SpringDataPage[T any] struct {
+	Content       []T   `json:"content"`
+	TotalElements int64 `json:"totalElements"`
+	TotalPages    int   `json:"totalPages"`
+	Size          int   `json:"size"`
+	Number        int   `json:"number"`
+}
+
+// NewSpringDataPage builds a Page from a slice + row count + pageNumber (1-based) + pageSize.
+// Converts pageNumber to the 0-based "number" the Spring Data wire format uses.
+func NewSpringDataPage[T any](content []T, total int64, pageNumberOneBased int, pageSize int) SpringDataPage[T] {
+	var tp int
+	if pageSize > 0 {
+		tp = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	numberZeroBased := 0
+	if pageNumberOneBased > 0 {
+		numberZeroBased = pageNumberOneBased - 1
+	}
+	return SpringDataPage[T]{
+		Content:       content,
+		TotalElements: total,
+		TotalPages:    tp,
+		Size:          pageSize,
+		Number:        numberZeroBased,
+	}
 }

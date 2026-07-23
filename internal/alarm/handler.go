@@ -1,16 +1,19 @@
 package alarm
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
 
 	"nmsappsrv/internal/middleware"
-	"nmsappsrv/pkg/utils"
+	"nmsappsrv/pkg/apperror"
+	"nmsappsrv/pkg/dto"
+	"nmsappsrv/pkg/enums"
+	"nmsappsrv/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -37,370 +40,365 @@ func NewHandler(db *gorm.DB) *Handler {
 }
 
 // ---------------------------------------------------------------------------
-// Alarm endpoints
+// Helpers: write dto.Result envelope + always HTTP 200 (Java contract)
 // ---------------------------------------------------------------------------
 
-// ListAlarms handles GET /alarms?page=1&pageSize=20&severity=&alarm_type=
+func writeOK[T any](c *gin.Context, data T) {
+	c.JSON(http.StatusOK, dto.OKData(data))
+}
+
+func writeFail(c *gin.Context, code int, msg string) {
+	c.JSON(http.StatusOK, dto.Failure(code, msg))
+}
+
+func writeFailInvalid(c *gin.Context, msg string) {
+	writeFail(c, enums.BAD_REQUEST.Code, msg)
+}
+
+func writeFailService(c *gin.Context, err error) {
+	var appErr *apperror.AppError
+	if err == nil {
+		writeFail(c, enums.ERROR.Code, "nil service error")
+		return
+	}
+	if errors.As(err, &appErr) {
+		writeFail(c, appErr.StatusCode, appErr.Message)
+		return
+	}
+	logger.Errorf("unhandled service error in %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
+	writeFail(c, enums.ERROR.Code, "internal server error")
+}
+
+// ptr is a tiny helper to lift a value into *T when the service layer needs a pointer.
+func ptr[T any](v T) *T { return &v }
+
+// intPtrZeroNil returns nil when v is zero, otherwise a pointer to v.
+// Helps bridge empty-JSON-zero to nil for optional service params.
+func intPtrZeroNil(v int) *int {
+	if v == 0 {
+		return nil
+	}
+	return &v
+}
+
+// ---------------------------------------------------------------------------
+// Alarm state transitions + list
+// ---------------------------------------------------------------------------
+
+// ListAlarms handles POST /api/v2/listAlarm
+// Java: listAlarm(@RequestBody RequestDataDTO<AlarmQuery, Object>)
+// → Result<Page<ListAlarmVO>>
 func (h *Handler) ListAlarms(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	severity := c.Query("severity")
-	alarmType, _ := strconv.Atoi(c.DefaultQuery("alarm_type", "0"))
+	var req dto.RequestDataDTO[AlarmQuery, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	req.Normalize()
+
+	severity := ""
+	if req.Query.Severity != nil {
+		severity = *req.Query.Severity
+	}
+	alarmType := 0
+	if req.Query.AlarmType != nil {
+		if v, err := parseIntOptional(*req.Query.AlarmType); err == nil {
+			alarmType = v
+		}
+	}
 	tenantId := middleware.GetTenantId(c)
 
-	data, total, err := h.svc.ListAlarms(tenantId, severity, alarmType, page, pageSize)
+	list, total, err := h.svc.ListAlarms(tenantId, severity, alarmType, req.Page.PageNumber, req.Page.PageSize)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Paginated(c, data, total, page, pageSize)
+	writeOK(c, NewSpringDataPage(list, total, req.Page.PageNumber, req.Page.PageSize))
 }
 
-// GetAlarm handles GET /alarms/:id
-func (h *Handler) GetAlarm(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
-		return
+// parseIntOptional attempts to parse a numeric string. Returns the value on
+// success, or an error. Empty string yields 0 with no error, matching the
+// prior behaviour of strconv.Atoi(DefaultQuery(..., "0")).
+func parseIntOptional(s string) (int, error) {
+	if s == "" {
+		return 0, nil
 	}
-
-	alarm, err := h.svc.GetAlarm(id)
-	if err != nil {
-		utils.HandleError(c, err)
-		return
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		n = n*10 + int(s[i]-'0')
 	}
-	utils.Success(c, alarm)
+	return n, nil
 }
 
-// ClearAlarm handles PUT /alarms/:id/clear
-func (h *Handler) ClearAlarm(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
-		return
-	}
-
-	if err := h.svc.ClearAlarm(id); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, nil)
-}
-
-// DeleteAlarm handles DELETE /alarms/:id
-// Hard-deletes a single alarm row. Mirrors Java deleteAlarm.
-func (h *Handler) DeleteAlarm(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
-		return
-	}
-
-	if err := h.svc.DeleteAlarm(id); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, nil)
-}
-
-// BatchClearRequest is the JSON body for PUT /alarms/batch-clear.
-type BatchClearRequest struct {
-	AlarmIds  []int64 `json:"alarmIds" binding:"required"`
-	ClearUser string  `json:"clearUser"`
-}
-
-// BatchClearAlarms handles PUT /alarms/batch-clear
-func (h *Handler) BatchClearAlarms(c *gin.Context) {
-	var req BatchClearRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body: alarmIds is required")
-		return
-	}
-
-	cleared, notFound, err := h.svc.BatchClearAlarms(req.AlarmIds, req.ClearUser)
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.OK(c, map[string]interface{}{
-		"clearedCount": cleared,
-		"notFoundIds":  notFound,
-	})
-}
-
-// ConfirmAlarm handles POST /alarms/:id/confirm
+// ConfirmAlarm handles POST /api/v2/confirmAlarm
+// Java: confirmAlarm(RequestDataDTO<Object, ConfirmAlarmDTO>)
 func (h *Handler) ConfirmAlarm(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
+	var req dto.RequestDataDTO[any, ConfirmAlarmDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-	if err := h.svc.ConfirmAlarm(id); err != nil {
-		utils.HandleError(c, err)
+	if req.Data.Index == nil {
+		writeFailInvalid(c, "data.index is required")
 		return
 	}
-	utils.Success(c, nil)
+	if err := h.svc.ConfirmAlarm(*req.Data.Index); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
 }
 
-// UnconfirmAlarm handles POST /alarms/:id/unconfirm
+// UnconfirmAlarm handles POST /api/v2/unconfirmAlarm
 func (h *Handler) UnconfirmAlarm(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
+	var req dto.RequestDataDTO[any, ConfirmAlarmDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-	if err := h.svc.UnconfirmAlarm(id); err != nil {
-		utils.HandleError(c, err)
+	if req.Data.Index == nil {
+		writeFailInvalid(c, "data.index is required")
 		return
 	}
-	utils.Success(c, nil)
+	if err := h.svc.UnconfirmAlarm(*req.Data.Index); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
 }
 
-// GetSeverityCount handles GET /alarms/severity-count
+// ClearAlarm handles POST /api/v2/clearAlarm
+func (h *Handler) ClearAlarm(c *gin.Context) {
+	var req dto.RequestDataDTO[any, ConfirmAlarmDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.Index == nil {
+		writeFailInvalid(c, "data.index is required")
+		return
+	}
+	if err := h.svc.ClearAlarm(*req.Data.Index); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// DeleteAlarm handles POST /api/v2/deleteAlarm — hard-deletes one alarm row.
+// Java: deleteAlarm(RequestDataDTO<Object, ConfirmAlarmDTO>)
+func (h *Handler) DeleteAlarm(c *gin.Context) {
+	var req dto.RequestDataDTO[any, ConfirmAlarmDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.Index == nil {
+		writeFailInvalid(c, "data.index is required")
+		return
+	}
+	if err := h.svc.DeleteAlarm(*req.Data.Index); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Alarm statistics + counts
+// ---------------------------------------------------------------------------
+
+// QueryAlarmStatisticResult handles POST /api/v2/queryAlarmStatisticResult
+// Java: queryAlarmStatisticResult(RequestDataDTO<AlarmStatisticResultQuery, Object>)
+func (h *Handler) QueryAlarmStatisticResult(c *gin.Context) {
+	var req dto.RequestDataDTO[AlarmStatisticResultQuery, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	tenantId := middleware.GetTenantId(c)
+	result, err := h.svc.QueryAlarmStatisticResult(tenantId)
+	if err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK(c, []*AlarmStatisticResult{result})
+}
+
+// QueryAlarmStatisticTopN handles POST /api/v2/queryAlarmStatisticTopN
+// Java: queryAlarmStatisticTopN(RequestDataDTO<AlarmStatisticTopNQuery, Object>)
+func (h *Handler) QueryAlarmStatisticTopN(c *gin.Context) {
+	var req dto.RequestDataDTO[AlarmStatisticTopNQuery, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	topN := 10
+	var startTime, endTime *time.Time
+	if req.Query.StartTime != nil {
+		t := time.UnixMilli(*req.Query.StartTime)
+		startTime = &t
+	}
+	if req.Query.EndTime != nil {
+		t := time.UnixMilli(*req.Query.EndTime)
+		endTime = &t
+	}
+	list, err := h.svc.QueryAlarmStatisticTopN(topN, startTime, endTime)
+	if err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK(c, list)
+}
+
+// GetSeverityCount handles POST /api/v2/getCountOfSeverity
 func (h *Handler) GetSeverityCount(c *gin.Context) {
 	tenantId := middleware.GetTenantId(c)
 	data, err := h.svc.GetSeverityCount(tenantId)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, data)
+	writeOK(c, data)
 }
 
 // ---------------------------------------------------------------------------
-// AlarmLibrary endpoints
+// Alarm filter tasks (7 endpoints)
 // ---------------------------------------------------------------------------
 
-// ListAlarmLibrary handles GET /alarm-library
-func (h *Handler) ListAlarmLibrary(c *gin.Context) {
-	tenantId := middleware.GetTenantId(c)
-
-	data, err := h.svc.ListAlarmLibrary(tenantId)
-	if err != nil {
-		utils.HandleError(c, err)
+// AddAlarmFilterTask handles POST /api/v2/addAlarmFilterTask
+func (h *Handler) AddAlarmFilterTask(c *gin.Context) {
+	var req dto.RequestDataDTO[any, AddAlarmFilterTaskDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-	utils.Success(c, data)
+	f := AddAlarmFilterDTOToEntity(&req.Data)
+	f.TenantId = intPtr(middleware.GetTenantId(c))
+	if err := h.svc.CreateAlarmFilter(f); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK(c, f)
 }
 
-// ---------------------------------------------------------------------------
-// AlarmTemplate endpoints
-// ---------------------------------------------------------------------------
-
-// ListAlarmTemplates handles GET /alarm-templates
-func (h *Handler) ListAlarmTemplates(c *gin.Context) {
-	tenantId := middleware.GetTenantId(c)
-
-	data, err := h.svc.ListAlarmTemplates(tenantId)
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, data)
-}
-
-// GetAlarmTemplate handles GET /alarm-templates/:id
-// Mirrors Java viewAlarmTemplate.
-func (h *Handler) GetAlarmTemplate(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid template id")
-		return
-	}
-
-	data, err := h.svc.GetAlarmTemplate(id)
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, data)
-}
-
-// CreateAlarmTemplate handles POST /alarm-templates
-func (h *Handler) CreateAlarmTemplate(c *gin.Context) {
-	var t AlarmTemplate
-	if err := c.ShouldBindJSON(&t); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if err := h.svc.CreateAlarmTemplate(&t); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, &t)
-}
-
-// UpdateAlarmTemplate handles PUT /alarm-templates/:id
-func (h *Handler) UpdateAlarmTemplate(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm template id")
-		return
-	}
-
-	var t AlarmTemplate
-	if err := c.ShouldBindJSON(&t); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	t.Id = id
-
-	if err := h.svc.UpdateAlarmTemplate(&t); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, &t)
-}
-
-// DeleteAlarmTemplate handles DELETE /alarm-templates/:id
-// Mirrors Java deleteAlarmTemplate.
-func (h *Handler) DeleteAlarmTemplate(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm template id")
-		return
-	}
-
-	if err := h.svc.DeleteAlarmTemplate(id); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, nil)
-}
-
-// UpdateAlarmTemplateEmailNotification handles PUT /alarm-templates/:id/email-notification
-// Body: {"enable": true|false}. Mirrors Java updateEmailNotificationEnableInTemplate.
-func (h *Handler) UpdateAlarmTemplateEmailNotification(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm template id")
-		return
-	}
-	var body struct {
-		Enable bool `json:"enable"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := h.svc.UpdateAlarmTemplateEmailNotification(id, body.Enable); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, nil)
-}
-
-// ---------------------------------------------------------------------------
-// AlarmFilter endpoints
-// ---------------------------------------------------------------------------
-
-// ListAlarmFilters handles GET /alarm-filters
+// ListAlarmFilters handles POST /api/v2/listAlarmFilterTask
 func (h *Handler) ListAlarmFilters(c *gin.Context) {
+	var req dto.RequestDataDTO[ListAlarmFilterTaskQuery, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	req.Normalize()
 	tenantId := middleware.GetTenantId(c)
-
-	data, err := h.svc.ListAlarmFilters(tenantId)
+	list, err := h.svc.ListAlarmFilters(tenantId)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, data)
+	total := int64(len(list))
+	writeOK(c, NewSpringDataPage(list, total, req.Page.PageNumber, req.Page.PageSize))
 }
 
-// GetAlarmFilter handles GET /alarm-filters/:id
-// Mirrors Java viewAlarmFilterTask.
-func (h *Handler) GetAlarmFilter(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm filter id")
-		return
-	}
-
-	data, err := h.svc.GetAlarmFilter(id)
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, data)
-}
-
-// CreateAlarmFilter handles POST /alarm-filters
-func (h *Handler) CreateAlarmFilter(c *gin.Context) {
-	var f AlarmFilter
-	if err := c.ShouldBindJSON(&f); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if err := h.svc.CreateAlarmFilter(&f); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, &f)
-}
-
-// UpdateAlarmFilter handles PUT /alarm-filters/:id
+// UpdateAlarmFilter handles POST /api/v2/updateAlarmFilterTask
 func (h *Handler) UpdateAlarmFilter(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm filter id")
+	var req dto.RequestDataDTO[any, UpdateAlarmFilterTaskDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-
-	var f AlarmFilter
-	if err := c.ShouldBindJSON(&f); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
 		return
 	}
-	f.Id = id
-
-	if err := h.svc.UpdateAlarmFilter(&f); err != nil {
-		utils.HandleError(c, err)
+	f := AddAlarmFilterDTOToEntity(&req.Data.AddAlarmFilterTaskDTO)
+	f.Id = *req.Data.Id
+	f.TenantId = intPtr(middleware.GetTenantId(c))
+	if err := h.svc.UpdateAlarmFilter(f); err != nil {
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, &f)
+	writeOK(c, f)
 }
 
-// DeleteAlarmFilter handles DELETE /alarm-filters/:id
+// DeleteAlarmFilter handles POST /api/v2/deleteAlarmFilterTask
 func (h *Handler) DeleteAlarmFilter(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm filter id")
+	var req dto.RequestDataDTO[any, IntegerIdDto]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-
-	if err := h.svc.DeleteAlarmFilter(id); err != nil {
-		utils.HandleError(c, err)
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
 		return
 	}
-	utils.Success(c, nil)
+	if err := h.svc.DeleteAlarmFilter(*req.Data.Id); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
 }
 
-// ToggleAlarmFilterEnable handles PUT /alarm-filters/:id/enable
-// Body: {"enable": true|false}. Mirrors Java enableAlarmFilterTask /
-// disableAlarmFilterTask (one endpoint with a body flag rather than two).
-func (h *Handler) ToggleAlarmFilterEnable(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+// GetAlarmFilter handles POST /api/v2/viewAlarmFilterTask
+func (h *Handler) GetAlarmFilter(c *gin.Context) {
+	var req dto.RequestDataDTO[IntegerIdDto, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Query.Id == nil {
+		writeFailInvalid(c, "query.id is required")
+		return
+	}
+	f, err := h.svc.GetAlarmFilter(*req.Query.Id)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm filter id")
+		writeFailService(c, err)
 		return
 	}
-	var body struct {
-		Enable bool `json:"enable"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
+	writeOK(c, f)
+}
+
+// EnableAlarmFilterTask handles POST /api/v2/enableAlarmFilterTask
+func (h *Handler) EnableAlarmFilterTask(c *gin.Context) {
+	var req dto.RequestDataDTO[any, IntegerIdDto]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-	if err := h.svc.ToggleAlarmFilterEnable(id, body.Enable); err != nil {
-		utils.HandleError(c, err)
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
 		return
 	}
-	utils.Success(c, nil)
+	if err := h.svc.ToggleAlarmFilterEnable(*req.Data.Id, true); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// DisableAlarmFilterTask handles POST /api/v2/disableAlarmFilterTask
+func (h *Handler) DisableAlarmFilterTask(c *gin.Context) {
+	var req dto.RequestDataDTO[any, IntegerIdDto]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
+		return
+	}
+	if err := h.svc.ToggleAlarmFilterEnable(*req.Data.Id, false); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
 }
 
 // ---------------------------------------------------------------------------
-// AlarmLibrary – import / template
+// Alarm library (import / list / delete) + template download
 // ---------------------------------------------------------------------------
 
 // alarmLibraryHeaders defines the column order for the import template.
@@ -414,42 +412,41 @@ var alarmLibraryHeaders = []string{
 	"Alarm Source",
 }
 
-// ImportAlarmLibrary handles POST /alarm-library/import
-//
-// Accepts a multipart file upload (field name "file") containing an Excel
-// workbook whose first sheet has a header row followed by data rows.
+// ImportAlarmLibrary handles POST /api/v2/importAlarmLibrary (multipart file)
+// NOTE: Java uses @RequestParam("file") MultipartFile — this is the only
+// non-RequestDataDTO endpoint in AlarmManagementController (file upload
+// cannot travel inside JSON envelope).
 func (h *Handler) ImportAlarmLibrary(c *gin.Context) {
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "missing or invalid file upload")
+		writeFailInvalid(c, "missing or invalid file upload: "+err.Error())
 		return
 	}
 	defer file.Close()
 
 	f, err := excelize.OpenReader(file)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "failed to open Excel file: "+err.Error())
+		writeFailInvalid(c, "failed to open Excel file: "+err.Error())
 		return
 	}
 	defer f.Close()
 
 	sheetName := f.GetSheetName(0)
 	if sheetName == "" {
-		utils.Error(c, http.StatusBadRequest, "Excel file has no sheets")
+		writeFailInvalid(c, "Excel file has no sheets")
 		return
 	}
 
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "failed to read sheet rows: "+err.Error())
+		writeFailInvalid(c, "failed to read sheet rows: "+err.Error())
 		return
 	}
 	if len(rows) < 2 {
-		utils.Error(c, http.StatusBadRequest, "Excel file must have a header row and at least one data row")
+		writeFailInvalid(c, "Excel file must have a header row and at least one data row")
 		return
 	}
 
-	// Build a column-index map from the header row so column order is flexible.
 	headerRow := rows[0]
 	colIdx := make(map[string]int, len(headerRow))
 	for i, hdr := range headerRow {
@@ -467,7 +464,6 @@ func (h *Handler) ImportAlarmLibrary(c *gin.Context) {
 
 	var items []AlarmLibrary
 	for _, row := range rows[1:] {
-		// Skip completely empty rows.
 		allEmpty := true
 		for _, cell := range row {
 			if cell != "" {
@@ -490,23 +486,56 @@ func (h *Handler) ImportAlarmLibrary(c *gin.Context) {
 	}
 
 	if len(items) == 0 {
-		utils.Error(c, http.StatusBadRequest, "no valid data rows found in the uploaded file")
+		writeFailInvalid(c, "no valid data rows found in the uploaded file")
 		return
 	}
 
 	tenantId := middleware.GetTenantId(c)
 	imported, err := h.svc.ImportAlarmLibrary(tenantId, items)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, map[string]interface{}{"importedCount": imported})
+	writeOK(c, map[string]interface{}{"importedCount": imported})
 }
 
-// DownloadAlarmLibraryTemplate handles GET /alarm-library/template
-//
-// Generates an Excel workbook with the alarm library column headers and serves
-// it as a downloadable file.
+// DeleteAlarmLibrary handles POST /api/v2/deleteAlarmLibrary
+func (h *Handler) DeleteAlarmLibrary(c *gin.Context) {
+	var req dto.RequestDataDTO[any, IntegerIdDto]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
+		return
+	}
+	if err := h.svc.DeleteAlarmLibrary(*req.Data.Id); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// ListAlarmLibrary handles POST /api/v2/listAlarmLibrary
+func (h *Handler) ListAlarmLibrary(c *gin.Context) {
+	var req dto.RequestDataDTO[AlarmLibraryQuery, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	req.Normalize()
+	tenantId := middleware.GetTenantId(c)
+	list, err := h.svc.ListAlarmLibrary(tenantId)
+	if err != nil {
+		writeFailService(c, err)
+		return
+	}
+	total := int64(len(list))
+	writeOK(c, NewSpringDataPage(list, total, req.Page.PageNumber, req.Page.PageSize))
+}
+
+// DownloadAlarmLibraryTemplate handles GET /api/v2/downloadAlarmLibraryTemplate
 func (h *Handler) DownloadAlarmLibraryTemplate(c *gin.Context) {
 	f := excelize.NewFile()
 	defer f.Close()
@@ -514,7 +543,6 @@ func (h *Handler) DownloadAlarmLibraryTemplate(c *gin.Context) {
 	sheetName := "AlarmLibrary"
 	index, _ := f.NewSheet(sheetName)
 	f.SetActiveSheet(index)
-	// Remove the default "Sheet1".
 	f.DeleteSheet("Sheet1")
 
 	for i, header := range alarmLibraryHeaders {
@@ -526,221 +554,467 @@ func (h *Handler) DownloadAlarmLibraryTemplate(c *gin.Context) {
 	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
 	if err := f.Write(c.Writer); err != nil {
-		utils.Error(c, http.StatusInternalServerError, "failed to write template file")
+		writeFail(c, enums.ERROR.Code, "failed to write template file: "+err.Error())
 	}
 }
 
 // ---------------------------------------------------------------------------
-// AlarmSyncConfig
+// Alarm templates (6 endpoints) + email-notification enable per template
 // ---------------------------------------------------------------------------
 
-// GetAlarmSyncConfig handles GET /alarm-sync-config
-func (h *Handler) GetAlarmSyncConfig(c *gin.Context) {
-	cfg, err := h.svc.GetAlarmSyncConfig()
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, cfg)
-}
-
-// UpdateAlarmSyncConfig handles PUT /alarm-sync-config
-func (h *Handler) UpdateAlarmSyncConfig(c *gin.Context) {
-	var cfg AlarmSyncConfig
-	if err := c.ShouldBindJSON(&cfg); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if err := h.svc.UpdateAlarmSyncConfig(&cfg); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-
-	// Return the merged config so the UI can refresh.
-	updated, err := h.svc.GetAlarmSyncConfig()
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, updated)
-}
-
-// SyncAlarms handles POST /alarms/sync
-// Manually triggers alarm sync for all online enb devices.
-func (h *Handler) SyncAlarms(c *gin.Context) {
-	if syncAlarmsFn == nil {
-		utils.Error(c, http.StatusInternalServerError, "alarm sync not initialized")
-		return
-	}
-	syncAlarmsFn()
-	utils.Success(c, nil)
-}
-
-// ---------------------------------------------------------------------------
-// Alarm – comment
-// ---------------------------------------------------------------------------
-
-// AddCommentForAlarm handles POST /alarms/:id/comment
-func (h *Handler) AddCommentForAlarm(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm id")
-		return
-	}
-
-	var req AddCommentRequest
+// CreateAlarmTemplate handles POST /api/v2/addAlarmTemplate
+func (h *Handler) CreateAlarmTemplate(c *gin.Context) {
+	var req dto.RequestDataDTO[any, AddAlarmTemplateDTO]
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body: comment is required")
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-
-	if err := h.svc.AddCommentForAlarm(id, req.Comment); err != nil {
-		utils.HandleError(c, err)
+	t := AddAlarmTemplateDTOToEntity(&req.Data)
+	t.TenantId = intPtr(middleware.GetTenantId(c))
+	if err := h.svc.CreateAlarmTemplate(t); err != nil {
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, nil)
+	writeOK(c, IntegerIdDto{Id: &t.Id})
 }
 
-// ---------------------------------------------------------------------------
-// Alarm Statistic Top-N
-// ---------------------------------------------------------------------------
-
-// QueryAlarmStatisticTopN handles GET /alarms/statistic/top-n
-func (h *Handler) QueryAlarmStatisticTopN(c *gin.Context) {
-	topN, _ := strconv.Atoi(c.DefaultQuery("topN", "10"))
-	if topN < 1 {
-		topN = 10
+// ListAlarmTemplates handles POST /api/v2/listAlarmTemplate
+func (h *Handler) ListAlarmTemplates(c *gin.Context) {
+	var req dto.RequestDataDTO[any, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
 	}
-
-	var startTime, endTime *time.Time
-	if v := c.Query("startTime"); v != "" {
-		if t, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
-			startTime = &t
-		} else if t, err := time.Parse(time.RFC3339, v); err == nil {
-			startTime = &t
-		}
-	}
-	if v := c.Query("endTime"); v != "" {
-		if t, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
-			endTime = &t
-		} else if t, err := time.Parse(time.RFC3339, v); err == nil {
-			endTime = &t
-		}
-	}
-
-	data, err := h.svc.QueryAlarmStatisticTopN(topN, startTime, endTime)
+	req.Normalize()
+	tenantId := middleware.GetTenantId(c)
+	list, err := h.svc.ListAlarmTemplates(tenantId)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, data)
+	total := int64(len(list))
+	writeOK(c, NewSpringDataPage(list, total, req.Page.PageNumber, req.Page.PageSize))
+}
+
+// GetAlarmTemplate handles POST /api/v2/viewAlarmTemplate
+func (h *Handler) GetAlarmTemplate(c *gin.Context) {
+	var req dto.RequestDataDTO[IntegerIdDto, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Query.Id == nil {
+		writeFailInvalid(c, "query.id is required")
+		return
+	}
+	t, err := h.svc.GetAlarmTemplate(*req.Query.Id)
+	if err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK(c, t)
+}
+
+// UpdateAlarmTemplate handles POST /api/v2/updateAlarmTemplate
+func (h *Handler) UpdateAlarmTemplate(c *gin.Context) {
+	var req dto.RequestDataDTO[any, UpdateAlarmTemplateDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
+		return
+	}
+	t := UpdateAlarmTemplateDTOToEntity(&req.Data)
+	t.TenantId = intPtr(middleware.GetTenantId(c))
+	if err := h.svc.UpdateAlarmTemplate(t); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// DeleteAlarmTemplate handles POST /api/v2/deleteAlarmTemplate
+func (h *Handler) DeleteAlarmTemplate(c *gin.Context) {
+	var req dto.RequestDataDTO[any, IntegerIdDto]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.Id == nil {
+		writeFailInvalid(c, "data.id is required")
+		return
+	}
+	if err := h.svc.DeleteAlarmTemplate(*req.Data.Id); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// UpdateEmailNotificationEnableInTemplate handles POST /api/v2/updateEmailNotificationEnableInTemplate
+func (h *Handler) UpdateEmailNotificationEnableInTemplate(c *gin.Context) {
+	var req dto.RequestDataDTO[any, UpdateEmailNotificationEnableInTemplateDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.TemplateId == nil {
+		writeFailInvalid(c, "data.templateId is required")
+		return
+	}
+	enable := false
+	if req.Data.EnableEmailNotification != nil {
+		enable = *req.Data.EnableEmailNotification
+	}
+	if err := h.svc.UpdateAlarmTemplateEmailNotification(*req.Data.TemplateId, enable); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
 }
 
 // ---------------------------------------------------------------------------
-// Email Notification Config
+// Email notification config + email notice result
 // ---------------------------------------------------------------------------
 
-// ListEmailNotificationConfig handles GET /email-notification/config
+// UpdateEmailNotificationConfig handles POST /api/v2/updateEmailNotificationConfig
+// Java: updateEmailNotificationConfig(RequestDataDTO<Object, EmailNotificationConfigDTO>)
+func (h *Handler) UpdateEmailNotificationConfig(c *gin.Context) {
+	var req dto.RequestDataDTO[any, EmailNotificationConfigDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	// Shape transformation: Java EmailNotificationConfigDTO(emailNotification, defaultRecipients)
+	// → Go EmailNotificationConfig(enabled, smtpHost...recipients). We persist what Java sends:
+	// enabled <- emailNotification, defaultRecipients (CSV) <- recipients list (1 string element).
+	enabled := req.Data.EmailNotification
+	var recipients []string
+	if req.Data.DefaultRecipients != nil && *req.Data.DefaultRecipients != "" {
+		recipients = []string{*req.Data.DefaultRecipients}
+	}
+	cfg := &EmailNotificationConfig{
+		Enabled:    enabled,
+		Recipients: recipients,
+	}
+	if err := h.svc.UpdateEmailNotificationConfig(cfg); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	updated, err := h.svc.GetEmailNotificationConfig()
+	if err != nil {
+		writeFailService(c, err)
+		return
+	}
+	out := EmailNotificationConfigDTO{}
+	if updated.Enabled != nil {
+		out.EmailNotification = updated.Enabled
+	}
+	if len(updated.Recipients) > 0 {
+		// Join the CSV back to a single string for Java frontend.
+		s := ""
+		for i, r := range updated.Recipients {
+			if i > 0 {
+				s += ","
+			}
+			s += r
+		}
+		out.DefaultRecipients = &s
+	}
+	writeOK(c, out)
+}
+
+// ListEmailNotificationConfig handles POST /api/v2/listEmailNotificationConfig
+// Java: Result<EmailNotificationConfigDTO> with no RequestDataDTO envelope.
 func (h *Handler) ListEmailNotificationConfig(c *gin.Context) {
 	cfg, err := h.svc.GetEmailNotificationConfig()
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, cfg)
+	out := EmailNotificationConfigDTO{}
+	if cfg.Enabled != nil {
+		out.EmailNotification = cfg.Enabled
+	}
+	if len(cfg.Recipients) > 0 {
+		s := ""
+		for i, r := range cfg.Recipients {
+			if i > 0 {
+				s += ","
+			}
+			s += r
+		}
+		out.DefaultRecipients = &s
+	}
+	writeOK(c, out)
 }
 
-// UpdateEmailNotificationConfig handles PUT /email-notification/config
-func (h *Handler) UpdateEmailNotificationConfig(c *gin.Context) {
-	var cfg EmailNotificationConfig
-	if err := c.ShouldBindJSON(&cfg); err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid request body")
+// ListEmailNoticeResult handles POST /api/v2/listEmailNoticeResult
+// Java: listEmailNoticeResult(RequestDataDTO<ListEmailNoticeResultQuery, Object>)
+func (h *Handler) ListEmailNoticeResult(c *gin.Context) {
+	var req dto.RequestDataDTO[ListEmailNoticeResultQuery, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
 		return
 	}
-
-	if err := h.svc.UpdateEmailNotificationConfig(&cfg); err != nil {
-		utils.HandleError(c, err)
-		return
+	req.Normalize()
+	q := EmailNoticeResultQuery{}
+	if req.Query.AlarmTemplateId != nil {
+		q.AlarmTemplateId = req.Query.AlarmTemplateId
 	}
-
-	// Return the merged config so the UI can refresh.
-	updated, err := h.svc.GetEmailNotificationConfig()
+	if req.Query.EmailSubject != nil {
+		q.EmailSubject = *req.Query.EmailSubject
+	}
+	list, total, err := h.svc.ListEmailNoticeResult(q, req.Page.PageNumber, req.Page.PageSize)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, updated)
+	writeOK(c, NewSpringDataPage(list, total, req.Page.PageNumber, req.Page.PageSize))
 }
 
-// QueryAlarmStatisticResult handles POST /alarms/statistic
-// Mirrors Java queryAlarmStatisticResult.
-func (h *Handler) QueryAlarmStatisticResult(c *gin.Context) {
-	tenantId := middleware.GetTenantId(c)
-	result, err := h.svc.QueryAlarmStatisticResult(tenantId)
-	if err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, result)
-}
+// ---------------------------------------------------------------------------
+// Misc alarm helpers
+// ---------------------------------------------------------------------------
 
-// DeleteAlarmLibrary handles DELETE /alarm-library/:id
-// Mirrors Java deleteAlarmLibrary.
-func (h *Handler) DeleteAlarmLibrary(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		utils.Error(c, http.StatusBadRequest, "invalid alarm library id")
-		return
-	}
-	if err := h.svc.DeleteAlarmLibrary(id); err != nil {
-		utils.HandleError(c, err)
-		return
-	}
-	utils.Success(c, nil)
-}
-
-// ListActiveAlarmProbableCause handles GET /alarms/active-probable-causes
-// Mirrors Java listActiveAlarmProbableCause.
+// ListActiveAlarmProbableCause handles POST /api/v2/listActiveAlarmProbableCause
 func (h *Handler) ListActiveAlarmProbableCause(c *gin.Context) {
+	var req dto.RequestDataDTO[any, any]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
 	tenantId := middleware.GetTenantId(c)
 	causes, err := h.svc.ListActiveAlarmProbableCause(tenantId)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, causes)
+	writeOK(c, causes)
 }
 
-// GetAlarmEventType handles POST /alarms/event-type
-// Mirrors Java getAlarmEventType.
+// GetAlarmEventType handles POST /api/v2/getAlarmEventType
+// Java: no envelope, returns Result<List<String>>
 func (h *Handler) GetAlarmEventType(c *gin.Context) {
 	tenantId := middleware.GetTenantId(c)
 	types, err := h.svc.GetAlarmEventType(tenantId)
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Success(c, types)
+	writeOK(c, types)
 }
 
-// ListEmailNoticeResult handles POST /alarms/email-notice-results
-// Body: {query: {alarmTemplateId?, emailSubject?}, page, pageSize}.
-// Mirrors Java listEmailNoticeResult.
-func (h *Handler) ListEmailNoticeResult(c *gin.Context) {
-	var body struct {
-		Query    EmailNoticeResultQuery `json:"query"`
-		Page     int                    `json:"page"`
-		PageSize int                    `json:"pageSize"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		utils.Error(c, 400, "invalid request body")
-		return
-	}
-	data, total, err := h.svc.ListEmailNoticeResult(body.Query, body.Page, body.PageSize)
+// GetAlarmSyncConfig handles POST /api/v2/getAlarmSyncConfig
+// Java: Result<GetAlarmSyncConfigVO>
+func (h *Handler) GetAlarmSyncConfig(c *gin.Context) {
+	cfg, err := h.svc.GetAlarmSyncConfig()
 	if err != nil {
-		utils.HandleError(c, err)
+		writeFailService(c, err)
 		return
 	}
-	utils.Paginated(c, data, total, body.Page, body.PageSize)
+	vo := GetAlarmSyncConfigVO{}
+	if cfg.Enabled != nil {
+		vo.Enable = cfg.Enabled
+	}
+	if cfg.SyncInterval != nil {
+		vo.Period = cfg.SyncInterval
+	}
+	writeOK(c, vo)
+}
+
+// UpdateAlarmSyncConfig handles POST /api/v2/updateAlarmSyncConfig
+// Java: updateAlarmSyncConfig(RequestDataDTO<Object, GetAlarmSyncConfigVO>)
+func (h *Handler) UpdateAlarmSyncConfig(c *gin.Context) {
+	var req dto.RequestDataDTO[any, GetAlarmSyncConfigVO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	cfg := &AlarmSyncConfig{
+		Enabled:      req.Data.Enable,
+		SyncInterval: req.Data.Period,
+	}
+	if err := h.svc.UpdateAlarmSyncConfig(cfg); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	updated, err := h.svc.GetAlarmSyncConfig()
+	if err != nil {
+		writeFailService(c, err)
+		return
+	}
+	out := GetAlarmSyncConfigVO{}
+	if updated.Enabled != nil {
+		out.Enable = updated.Enabled
+	}
+	if updated.SyncInterval != nil {
+		out.Period = updated.SyncInterval
+	}
+	writeOK(c, out)
+}
+
+// AddCommentForAlarm handles POST /api/v2/addCommentForAlarm
+func (h *Handler) AddCommentForAlarm(c *gin.Context) {
+	var req dto.RequestDataDTO[any, AddCommentForAlarmDTO]
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailInvalid(c, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Data.AlarmIndex == nil {
+		writeFailInvalid(c, "data.alarmIndex is required")
+		return
+	}
+	if req.Data.Comment == nil || *req.Data.Comment == "" {
+		writeFailInvalid(c, "data.comment is required")
+		return
+	}
+	if err := h.svc.AddCommentForAlarm(*req.Data.AlarmIndex, *req.Data.Comment); err != nil {
+		writeFailService(c, err)
+		return
+	}
+	writeOK[any](c, nil)
+}
+
+// ---------------------------------------------------------------------------
+// DTO → entity bridge helpers
+// ---------------------------------------------------------------------------
+
+func intPtr(v int) *int { return &v }
+
+// AddAlarmFilterDTOToEntity converts the wire DTO to the DB entity.
+// Multi-value string / int64 fields are joined with "," because the core
+// entity columns are legacy comma-separated varchars / longtexts.
+func AddAlarmFilterDTOToEntity(d *AddAlarmFilterTaskDTO) *AlarmFilter {
+	f := &AlarmFilter{
+		FilterRuleName:         d.FilterRuleName,
+		Enable:                 d.Enable,
+		ExecutionAction:        d.ExecutionAction,
+		ExecutionOnAllAlarm:    d.ExecutionOnAllAlarm,
+		ExecuteOnAllBaseStation: d.ExecuteOnAllBaseStation,
+		ExecuteOnAllCPE:        d.ExecuteOnAllCPE,
+	}
+	if len(d.AlarmSources) > 0 {
+		s := joinStr(d.AlarmSources)
+		f.AlarmSources = &s
+	}
+	if d.StartTime != nil {
+		t := time.UnixMilli(*d.StartTime)
+		f.StartTime = &t
+	}
+	if d.EndTime != nil {
+		t := time.UnixMilli(*d.EndTime)
+		f.EndTime = &t
+	}
+	if len(d.BaseStationIds) > 0 {
+		s := joinInt64(d.BaseStationIds)
+		f.BaseStationIds = &s
+	}
+	if len(d.CpeIds) > 0 {
+		s := joinInt64(d.CpeIds)
+		f.CpeIds = &s
+	}
+	if len(d.BaseStationDeviceGroupIds) > 0 {
+		s := joinStr(d.BaseStationDeviceGroupIds)
+		f.BaseStationDeviceGroupIds = &s
+	}
+	if len(d.CpeDeviceGroupIds) > 0 {
+		s := joinStr(d.CpeDeviceGroupIds)
+		f.CpeDeviceGroupIds = &s
+	}
+	if len(d.AlarmIds) > 0 {
+		s := joinStr(d.AlarmIds)
+		f.AlarmIds = &s
+	}
+	return f
+}
+
+func AddAlarmTemplateDTOToEntity(d *AddAlarmTemplateDTO) *AlarmTemplate {
+	t := &AlarmTemplate{
+		Name:                           d.Name,
+		Description:                    d.Description,
+		ExecuteOnAllBaseStation:        d.ExecuteOnAllBaseStation,
+		ExecuteOnAllCPE:                d.ExecuteOnAllCPE,
+		ExecuteOnAllAlarm:              d.ExecuteOnAllAlarm,
+		EnableEmailNotification:        d.EnableEmailNotification,
+		ToleranceDuration:              d.ToleranceDuration,
+		Interval_:                      d.Interval,
+		EnableNotifyDefaultRecipients:  d.EnableNotifyDefaultRecipients,
+		Emails:                         d.Emails,
+	}
+	if len(d.BaseStationIds) > 0 {
+		s := joinInt64(d.BaseStationIds)
+		t.BaseStationIds = &s
+	}
+	if len(d.CpeIds) > 0 {
+		s := joinInt64(d.CpeIds)
+		t.CpeIds = &s
+	}
+	if len(d.BaseStationDeviceGroupIds) > 0 {
+		s := joinStr(d.BaseStationDeviceGroupIds)
+		t.BaseStationDeviceGroupIds = &s
+	}
+	if len(d.CpeDeviceGroupIds) > 0 {
+		s := joinStr(d.CpeDeviceGroupIds)
+		t.CpeDeviceGroupIds = &s
+	}
+	if len(d.AlarmIds) > 0 {
+		s := joinStr(d.AlarmIds)
+		t.AlarmIds = &s
+	}
+	if len(d.AlarmSources) > 0 {
+		s := joinStr(d.AlarmSources)
+		t.AlarmSources = &s
+	}
+	return t
+}
+
+func UpdateAlarmTemplateDTOToEntity(d *UpdateAlarmTemplateDTO) *AlarmTemplate {
+	inner := AddAlarmTemplateDTO{
+		Name:                           d.Name,
+		Description:                    d.Description,
+		ExecuteOnAllBaseStation:        d.ExecuteOnAllBaseStation,
+		ExecuteOnAllCPE:                d.ExecuteOnAllCPE,
+		BaseStationIds:                 d.BaseStationIds,
+		CpeIds:                         d.CpeIds,
+		BaseStationDeviceGroupIds:      d.BaseStationDeviceGroupIds,
+		CpeDeviceGroupIds:              d.CpeDeviceGroupIds,
+		ExecuteOnAllAlarm:              d.ExecuteOnAllAlarm,
+		AlarmIds:                       d.AlarmIds,
+		EnableEmailNotification:        d.EnableEmailNotification,
+		ToleranceDuration:              d.ToleranceDuration,
+		Interval:                       d.Interval,
+		EnableNotifyDefaultRecipients:  d.EnableNotifyDefaultRecipients,
+		AlarmSources:                   d.AlarmSources,
+		Emails:                         d.Emails,
+	}
+	t := AddAlarmTemplateDTOToEntity(&inner)
+	if d.Id != nil {
+		t.Id = *d.Id
+	}
+	return t
+}
+
+func joinStr(xs []string) string {
+	if len(xs) == 0 {
+		return ""
+	}
+	s := xs[0]
+	for i := 1; i < len(xs); i++ {
+		s += "," + xs[i]
+	}
+	return s
+}
+
+func joinInt64(xs []int64) string {
+	if len(xs) == 0 {
+		return ""
+	}
+	s := fmt.Sprintf("%d", xs[0])
+	for i := 1; i < len(xs); i++ {
+		s += fmt.Sprintf(",%d", xs[i])
+	}
+	return s
 }

@@ -44,9 +44,10 @@ func TestRepository_FindUserByUsername(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id", "username", "password"}).
 			AddRow(1, "alice", "hashed_pw_alice")
 
-		// GORM First() appends ORDER BY + LIMIT 1, producing two placeholders.
-		mock.ExpectQuery(`SELECT \* FROM .+sys_user.+ WHERE username = \?`).
-			WithArgs("alice", 1).
+		// Query: WHERE username = ? AND (deleted IS NULL OR deleted = ?) + ORDER BY + LIMIT 1
+		// Parameters in GORM expected order: username, deleted=false, limit=1 (3 args total)
+		mock.ExpectQuery(`SELECT \* FROM .+sys_user.+ WHERE username = \? .+deleted`).
+			WithArgs("alice", false, 1).
 			WillReturnRows(rows)
 
 		u, err := repo.FindUserByUsername("alice")
@@ -59,8 +60,8 @@ func TestRepository_FindUserByUsername(t *testing.T) {
 	})
 
 	t.Run("returns error when not found", func(t *testing.T) {
-		mock.ExpectQuery(`SELECT \* FROM .+sys_user.+ WHERE username = \?`).
-			WithArgs("ghost", 1).
+		mock.ExpectQuery(`SELECT \* FROM .+sys_user.+ WHERE username = \? .+deleted`).
+			WithArgs("ghost", false, 1).
 			WillReturnError(gorm.ErrRecordNotFound)
 
 		u, err := repo.FindUserByUsername("ghost")

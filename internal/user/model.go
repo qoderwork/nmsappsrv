@@ -9,31 +9,37 @@ import (
 	"gorm.io/gorm"
 )
 
-// SysUser 对应 sys_user 表
+// SysUser 对应 sys_user 表（Java com.waveoss.core.dao.entity.SysUser 1:1 字段对齐）
+//
+// 类型对齐规则（重要！否则 DB 迁移和 JDBC 映射不一致）：
+//   - Java int 原语 → Go int, NOT NULL 默认 0（如 loginErrorTimes, loginErrorTimes primitive）
+//   - java.lang.Integer → Go *int（可空）
+//   - java.lang.String  firstLogin → Go *string（Java 存 "Y"/"N" 语义，非 TINYINT boolean）
+//   - java.util.Date → Go *time.Time
 type SysUser struct {
-	Id                   int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	Username             *string    `gorm:"column:username;type:varchar(255)" json:"username"`
-	Password             *string    `gorm:"column:password;type:varchar(255)" json:"password"`
-	Email                *string    `gorm:"column:email;type:varchar(255)" json:"email"`
-	PhoneNumber          *string    `gorm:"column:phone_number;type:varchar(255)" json:"phone_number"`
-	RealName             *string    `gorm:"column:real_name;type:varchar(255)" json:"real_name"`
-	Status               *int       `gorm:"column:status" json:"status"`
-	LicenseId            *int       `gorm:"column:license_id" json:"license_id"`
-	CreateTime           *time.Time `gorm:"column:create_time" json:"create_time"`
-	LastLoginTime        *time.Time `gorm:"column:last_login_time" json:"last_login_time"`
-	LoginErrorTimes      *int       `gorm:"column:login_error_times" json:"login_error_times"`
-	LastLockTime         *time.Time `gorm:"column:last_lock_time" json:"last_lock_time"`
-	Enable               *bool      `gorm:"column:enable" json:"enable"`
-	PasswordModifyTime   *time.Time `gorm:"column:password_modify_time" json:"password_modify_time"`
-	Salt                 *string    `gorm:"column:salt;type:varchar(255)" json:"salt"`
-	CreateUserId         *int       `gorm:"column:create_user_id" json:"create_user_id"`
-	Avatar               *string    `gorm:"column:avatar;type:varchar(255)" json:"avatar"`
-	LoginErrorTime       *time.Time `gorm:"column:login_error_time" json:"login_error_time"`
-	CreateUserName       *string    `gorm:"column:create_user_name;type:varchar(255)" json:"create_user_name"`
-	UpdateTime           *time.Time `gorm:"column:update_time" json:"update_time"`
-	FirstLogin           *bool      `gorm:"column:first_login" json:"first_login"`
-	Deleted              *bool      `gorm:"column:deleted" json:"deleted"`
-	HistoryPasswords     *string    `gorm:"column:history_passwords;type:longtext" json:"-"`
+	Id                 int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	Username           *string    `gorm:"column:username;type:varchar(255)" json:"username"`
+	Password           *string    `gorm:"column:password;type:varchar(255)" json:"password"`
+	Email              *string    `gorm:"column:email;type:varchar(255)" json:"email"`
+	PhoneNumber        *string    `gorm:"column:phone_number;type:varchar(255)" json:"phone_number"`
+	RealName           *string    `gorm:"column:real_name;type:varchar(255)" json:"real_name"`
+	Status             *int       `gorm:"column:status" json:"status"`
+	TenantId          *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	CreateTime         *time.Time `gorm:"column:create_time" json:"create_time"`
+	LastLoginTime      *time.Time `gorm:"column:last_login_time" json:"last_login_time"`
+	LoginErrorTimes    int        `gorm:"column:login_error_times;not null;default:0" json:"login_error_times"` // Java int 原语 NOT NULL
+	LastLockTime       *time.Time `gorm:"column:last_lock_time" json:"last_lock_time"`
+	Enable             *bool      `gorm:"column:enable" json:"enable"`
+	PasswordModifyTime *time.Time `gorm:"column:password_modify_time" json:"password_modify_time"`
+	Salt               *string    `gorm:"column:salt;type:varchar(255)" json:"salt"`
+	CreateUserId       *int       `gorm:"column:create_user_id" json:"create_user_id"`
+	Avatar             *string    `gorm:"column:avatar;type:varchar(255)" json:"avatar"`
+	LoginErrorTime     *time.Time `gorm:"column:login_error_time" json:"login_error_time"`
+	CreateUserName     *string    `gorm:"column:create_user_name;type:varchar(255)" json:"create_user_name"`
+	UpdateTime         *time.Time `gorm:"column:update_time" json:"update_time"`
+	FirstLogin         *string    `gorm:"column:first_login;type:varchar(8)" json:"first_login"` // Java String ("Y"/"N")，不是布尔
+	Deleted            *bool      `gorm:"column:deleted" json:"deleted"`
+	HistoryPasswords   *string    `gorm:"column:history_passwords;type:longtext" json:"-"`
 }
 
 func (SysUser) TableName() string { return "sys_user" }
@@ -171,9 +177,9 @@ type RoleHasPermission struct {
 
 func (RoleHasPermission) TableName() string { return "role_has_permission" }
 
-// UserHasRole 对应 user_has_role 表
+// UserHasRole 对应 user_has_role 表 (Java id 是 Long / BigInt，这里用 int64 对齐)
 type UserHasRole struct {
-	Id     int    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Id     int64  `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserId int    `gorm:"column:user_id" json:"user_id"`
 	RoleId string `gorm:"column:role_id;type:varchar(32)" json:"role_id"`
 }

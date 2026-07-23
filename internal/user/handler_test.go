@@ -275,7 +275,7 @@ func TestHandler_Login(t *testing.T) {
 				return &SysUser{
 					Id:        10,
 					Username:  strPtr("alice"),
-					LicenseId: &tenantId,
+					TenantId: &tenantId,
 				}, nil
 			},
 			getRoleNamesForUserFn: func(userId, tenantId int) ([]string, error) {
