@@ -3,45 +3,60 @@ package parameter
 import "github.com/gin-gonic/gin"
 
 // RegisterRoutes registers all parameter management routes on the given router group.
+// Routes mirror the Java backend controllers under /api/v2/ base path:
+//   - TR069ParameterManagementController
+//   - ParameterTemplateManagementController
+//   - ParameterDeploymentTemplateController
+//   - ConfigurationManagementController
+//   - DeviceConfigurationManagementController
+//   - ObjectManagementController
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// 参数管理
-	rg.GET("/parameters/:elementId", h.GetParameters)
-	rg.PUT("/parameters/:elementId", h.SetParameter)
-	rg.GET("/parameter-logs", h.ListParameterLogs)
-	rg.GET("/parameter-sets", h.ListParameterSets)
-	rg.POST("/parameter-sets", h.CreateParameterSet)
-	rg.PUT("/parameter-sets/:id", h.UpdateParameterSet)
-	rg.DELETE("/parameter-sets/:id", h.DeleteParameterSet)
-	rg.GET("/parameter-templates", h.ListParameterTemplates)
-	rg.POST("/parameter-templates", h.CreateParameterTemplate)
-	rg.PUT("/parameter-templates/:id", h.UpdateParameterTemplate)
-	rg.GET("/parameter-templates/:id", h.GetParameterTemplate)
-	rg.DELETE("/parameter-templates/:id", h.DeleteParameterTemplate)
-	rg.POST("/parameter-templates/:id/deploy", h.DeployTemplate)
-	rg.GET("/parameter-templates/:id/deploy-logs", h.ListDeployTemplateLogs)
-	rg.POST("/parameter-backup-logs/list", h.ListBackupLogs)
-	rg.POST("/parameter-backup/:elementId", h.TriggerBackup)
-	rg.POST("/parameter-tasks", h.BatchParameterConfigurationDirect)
-	rg.POST("/batch-configuration", h.BatchParameterConfiguration)
-	rg.GET("/batch-configurations", h.ListBatchConfigurations)
-	rg.GET("/batch-configurations/:taskId/detail", h.ListBatchConfigurationDetail)
+	// === TR069ParameterManagementController ===
+	rg.POST("/addTR069Parameter", h.AddTR069Parameter)
+	rg.POST("/listTR069Parameter", h.ListTR069Parameters)
+	rg.POST("/deleteTR069Parameter", h.DeleteTR069Parameter)
+	rg.POST("/viewTR069Parameter", h.ViewTR069Parameter)
+	rg.POST("/updateTR069Parameter", h.UpdateTR069Parameter)
+	rg.POST("/addParameterSet", h.CreateParameterSet)
+	rg.POST("/updateParameterSet", h.UpdateParameterSet)
+	rg.POST("/deleteParameterSet", h.DeleteParameterSet)
+	// TODO: rg.POST("/getParameterSet", h.GetParameterSet) // handler not yet implemented
+	// TODO: rg.POST("/listParameterInParameterSet", h.ListParameterInParameterSet) // handler not yet implemented
+	// TODO: rg.POST("/addParameterToParameterSet", h.AddParameterToParameterSet) // handler not yet implemented
+	// TODO: rg.POST("/deleteParameterToParameterSet", h.DeleteParameterToParameterSet) // handler not yet implemented
 
-	// TR-069 参数定义 CRUD
-	rg.POST("/tr069-parameters", h.AddTR069Parameter)
-	rg.GET("/tr069-parameters", h.ListTR069Parameters)
-	rg.GET("/tr069-parameters/:id", h.ViewTR069Parameter)
-	rg.PUT("/tr069-parameters/:id", h.UpdateTR069Parameter)
-	rg.DELETE("/tr069-parameters/:id", h.DeleteTR069Parameter)
+	// === ParameterTemplateManagementController ===
+	rg.POST("/createParameterTemplate", h.CreateParameterTemplate)
+	rg.POST("/updateParameterTemplate", h.UpdateParameterTemplate)
+	rg.POST("/deleteParameterTemplate", h.DeleteParameterTemplate)
+	rg.POST("/getParameterTemplateInfo", h.GetParameterTemplate)
+	rg.POST("/listParameterTemplates", h.ListParameterTemplates)
 
-	// Model Tree 设备参数树管理
-	rg.GET("/model-tree/:elementId", h.GetModelTree)
-	rg.POST("/model-tree/:elementId/refresh", h.RefreshParameter)
-	rg.POST("/model-tree/:elementId/reload", h.ReloadParameter)
-	rg.POST("/model-tree/:elementId/add-object", h.AddObject)
-	rg.POST("/model-tree/:elementId/delete-object", h.DeleteObject)
-	rg.POST("/model-tree/:elementId/batch-delete-object", h.BatchDeleteObject)
-	rg.POST("/model-tree/:elementId/delete-object-after-need-reboot", h.DeleteObjectAfterNeedReboot)
+	// === ParameterDeploymentTemplateController ===
+	// TODO: rg.POST("/addParameterDeployTemplate", h.AddParameterDeployTemplate) // handler not yet implemented
+	// TODO: rg.POST("/updateParameterDeployTemplate", h.UpdateParameterDeployTemplate) // handler not yet implemented
+	// TODO: rg.POST("/deleteParameterDeployTemplate", h.DeleteParameterDeployTemplate) // handler not yet implemented
+	// TODO: rg.POST("/getParameterDeployTemplateInfo", h.GetParameterDeployTemplateInfo) // handler not yet implemented
+	// TODO: rg.POST("/listParameterDeployTemplates", h.ListParameterDeployTemplates) // handler not yet implemented
+	// TODO: rg.POST("/parameterDeployTemplateLogs", h.ParameterDeployTemplateLogs) // handler not yet implemented
 
-	// Export 参数模板导出
-	rg.GET("/parameter-templates/:id/export", h.ExportParameterTemplate)
+	// === ConfigurationManagementController ===
+	rg.POST("/exportConfigurationTemplateFile", h.ExportParameterTemplate)
+	rg.POST("/batchParameterConfiguration", h.BatchParameterConfiguration)
+	rg.POST("/listBatchConfiguration", h.ListBatchConfigurations)
+	rg.POST("/listBatchConfigurationDetail", h.ListBatchConfigurationDetail)
+	rg.POST("/batchParameterConfigurationDirect", h.BatchParameterConfigurationDirect)
+
+	// === DeviceConfigurationManagementController ===
+	// TODO: rg.POST("/listParameterSetForDevice", h.ListParameterSetForDevice) // handler not yet implemented
+	// TODO: rg.POST("/listParameterForDevice", h.ListParameterForDevice) // handler not yet implemented
+	rg.POST("/queryParameterValues", h.GetParameters)
+	rg.POST("/setParameterValues", h.SetParameter)
+	// TODO: rg.GET("/exportNeighbourCellInfo", h.ExportNeighbourCellInfo) // handler not yet implemented
+	// TODO: rg.GET("/setWebEnable", h.SetWebEnable) // handler not yet implemented
+
+	// === ObjectManagementController ===
+	// TODO: rg.POST("/batchAddObject", h.BatchAddObject) // handler not yet implemented
+	// TODO: rg.POST("/listBatchAddObjectTask", h.ListBatchAddObjectTask) // handler not yet implemented
+	// TODO: rg.POST("/listBatchAddObjectTaskDetail", h.ListBatchAddObjectTaskDetail) // handler not yet implemented
 }

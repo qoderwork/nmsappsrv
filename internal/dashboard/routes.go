@@ -3,12 +3,13 @@ package dashboard
 import "github.com/gin-gonic/gin"
 
 // RegisterRoutes registers all dashboard management routes on the given router group.
+// Routes mirror Java's DashboardManagementController (base /api/v2/) — all POST.
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	rg.POST("/dashboard/cpe-online-stats", h.ListCpeOnlineStatistics)
-	rg.POST("/dashboard/gnb-online-stats", h.ListGNBOnlineStatistics)
-	rg.POST("/dashboard/product-type-device-count", h.ListProductTypeAndDeviceCount)
-	rg.POST("/dashboard/base-station-stats", h.ListBaseStationStatistics)
-	rg.POST("/dashboard/pdcp-traffic", h.ListPDCPTrafficStatistic)
-	rg.POST("/dashboard/device-online-info", h.ListDeviceOnlineInfo)
-	rg.POST("/dashboard/kpi-device-loop", h.StatisticKPIForDevicelop)
+	rg.POST("/listCpeOnlineStatistics", h.ListCpeOnlineStatistics)
+	rg.POST("/listGNBOnlineStatistics", h.ListGNBOnlineStatistics)
+	rg.POST("/listProductTypeAndDeviceCount", h.ListProductTypeAndDeviceCount)
+	rg.POST("/listBaseStationStatistics", h.ListBaseStationStatistics)
+	rg.POST("/listPDCPTrafficStatistic", h.ListPDCPTrafficStatistic)
+	rg.POST("/listDeviceOnlineInfo", h.ListDeviceOnlineInfo)
+	rg.POST("/statisticKPIForDevicelop", h.StatisticKPIForDevicelop)
 }

@@ -398,14 +398,18 @@ func main() {
 		logger.Errorf("failed to seed built-in roles: %v", err)
 	}
 
+	// ===== 公开路由（无认证）=====
+	// Java端认证路径：/uaa/oauth/token, /uaa/exit, /v2/captchaImage（无前缀）
+	public := router.Group("")
+	user.RegisterPublicRoutes(public, userH)
+	// License upload/info must stay public so an admin can activate a license
+	// before any gating is in effect.
+	license.RegisterPublicRoutes(public, licenseH)
+
 	// ========== API路由组 ==========
-	api := router.Group("/api/v1")
+	// Java端大部分Controller使用 /api/v2/ 前缀，保持与前端一致
+	api := router.Group("/api/v2")
 	{
-		// ===== 认证（公开） =====
-		user.RegisterPublicRoutes(api, userH)
-		// License upload/info must stay public so an admin can activate a license
-		// before any gating is in effect.
-		license.RegisterPublicRoutes(api, licenseH)
 
 		// ===== 需要认证的路由 =====
 		auth := api.Group("")
@@ -429,10 +433,7 @@ func main() {
 			user.RegisterRoutes(auth, userH)
 			license.RegisterRoutes(auth, licenseH)
 			eventlog.RegisterRoutes(auth, eventlogH)
-			diagnostics.RegisterRoutes(auth, diagnosticsH)
 			reset.RegisterRoutes(auth, resetH)
-			blacklist.RegisterRoutes(auth, blacklistH)
-			ntp.RegisterRoutes(auth, ntpH)
 			initserver.RegisterRoutes(auth, initserverH)
 			deviceauth.RegisterRoutes(auth, deviceauthH)
 			sshmod.RegisterRoutes(auth, sshH)
@@ -457,8 +458,27 @@ func main() {
 			topology.RegisterRoutes(auth, topologyH)
 			mnormalfile.RegisterRoutes(auth, mnormalfileH)
 
-			authz.RegisterRoutes(auth.Group("/auth"))
+			// Java: PermissionManagementController @RequestMapping("/api/v2/")
+			// Routes: /getPermission, /getPermissionIdsForUser (no /auth prefix)
+			authz.RegisterRoutes(auth)
 			northinterfacelog.RegisterRoutes(auth, northLogH)
+		}
+	}
+
+	// ========== API v1路由组（Java端部分Controller使用/api/v1/前缀）==========
+	apiV1 := router.Group("/api/v1")
+	{
+		authV1 := apiV1.Group("")
+		authV1.Use(middleware.AuthMiddleware())
+		authV1.Use(middleware.LicenseMiddleware(licenseEnf))
+		authV1.Use(middleware.AuditMiddleware(auditWriter))
+		{
+			// Java: NTPController @RequestMapping("/api/v1/")
+			ntp.RegisterRoutes(authV1, ntpH)
+			// Java: CPEDiagnosticsController @RequestMapping("/api/v1/")
+			diagnostics.RegisterRoutes(authV1, diagnosticsH)
+			// Java: ElementBlackListManagementController @RequestMapping("api/v1/")
+			blacklist.RegisterRoutes(authV1, blacklistH)
 		}
 	}
 
@@ -1044,12 +1064,12 @@ func notifyCbsdStatusToDevices(db *gorm.DB, opSender *tr069.OperationSender) {
 
 	var rows []struct {
 		SerialNumber string `gorm:"column:serial_number"`
-		TenantId    int    `gorm:"column:tenant_id"`
+		TenantId    int    `gorm:"column:license_id"`
 		cbsdInfoForNotice
 	}
 	if err := db.Table("cbsd_info").
 		Where("serial_number IS NOT NULL AND serial_number <> ''").
-		Select("serial_number, tenant_id, cbsd_serial_number, operation_state, low_frequency, high_frequency, transmit_expire_time, max_eirp, path_loss, antenna_gain").
+		Select("serial_number, license_id, cbsd_serial_number, operation_state, low_frequency, high_frequency, transmit_expire_time, max_eirp, path_loss, antenna_gain").
 		Scan(&rows).Error; err != nil {
 		logger.Errorf("cbsd-notice-device: failed to scan cbsd_info: %v", err)
 		return

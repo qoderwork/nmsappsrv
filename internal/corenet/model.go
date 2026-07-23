@@ -7,7 +7,7 @@ type CoreNetwork struct {
 	Id              int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name            *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	ElementId       *int64  `gorm:"column:element_id" json:"element_id"`
-	TenantId       *int    `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId       *int    `gorm:"column:license_id" json:"license_id"`
 	Deleted         *bool   `gorm:"column:deleted" json:"deleted"`
 	InstallLocation *string `gorm:"column:install_location;type:varchar(255)" json:"install_location"`
 	Ip              *string `gorm:"column:ip;type:varchar(255)" json:"ip"`

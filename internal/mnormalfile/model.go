@@ -13,7 +13,7 @@ type MNormalFile struct {
 	FileMd5        *string    `gorm:"column:file_md5;type:varchar(64)" json:"fileMd5"`
 	ChunkCount     *int       `gorm:"column:chunk_count" json:"chunkCount"`
 	Status         *int       `gorm:"column:status" json:"status"` // 1=uploading, 2=assembled, 3=complete
-	TenantId      *int       `gorm:"column:tenant_id" json:"tenantId"`
+	TenantId      *int       `gorm:"column:license_id" json:"tenantId"`
 	CreateTime     *time.Time `gorm:"column:create_time" json:"createTime"`
 	UpdateTime     *time.Time `gorm:"column:update_time" json:"updateTime"`
 	Username       *string    `gorm:"column:username;type:varchar(255)" json:"username"`
@@ -58,7 +58,7 @@ type DeviceMNormalFile struct {
 	FileSize       *int64     `gorm:"column:file_size" json:"fileSize"`
 	FileMd5        *string    `gorm:"column:file_md5;type:varchar(64)" json:"fileMd5"`
 	FileType       *string    `gorm:"column:file_type;type:varchar(50)" json:"fileType"`
-	TenantId      *int       `gorm:"column:tenant_id" json:"tenantId"`
+	TenantId      *int       `gorm:"column:license_id" json:"tenantId"`
 	UploadTime     *time.Time `gorm:"column:upload_time" json:"uploadTime"`
 	UploadUser     *string    `gorm:"column:upload_user;type:varchar(255)" json:"uploadUser"`
 	Deleted        bool       `gorm:"column:deleted;default:false" json:"deleted"`

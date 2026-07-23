@@ -16,7 +16,7 @@ type UpgradeTask struct {
 	EndTime                 *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode             *int       `gorm:"column:execute_mode" json:"execute_mode"`
 	TriggerTime             *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenantId               *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId               *int       `gorm:"column:license_id" json:"license_id"`
 	ElementIds              *string    `gorm:"column:element_ids;type:text" json:"element_ids"`
 	DeviceType              *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	UpgradeType             *string    `gorm:"column:upgrade_type;type:varchar(255)" json:"upgrade_type"`
@@ -72,7 +72,7 @@ type UpgradeFile struct {
 	DeviceType       *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	FileSize         *int64     `gorm:"column:file_size" json:"file_size"`
 	FileType         *string    `gorm:"column:file_type;type:varchar(255)" json:"file_type"`
-	TenantId        *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId        *int       `gorm:"column:license_id" json:"license_id"`
 	UploadTime       *time.Time `gorm:"column:upload_time" json:"upload_time"`
 	User             *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 	ProductType      *string    `gorm:"column:product_type;type:varchar(255)" json:"product_type"`
@@ -99,7 +99,7 @@ type UpgradeLog struct {
 	RruVersionInfo   *string    `gorm:"column:rru_version_info;type:longtext" json:"rru_version_info"`
 	TaskId           *int       `gorm:"column:task_id" json:"task_id"`
 	Upgrade          *bool      `gorm:"column:upgrade" json:"upgrade"`
-	TenantId        *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId        *int       `gorm:"column:license_id" json:"license_id"`
 	DeviceType       *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	Success          *bool      `gorm:"column:success" json:"success"`
 	RetryTimes       *int       `gorm:"column:retry_times" json:"retry_times"`
@@ -119,7 +119,7 @@ type RollbackTask struct {
 	EndTime        *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode    *int       `gorm:"column:execute_mode" json:"execute_mode"`
 	TriggerTime    *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId      *int       `gorm:"column:license_id" json:"license_id"`
 	ElementIds     *string    `gorm:"column:element_ids;type:text" json:"element_ids"`
 	Scope          *string    `gorm:"column:scope;type:varchar(255)" json:"scope"`
 	DeviceGroupIds *string    `gorm:"column:device_group_ids;type:longtext" json:"device_group_ids"`
@@ -138,7 +138,7 @@ type RebootTask struct {
 	EndTime        *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode    *int       `gorm:"column:execute_mode" json:"execute_mode"`
 	TriggerTime    *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId      *int       `gorm:"column:license_id" json:"license_id"`
 	ElementIds     *string    `gorm:"column:element_ids;type:longtext" json:"element_ids"`
 	DeviceType     *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	Scope          *string    `gorm:"column:scope;type:varchar(255)" json:"scope"`
@@ -177,7 +177,7 @@ type ShutdownMyTask struct {
 	EndTime        *time.Time `gorm:"column:end_time" json:"end_time"`
 	ExecuteMode    *int       `gorm:"column:execute_mode" json:"execute_mode"`
 	TriggerTime    *time.Time `gorm:"column:trigger_time" json:"trigger_time"`
-	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId      *int       `gorm:"column:license_id" json:"license_id"`
 	ElementIds     *string    `gorm:"column:element_ids;type:text" json:"element_ids"`
 }
 
@@ -198,7 +198,7 @@ func (ShutdownLog) TableName() string { return "shutdown_log" }
 // EUAndRUBatchUpgradeLog 对应 eu_and_ru_batch_upgrade_log 表
 type EUAndRUBatchUpgradeLog struct {
 	Id               int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantId        *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId        *int       `gorm:"column:license_id" json:"license_id"`
 	ElementId        *int64     `gorm:"column:element_id" json:"element_id"`
 	User             *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 	OriginalVersion  *string    `gorm:"column:original_version;type:longtext" json:"original_version"`
@@ -234,7 +234,7 @@ type AutoUpgradeTask struct {
 	CreateUserName         *string    `gorm:"column:create_user_name;type:varchar(255)" json:"create_user_name"`
 	TaskName               *string    `gorm:"column:task_name;type:varchar(255)" json:"task_name"`
 	TaskType               *int       `gorm:"column:task_type" json:"task_type"`
-	TenantId              *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId              *int       `gorm:"column:license_id" json:"license_id"`
 	DeviceIds              *string    `gorm:"column:device_ids;type:text" json:"device_ids"`
 	MaxOccurs              *int       `gorm:"column:max_occurs" json:"max_occurs"`
 	DeviceGroupIds         *string    `gorm:"column:device_group_ids;type:longtext" json:"device_group_ids"`

@@ -95,7 +95,7 @@ func (r *repository) UpdateTask(t *ResetTask) error {
 
 func (r *repository) TaskNameExists(tenantId int, name string) bool {
 	var count int64
-	r.db.Model(&ResetTask{}).Where("tenant_id = ? AND name = ?", tenantId, name).Count(&count)
+	r.db.Model(&ResetTask{}).Where("license_id = ? AND name = ?", tenantId, name).Count(&count)
 	return count > 0
 }
 
@@ -182,14 +182,14 @@ func (r *repository) ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetT
 
 	baseSQL := `
 		SELECT rt.id, rt.name, rt.user, rt.operation_time, rt.status,
-		       rt.start_time, rt.end_time, rt.tenant_id,
+		       rt.start_time, rt.end_time, rt.license_id,
 		       COUNT(tel.id) AS total_count,
 		       SUM(CASE WHEN el.status = 3 THEN 1 ELSE 0 END) AS success_count,
 		       MAX(el.command_response_time) AS last_response_time
 		FROM reset_task rt
 		LEFT JOIN task_to_event_log tel ON tel.task_id = rt.id AND tel.task_type = 'reset'
 		LEFT JOIN event_log el ON el.id = tel.event_log_id
-		WHERE rt.tenant_id = ?`
+		WHERE rt.license_id = ?`
 	args := []interface{}{tenantId}
 
 	if query.TaskName != "" {
@@ -213,7 +213,7 @@ func (r *repository) ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetT
 		}
 	}
 
-	countSQL := "SELECT COUNT(*) FROM reset_task rt WHERE rt.tenant_id = ?"
+	countSQL := "SELECT COUNT(*) FROM reset_task rt WHERE rt.license_id = ?"
 	countArgs := []interface{}{tenantId}
 	if query.TaskName != "" {
 		countSQL += " AND rt.name LIKE ?"
@@ -237,7 +237,7 @@ func (r *repository) ListTasks(tenantId int, query ListResetTaskQuery) ([]ResetT
 		Status           int        `gorm:"column:status"`
 		StartTime        *time.Time `gorm:"column:start_time"`
 		EndTime          *time.Time `gorm:"column:end_time"`
-		TenantId        int        `gorm:"column:tenant_id"`
+		TenantId        int        `gorm:"column:license_id"`
 		TotalCount       int64      `gorm:"column:total_count"`
 		SuccessCount     int64      `gorm:"column:success_count"`
 		LastResponseTime *time.Time `gorm:"column:last_response_time"`

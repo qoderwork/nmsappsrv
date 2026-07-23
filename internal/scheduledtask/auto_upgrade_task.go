@@ -35,7 +35,7 @@ type autoUpgradeTaskRow struct {
 	MaxOccurs            *int       `gorm:"column:max_occurs"`
 	UpgradeFirmwareFirst *bool      `gorm:"column:upgrade_firmware_first"`
 	DurationTime         *int       `gorm:"column:duration_time"`
-	TenantId            *int       `gorm:"column:tenant_id"`
+	TenantId            *int       `gorm:"column:license_id"`
 	IsInitiated          *int       `gorm:"column:is_initiated"`
 	UpgradeFileId        *int64     `gorm:"column:upgrade_file_id"`
 	DeviceType           *string    `gorm:"column:device_type;type:varchar(50)"`

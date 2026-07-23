@@ -18,7 +18,7 @@ type SSHLabel struct {
 	Id        int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      *string `gorm:"column:name;type:varchar(255)" json:"name"`
 	Content   *string `gorm:"column:content;type:text" json:"content"`
-	TenantId *int    `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId *int    `gorm:"column:license_id" json:"license_id"`
 }
 
 func (SSHLabel) TableName() string { return "ssh_label" }
@@ -47,7 +47,7 @@ type DeleteSSHLabelRequest struct {
 type SSHAccessTimerTask struct {
 	Id               int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenancyName      *string    `gorm:"column:tenancy_name;type:varchar(255)" json:"tenancy_name"`
-	TenantId        *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId        *int       `gorm:"column:license_id" json:"license_id"`
 	ElementId        *int64     `gorm:"column:element_id" json:"element_id"`
 	SshStatus        *string    `gorm:"column:ssh_status;type:varchar(10)" json:"ssh_status"`
 	DeviceName       *string    `gorm:"column:device_name;type:varchar(255)" json:"device_name"`

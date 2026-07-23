@@ -19,7 +19,7 @@ type Alarm struct {
 	SpecificProblem       *string    `gorm:"column:specific_problem;type:varchar(255)" json:"specific_problem"`
 	AlarmId               *string    `gorm:"column:alarm_id;type:varchar(255);index:idx_alarm_id_type" json:"alarm_id"`
 	ElementId             *int64     `gorm:"column:element_id;index:idx_elem_alarm" json:"element_id"`
-	TenantId             *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId             *int       `gorm:"column:license_id" json:"license_id"`
 	CreateTime            *time.Time `gorm:"column:create_time" json:"create_time"`
 	AdditionalInformation *string    `gorm:"column:additional_information;type:text" json:"additional_information"`
 	AlarmTemplateId       *int       `gorm:"column:alarm_template_id" json:"alarm_template_id"`
@@ -73,7 +73,7 @@ type AlarmFilter struct {
 	ExecutionOnAllAlarm         *bool      `gorm:"column:execution_on_all_alarm" json:"execution_on_all_alarm"`
 	StartTime                   *time.Time `gorm:"column:start_time" json:"start_time"`
 	EndTime                     *time.Time `gorm:"column:end_time" json:"end_time"`
-	TenantId                   *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId                   *int       `gorm:"column:license_id" json:"license_id"`
 	User                        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
 	UpdateTime                  *time.Time `gorm:"column:update_time" json:"update_time"`
 	BaseStationIds              *string    `gorm:"column:base_station_ids;type:text" json:"base_station_ids"`
@@ -121,7 +121,7 @@ type AlarmLibrary struct {
 	EventType       *string `gorm:"column:event_type;type:varchar(255)" json:"event_type"`
 	Explanation     *string `gorm:"column:explanation;type:text" json:"explanation"`
 	SpecificProblem *string `gorm:"column:specific_problem;type:varchar(255)" json:"specific_problem"`
-	TenantId       *int    `gorm:"column:tenant_id;uniqueIndex:idx_tenancy_alarm_id" json:"tenant_id"`
+	TenantId       *int    `gorm:"column:license_id;uniqueIndex:idx_tenancy_alarm_id" json:"license_id"`
 	AlarmSource     *string `gorm:"column:alarm_source;type:varchar(255)" json:"alarm_source"`
 }
 
@@ -130,7 +130,7 @@ func (AlarmLibrary) TableName() string { return "alarm_library" }
 // AlarmTemplate 对应 alarm_template 表
 type AlarmTemplate struct {
 	Id                          int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantId                   *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId                   *int       `gorm:"column:license_id" json:"license_id"`
 	Name                        *string    `gorm:"column:name;type:varchar(255)" json:"name"`
 	Description                 *string    `gorm:"column:description;type:varchar(255)" json:"description"`
 	ExecuteOnAllBaseStation     *bool      `gorm:"column:execute_on_all_base_station" json:"execute_on_all_base_station"`

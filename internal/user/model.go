@@ -24,7 +24,7 @@ type SysUser struct {
 	PhoneNumber        *string    `gorm:"column:phone_number;type:varchar(255)" json:"phone_number"`
 	RealName           *string    `gorm:"column:real_name;type:varchar(255)" json:"real_name"`
 	Status             *int       `gorm:"column:status" json:"status"`
-	TenantId          *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId          *int       `gorm:"column:license_id" json:"license_id"`
 	CreateTime         *time.Time `gorm:"column:create_time" json:"create_time"`
 	LastLoginTime      *time.Time `gorm:"column:last_login_time" json:"last_login_time"`
 	LoginErrorTimes    int        `gorm:"column:login_error_times;not null;default:0" json:"login_error_times"` // Java int 原语 NOT NULL
@@ -149,7 +149,7 @@ type Role struct {
 	Id          string     `gorm:"primaryKey;type:varchar(32)" json:"id"`
 	RoleName    *string    `gorm:"column:name;type:varchar(255)" json:"role_name"`
 	Description *string    `gorm:"column:description;type:varchar(255)" json:"description"`
-	TenantId   *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId   *int       `gorm:"column:license_id" json:"license_id"`
 	UseToSSO    *bool      `gorm:"column:use_to_sso" json:"use_to_sso"`
 	DefaultRole *bool      `gorm:"column:default_role" json:"default_role"`
 	User        *string    `gorm:"column:user;type:varchar(255)" json:"user"`
@@ -195,7 +195,7 @@ type LoginLog struct {
 	IpAddress  *string    `gorm:"column:ip;type:varchar(255)" json:"ip_address"`
 	LoginTime  *time.Time `gorm:"column:operation_time" json:"login_time"`
 	Result     *int       `gorm:"column:result" json:"result"`
-	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId  *int       `gorm:"column:license_id" json:"license_id"`
 	Type       *int       `gorm:"column:type" json:"type"`
 	Info       *string    `gorm:"column:info;type:varchar(500)" json:"info"`
 }

@@ -10,7 +10,7 @@ type ElementBlackList struct {
 	SN         string    `gorm:"column:sn;type:varchar(255);uniqueIndex" json:"sn"`
 	Username   string    `gorm:"column:username;type:varchar(255)" json:"username"`
 	AddTime    time.Time `gorm:"column:add_time" json:"addTime"`
-	TenantId  int       `gorm:"column:tenant_id" json:"tenantId"`
+	TenantId  int       `gorm:"column:license_id" json:"tenantId"`
 	DeviceType string    `gorm:"column:device_type;type:varchar(50)" json:"deviceType"`
 	Reason     string    `gorm:"column:reason;type:varchar(1024)" json:"reason"`
 }
@@ -26,7 +26,7 @@ type BlackListOperationLog struct {
 	OperatorUsername string    `gorm:"column:operator_username;type:varchar(255)" json:"operatorUsername"`
 	OperationTime    time.Time `gorm:"column:operation_time" json:"operationTime"`
 	OperationReason  string    `gorm:"column:operation_reason;type:varchar(1024)" json:"operationReason"`
-	TenantId        int       `gorm:"column:tenant_id" json:"tenantId"`
+	TenantId        int       `gorm:"column:license_id" json:"tenantId"`
 }
 
 func (BlackListOperationLog) TableName() string { return "black_list_operation_log" }

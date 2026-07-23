@@ -40,7 +40,7 @@ func (BaseStationLicense) TableName() string { return "base_station_license" }
 // (sasUrl/certPath/etc) live in a separate Go table (cbsd_sas_config).
 type SASConfig struct {
 	Id           int   `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantId    *int  `gorm:"column:tenant_id;uniqueIndex" json:"tenant_id"`
+	TenantId    *int  `gorm:"column:license_id;uniqueIndex" json:"license_id"`
 	AutoRegister *bool `gorm:"column:auto_register" json:"auto_register"`
 }
 
@@ -49,7 +49,7 @@ func (SASConfig) TableName() string { return "sasconfig" }
 // EntraEndpoint 对应 entra_endpoint 表 (UUID主键)
 type EntraEndpoint struct {
 	Id             string  `gorm:"primaryKey;type:varchar(32)" json:"id"`
-	TenantId      *string `gorm:"column:tenant_id;type:varchar(255)" json:"tenant_id"`
+	TenantId      *string `gorm:"column:license_id;type:varchar(255)" json:"license_id"`
 	ClientId       *string `gorm:"column:client_id;type:varchar(255)" json:"client_id"`
 	SecretKey      *string `gorm:"column:secret_key;type:varchar(255)" json:"secret_key"`
 	TenantIdInNMS *int    `gorm:"column:tenant_id_in_nms" json:"tenant_id_in_nms"`

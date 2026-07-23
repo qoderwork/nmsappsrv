@@ -3,11 +3,11 @@ package blacklist
 import "github.com/gin-gonic/gin"
 
 // RegisterRoutes registers all device blacklist routes on the given router group.
+// Aligned with Java ElementBlackListManagementController: @RequestMapping("api/v1/")
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// 设备黑名单
-	rg.POST("/blacklist/list", h.ListDeviceBlackList)
-	rg.POST("/blacklist/add", h.AddDeviceToBlackList)
-	rg.POST("/blacklist/delete", h.DeleteDeviceFromBlackList)
-	rg.POST("/blacklist/batch-delete", h.BatchDeleteDeviceFromBlackList)
-	rg.POST("/blacklist/operation-logs", h.ListBlackListOperationLog)
+	rg.POST("/listDeviceBlackList", h.ListDeviceBlackList)
+	rg.POST("/addDeviceToBlackList", h.AddDeviceToBlackList)
+	rg.POST("/deleteDeviceFromBlackList", h.DeleteDeviceFromBlackList)
+	rg.POST("/batchDeleteDeviceFromBlackList", h.BatchDeleteDeviceFromBlackList)
+	rg.POST("/listBlackListOperationLog", h.ListBlackListOperationLog)
 }

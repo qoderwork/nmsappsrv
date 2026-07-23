@@ -2,23 +2,27 @@ package site
 
 import "github.com/gin-gonic/gin"
 
-// RegisterRoutes registers all site and system configuration routes on the given router group.
+// RegisterRoutes registers site and area management routes aligned with Java
+// SiteManagementController and AreaManagementController (base @RequestMapping("/api/v2/")).
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// 站点
-	rg.GET("/sites", h.ListSites)
-	rg.GET("/sites/basic", h.ListSiteBasicInfo)
-	rg.POST("/sites", h.CreateSite)
-	rg.PUT("/sites/:id", h.UpdateSite)
-	rg.DELETE("/sites/:id", h.DeleteSite)
+	// ===== SiteManagementController =====
+	rg.POST("/listSites", h.ListSites)
+	rg.GET("/listSiteBasicInfo", h.ListSiteBasicInfo)
+	rg.POST("/addSite", h.CreateSite)
+	rg.POST("/updateSite", h.UpdateSite)
+	rg.POST("/deleteSite", h.DeleteSite)
 
-	// 系统
-	rg.GET("/system/config", h.GetSystemConfig)
-	rg.PUT("/system/config", h.UpdateSystemConfig)
-	rg.GET("/system/areas", h.ListAreas)
-	rg.GET("/system/areas/:id", h.GetArea)
-	rg.POST("/system/areas", h.CreateArea)
-	rg.PUT("/system/areas/:id", h.UpdateArea)
-	rg.DELETE("/system/areas/:id", h.DeleteArea)
-	rg.GET("/system/parameters", h.ListSystemParameters)
-	rg.PUT("/system/parameters", h.UpdateSystemParameter)
+	// ===== AreaManagementController =====
+	rg.POST("/listArea", h.ListAreas)
+	rg.POST("/addArea", h.CreateArea)
+	rg.POST("/updateArea", h.UpdateArea)
+	rg.POST("/deleteArea", h.DeleteArea)
+
+	// NOTE: The following routes have no Java counterpart and are removed per
+	// 1:1 replication requirement:
+	// - GET  /system/config        (no Java controller)
+	// - PUT  /system/config        (no Java controller)
+	// - POST /viewAreaDetail       (not in AreaManagementController)
+	// - GET  /system/parameters    (no Java controller)
+	// - PUT  /system/parameters    (no Java controller)
 }

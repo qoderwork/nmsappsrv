@@ -565,7 +565,7 @@ func (s *service) ImportNrAOSFile(filePath string, tenantId int) (taskId string,
 func (s *service) upsertDeviceGroup(name string, tenantId int) (string, error) {
 	var id string
 	if err := s.repo.DB().Table("device_group").
-		Select("id").Where("group_name = ? AND tenant_id = ?", name, tenantId).
+		Select("id").Where("group_name = ? AND license_id = ?", name, tenantId).
 		Scan(&id).Error; err != nil {
 		return "", err
 	}
@@ -577,7 +577,7 @@ func (s *service) upsertDeviceGroup(name string, tenantId int) (string, error) {
 	err := s.repo.DB().Table("device_group").Create(map[string]interface{}{
 		"id":            id,
 		"group_name":    name,
-		"tenant_id":     tenantId,
+		"license_id":     tenantId,
 		"creation_time": now,
 		"default_group": false,
 	}).Error
@@ -591,7 +591,7 @@ type cpeElementUpsert struct {
 	SerialNumber  *string `gorm:"column:serial_number"`
 	DeviceType    *string `gorm:"column:device_type"`
 	Generation    *string `gorm:"column:generation"`
-	TenantId      *int    `gorm:"column:tenant_id"`
+	TenantId      *int    `gorm:"column:license_id"`
 	NeAreaid      *int    `gorm:"column:ne_areaid"`
 	DeviceGroupId *string `gorm:"column:device_group_id"`
 	Deleted       bool    `gorm:"column:deleted"`

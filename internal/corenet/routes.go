@@ -3,43 +3,34 @@ package corenet
 import "github.com/gin-gonic/gin"
 
 // RegisterRoutes registers all core network routes on the given router group.
+// Mirrors Java CoreNetworkManagementController (base @RequestMapping("/api/v2/"),
+// all POST) and CoreNetworkKPIManagementController (absolute paths).
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// 核心网
-	rg.GET("/core-networks", h.ListCoreNetworks)
-	rg.GET("/core-networks/:id", h.GetCoreNetwork)
-	rg.POST("/core-networks", h.CreateCoreNetwork)
-	rg.PUT("/core-networks/:id", h.UpdateCoreNetwork)
-	rg.DELETE("/core-networks/:id", h.DeleteCoreNetwork)
-	rg.GET("/core-networks/:id/data", h.GetCoreNetworkData)
-	rg.PUT("/core-networks/:id/data", h.SaveCoreNetworkData)
-	rg.GET("/core-networks/:id/kpis", h.GetCoreNetworkKpis)
-	rg.GET("/core-networks/:id/statistics", h.GetStatisticData)
-	rg.GET("/core-networks/:id/logs", h.ListOperationLogs)
+	// CoreNetworkManagementController (base @RequestMapping("/api/v2/")) - ALL POST
+	rg.POST("/api/v2/addCoreNetwork", h.CreateCoreNetwork)
+	rg.POST("/api/v2/listCoreNetwork", h.ListCoreNetworks)
+	rg.POST("/api/v2/deleteCoreNetwork", h.DeleteCoreNetwork)
+	rg.POST("/api/v2/getCoreNetworkElementSystemState", h.GetCoreNetworkElementSystemState)
+	rg.POST("/api/v2/getCoreNetworkAlarms", h.GetCoreNetworkAlarms)
+	rg.POST("/api/v2/getCoreNetworkParameters", h.GetCoreNetworkParameters)
+	rg.POST("/api/v2/setCoreNetworkParameters", h.SetCoreNetworkParameters)
+	rg.POST("/api/v2/queryCoreNetworkParameters", h.QueryCoreNetworkParameters)
+	rg.POST("/api/v2/deleteCoreNetworkParameter", h.DeleteCoreNetworkParameter)
+	rg.POST("/api/v2/addCoreNetworkParameter", h.AddCoreNetworkParameter)
+	rg.POST("/api/v2/listCoreNetworkLogs", h.ListOperationLogs)
+	rg.POST("/api/v2/listUEList", h.ListUEList)
+	rg.POST("/api/v2/listUENumberStatistic", h.ListUENumberStatistic)
+	rg.POST("/api/v2/downloadPCFUETemplate", h.DownloadPCFUETemplate)
+	rg.POST("/api/v2/importPCFUE", h.ImportPCFUE)
+	rg.POST("/api/v2/updatePCFUE", h.UpdatePCFUE)
+	rg.POST("/api/v2/deletePCFUE", h.DeletePCFUE)
+	rg.POST("/api/v2/getUeInfos", h.GetUeInfos)
+	rg.POST("/api/v2/changeCoreNetworkSwitch", h.ChangeCoreNetworkSwitch)
 
-	// Tier 1 corenet KPI batch
-	rg.POST("/core-networks/alarms", h.GetCoreNetworkAlarms)
-	rg.POST("/core-networks/ue-list", h.ListUEList)
-	rg.POST("/core-networks/ue-number-statistic", h.ListUENumberStatistic)
-	rg.POST("/core-networks/ue-infos", h.GetUeInfos)
-	rg.POST("/core-networks/switch", h.ChangeCoreNetworkSwitch)
-	rg.POST("/core-networks/kpi/ingest", h.IngestCoreNetworkKpi)
-
-	// Tier 1.5 corenet parameter CRUD
-	rg.POST("/core-networks/parameters", h.GetCoreNetworkParameters)
-	rg.POST("/core-networks/parameters/set", h.SetCoreNetworkParameters)
-	rg.POST("/core-networks/parameters/query", h.QueryCoreNetworkParameters)
-	rg.POST("/core-networks/parameters/delete", h.DeleteCoreNetworkParameter)
-	rg.POST("/core-networks/parameters/add", h.AddCoreNetworkParameter)
-	rg.POST("/core-networks/element-system-state", h.GetCoreNetworkElementSystemState)
-
-	// Tier 1.5 PCF UE management
-	rg.POST("/core-networks/pcf-ue/template", h.DownloadPCFUETemplate)
-	rg.POST("/core-networks/pcf-ue/import", h.ImportPCFUE)
-	rg.POST("/core-networks/pcf-ue/update", h.UpdatePCFUE)
-	rg.POST("/core-networks/pcf-ue/delete", h.DeletePCFUE)
-	rg.POST("/core-networks/kpi/user-info", h.GetCoreNetworkUserInfo)
-	rg.POST("/core-networks/kpi/upf-traffic", h.GetCoreNetworkUpfTraffic)
-	rg.POST("/core-networks/kpi/upf-traffic/built-in", h.GetBuiltInCoreNetworkUpfTraffic)
-	rg.POST("/core-networks/kpi/user-info/built-in", h.GetBuiltInCoreNetworkUserInfo)
-	rg.POST("/core-networks/kpi/report", h.GetKpiReport)
+	// CoreNetworkKPIManagementController (no class-level base path, absolute paths)
+	rg.POST("/rest/performanceManagement/v1/elementType/:elementTypeValue/objectType/kpiReport/:index", h.GetKpiReport)
+	rg.POST("/api/v2/getCoreNetworkUserInfo", h.GetCoreNetworkUserInfo)
+	rg.POST("/api/v2/getCoreNetworkUpfTraffic", h.GetCoreNetworkUpfTraffic)
+	rg.POST("/api/v2/getBuiltInCoreNetworkUpfTraffic", h.GetBuiltInCoreNetworkUpfTraffic)
+	rg.POST("/api/v2/getBuiltInCoreNetworkUserInfo", h.GetBuiltInCoreNetworkUserInfo)
 }

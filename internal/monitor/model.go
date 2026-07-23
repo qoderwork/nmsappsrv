@@ -6,7 +6,7 @@ import "time"
 type MonitorTask struct {
 	Id            int     `gorm:"primaryKey;autoIncrement" json:"id"`
 	TaskName      *string `gorm:"column:task_name;type:varchar(255)" json:"task_name"`
-	TenantId     *int    `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId     *int    `gorm:"column:license_id" json:"license_id"`
 	Enable        *bool   `gorm:"column:enable" json:"enable"`
 	ExecutionScope *int   `gorm:"column:execution_scope" json:"execution_scope"`
 	ScopeData     *string `gorm:"column:scope_data;type:longtext" json:"scope_data"`

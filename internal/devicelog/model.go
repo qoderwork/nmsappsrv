@@ -17,7 +17,7 @@ type NeLog struct {
 	Status         *int       `gorm:"column:status" json:"status"` // 0=pending, 1=done(success), 3=failed (aligns Java DeviceLogFileLog)
 	FailureReason  *string    `gorm:"column:failure_reason;type:text" json:"failure_reason"`
 	IsActiveLog    *bool      `gorm:"column:is_active_log" json:"is_active_log"`
-	TenantId      *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId      *int       `gorm:"column:license_id" json:"license_id"`
 	CommandTrackId *int64     `gorm:"column:command_track_id" json:"command_track_id"`
 	RequestId      *string    `gorm:"column:request_id;type:varchar(255)" json:"request_id"`
 	LogTime        *time.Time `gorm:"column:log_time" json:"log_time"`

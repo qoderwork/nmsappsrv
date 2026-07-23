@@ -8,7 +8,7 @@ import "time"
 type ParameterMonitorConfig struct {
 	Id         int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name       *string    `gorm:"column:config_name;type:varchar(255)" json:"name"`
-	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId  *int       `gorm:"column:license_id" json:"license_id"`
 	Enable     *bool      `gorm:"column:enabled" json:"enable"`
 	Scope      *int       `gorm:"column:scope" json:"scope"`                           // 1=all devices, 2=selected
 	ScopeData  *string    `gorm:"column:scope_data;type:longtext" json:"scope_data"` // JSON array of elementIds or groupIds

@@ -192,15 +192,15 @@ func (t *ZTPFailedTask) applyFailedCleanup(ctx context.Context, msg ztpFailedNot
 	logger.Infof("ZTPFailedNotify consumer: cleaned up device %d (%s)", elementId, msg.SerialNumber)
 }
 
-// lookupDeviceInfo queries cpe_element for serial_number, device_name, tenant_id.
+// lookupDeviceInfo queries cpe_element for serial_number, device_name, license_id.
 func (t *ZTPFailedTask) lookupDeviceInfo(elementId int64) ztpDeviceInfo {
 	var row struct {
 		SerialNumber string `gorm:"column:serial_number"`
 		DeviceName   string `gorm:"column:device_name"`
-		TenantId     int    `gorm:"column:tenant_id"`
+		TenantId     int    `gorm:"column:license_id"`
 	}
 	t.db.Table("cpe_element").
-		Select("serial_number, device_name, tenant_id").
+		Select("serial_number, device_name, license_id").
 		Where("ne_neid = ?", elementId).
 		Scan(&row)
 	return ztpDeviceInfo{

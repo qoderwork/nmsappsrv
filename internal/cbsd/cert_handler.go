@@ -21,7 +21,7 @@ type CbsdCertificate struct {
 	FilePath   *string    `gorm:"column:file_path;type:varchar(500)" json:"filePath"`
 	UploadTime *time.Time `gorm:"column:upload_time" json:"uploadTime"`
 	Status     *string    `gorm:"column:status;type:varchar(50)" json:"status"`
-	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId  *int       `gorm:"column:license_id" json:"license_id"`
 }
 
 func (CbsdCertificate) TableName() string { return "cbsd_certificate" }
@@ -32,7 +32,7 @@ func (CbsdCertificate) TableName() string { return "cbsd_certificate" }
 func (h *Handler) ListCbsdCertificates(c *gin.Context) {
 	tenantId := middleware.GetTenantId(c)
 	var certs []CbsdCertificate
-	if err := h.db.Where("tenant_id = ?", tenantId).Order("id DESC").Find(&certs).Error; err != nil {
+	if err := h.db.Where("license_id = ?", tenantId).Order("id DESC").Find(&certs).Error; err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to list certificates")
 		return
 	}
@@ -92,7 +92,7 @@ func (h *Handler) DeleteCbsdCertificate(c *gin.Context) {
 		return
 	}
 	tenantId := middleware.GetTenantId(c)
-	if err := h.db.Where("id = ? AND tenant_id = ?", id, tenantId).Delete(&CbsdCertificate{}).Error; err != nil {
+	if err := h.db.Where("id = ? AND license_id = ?", id, tenantId).Delete(&CbsdCertificate{}).Error; err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to delete certificate")
 		return
 	}

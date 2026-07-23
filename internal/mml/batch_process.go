@@ -30,7 +30,7 @@ type BatchProcessFile struct {
 	FileSize   *int64     `gorm:"column:file_size" json:"file_size"`
 	Status     int        `gorm:"column:status" json:"status"` // 0=uploaded, 1=sending, 2=sent, 3=completed, 4=failed
 	UploadUser *string    `gorm:"column:upload_user;type:varchar(255)" json:"upload_user"`
-	TenantId  *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId  *int       `gorm:"column:license_id" json:"license_id"`
 	UploadTime *time.Time `gorm:"column:upload_time" json:"upload_time"`
 	UpdateTime *time.Time `gorm:"column:update_time" json:"update_time"`
 }
@@ -61,7 +61,7 @@ func (r *repository) FindBatchProcessFiles(tenantId int) ([]BatchProcessFile, er
 	var files []BatchProcessFile
 	query := r.db.Model(&BatchProcessFile{})
 	if tenantId > 0 {
-		query = query.Where("tenant_id = ?", tenantId)
+		query = query.Where("license_id = ?", tenantId)
 	}
 	if err := query.Order("upload_time DESC").
 		Find(&files).Error; err != nil {
@@ -517,14 +517,15 @@ func (h *Handler) DownloadExecuteResultFile(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 // RegisterBatchProcessRoutes registers batch process routes on the given router group.
+// Aligned with Java BatchProcessManagementController: @RequestMapping("/api/v2/") + @PostMapping/@GetMapping
 func RegisterBatchProcessRoutes(rg *gin.RouterGroup, h *Handler) {
-	rg.POST("/batch-process/upload", h.UploadBatchProcessFile)
-	rg.GET("/batch-process/files", h.ListBatchProcessFiles)
-	rg.POST("/batch-process/send/:id", h.SendBatchProcessFile)
-	rg.POST("/batch-process/check/:id", h.CheckBatchProcessFile)
-	rg.GET("/batch-process/logs/:id", h.ListBatchProcessLogs)
-	rg.GET("/batch-process/results/:id", h.ListBatchExecuteResults)
-	rg.GET("/batch-process/download/:id", h.DownloadBatchProcessFile)
-	rg.DELETE("/batch-process/:id", h.DeleteBatchProcessFile)
-	rg.GET("/batch-process/results/:id/download", h.DownloadExecuteResultFile)
+	rg.POST("/uploadBathProcessFile", h.UploadBatchProcessFile) // note: Java typo "Bath" preserved
+	rg.POST("/listBatchProcessFile", h.ListBatchProcessFiles)
+	rg.POST("/sendBatchProcessFile", h.SendBatchProcessFile)
+	rg.POST("/checkBatchProcessFile", h.CheckBatchProcessFile)
+	rg.POST("/listBatchProcessFileLog", h.ListBatchProcessLogs)
+	rg.POST("/listExecuteResultFileLog", h.ListBatchExecuteResults)
+	rg.GET("/downloadBatchProcessFile", h.DownloadBatchProcessFile)
+	rg.POST("/deleteBatchProcessFile", h.DeleteBatchProcessFile)
+	rg.GET("/downloadMmlExecuteResultFile", h.DownloadExecuteResultFile)
 }

@@ -58,7 +58,7 @@ func NewRepository(db *gorm.DB) Repository {
 // TaskNameExists checks if a task name already exists for the given tenancy.
 func (r *repository) TaskNameExists(tenantId int, name string) bool {
 	var count int64
-	r.db.Model(&RebootTask{}).Where("tenant_id = ? AND name = ?", tenantId, name).Count(&count)
+	r.db.Model(&RebootTask{}).Where("license_id = ? AND name = ?", tenantId, name).Count(&count)
 	return count > 0
 }
 
@@ -158,7 +158,7 @@ func (r *repository) ListTasks(tenantId int, query ListRebootTaskQuery) ([]Reboo
 
 	baseSQL := `
 		SELECT rt.id, rt.name, rt.user, rt.operation_time, rt.status,
-		       rt.start_time, rt.end_time, rt.tenant_id,
+		       rt.start_time, rt.end_time, rt.license_id,
 		       COUNT(tel.id) AS total_count,
 		       SUM(CASE WHEN el.status = 3 THEN 1 ELSE 0 END) AS success_count,
 		       MAX(el.command_response_time) AS last_response_time
@@ -169,7 +169,7 @@ func (r *repository) ListTasks(tenantId int, query ListRebootTaskQuery) ([]Reboo
 
 	args := []interface{}{}
 	if tenantId > 0 {
-		baseSQL += " AND rt.tenant_id = ?"
+		baseSQL += " AND rt.license_id = ?"
 		args = append(args, tenantId)
 	}
 
@@ -198,7 +198,7 @@ func (r *repository) ListTasks(tenantId int, query ListRebootTaskQuery) ([]Reboo
 	countSQL := "SELECT COUNT(*) FROM reboot_task rt WHERE 1=1"
 	countArgs := []interface{}{}
 	if tenantId > 0 {
-		countSQL += " AND rt.tenant_id = ?"
+		countSQL += " AND rt.license_id = ?"
 		countArgs = append(countArgs, tenantId)
 	}
 	if query.TaskName != "" {
@@ -237,7 +237,7 @@ func (r *repository) ListTasks(tenantId int, query ListRebootTaskQuery) ([]Reboo
 		Status           int        `gorm:"column:status"`
 		StartTime        *time.Time `gorm:"column:start_time"`
 		EndTime          *time.Time `gorm:"column:end_time"`
-		TenantId        int        `gorm:"column:tenant_id"`
+		TenantId        int        `gorm:"column:license_id"`
 		TotalCount       int64      `gorm:"column:total_count"`
 		SuccessCount     int64      `gorm:"column:success_count"`
 		LastResponseTime *time.Time `gorm:"column:last_response_time"`

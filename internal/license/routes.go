@@ -19,7 +19,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 // RegisterPublicRoutes registers license endpoints that must stay open before a
 // license is activated, so an administrator can upload one and inspect status.
 // These are NOT placed behind the license gate.
+// Aligned with Java LicenseCreatorController: @RequestMapping("/api/v2")
 func RegisterPublicRoutes(rg *gin.RouterGroup, h *Handler) {
-	rg.POST("/license/upload", h.UploadLicenseFile)
-	rg.GET("/license/info", h.GetLicenseInfo)
+	rg.POST("/uploadLicenseFile", h.UploadLicenseFile)
+	rg.POST("/getLicenseInfo", h.GetLicenseInfo)
 }

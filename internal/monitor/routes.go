@@ -3,17 +3,15 @@ package monitor
 import "github.com/gin-gonic/gin"
 
 // RegisterRoutes registers all monitor task routes on the given router group.
+// Routes mirror Java ValueMonitorManagementController (base @RequestMapping("api/v2/")),
+// all endpoints are POST as in the Java controller.
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// 监控任务
-	rg.GET("/monitor-tasks", h.ListMonitorTasks)
-	rg.GET("/monitor-tasks/:id", h.GetMonitorTask)
-	rg.POST("/monitor-tasks", h.CreateMonitorTask)
-	rg.PUT("/monitor-tasks/:id", h.UpdateMonitorTask)
-	rg.DELETE("/monitor-tasks/:id", h.DeleteMonitorTask)
-	rg.GET("/monitor-data", h.GetMonitorData)
-	rg.GET("/monitor-statistics", h.GetMonitorStatistics)
-	rg.GET("/monitor-elements/:id", h.GetMonitorElements)
-	rg.PUT("/monitor-elements/:id", h.SaveMonitorElements)
-	rg.GET("/monitor-parameters/:id", h.GetMonitorParameters)
-	rg.PUT("/monitor-parameters/:id", h.SaveMonitorParameters)
+	rg.POST("/addMonitorTask", h.CreateMonitorTask)
+	rg.POST("/modifyMonitorTask", h.UpdateMonitorTask)
+	rg.POST("/deleteMonitorTask", h.DeleteMonitorTask)
+	rg.POST("/listMonitorTask", h.ListMonitorTasks)
+	rg.POST("/viewMonitorTaskDetail", h.GetMonitorTask)
+	rg.POST("/getMonitorStatistics", h.GetMonitorStatistics)
+	rg.POST("/getElementInValueMonitorTask", h.GetMonitorElements)
+	rg.POST("/getParametersInValueMonitorTask", h.GetMonitorParameters)
 }

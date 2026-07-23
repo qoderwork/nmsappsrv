@@ -144,7 +144,7 @@ func (r *repository) FindCertFileSendTasks(tenantId int, offset, limit int) ([]C
 
 	query := r.db.Model(&CBSDCertFileSendTask{})
 	if tenantId > 0 {
-		query = query.Where("tenant_id = ?", tenantId)
+		query = query.Where("tenancy_id = ?", tenantId)
 	}
 
 	if err := query.Count(&total).Error; err != nil {

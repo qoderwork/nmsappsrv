@@ -25,7 +25,7 @@ func (caFileView) TableName() string { return "ca_file" }
 
 type cpeElementView struct {
 	ConfigFile  *string `gorm:"column:config_file"`
-	TenantId   *int    `gorm:"column:tenant_id"`
+	TenantId   *int    `gorm:"column:license_id"`
 	AosFileName *string `gorm:"column:aos_file_name"`
 }
 

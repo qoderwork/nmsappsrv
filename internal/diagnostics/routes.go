@@ -3,16 +3,14 @@ package diagnostics
 import "github.com/gin-gonic/gin"
 
 // RegisterRoutes registers all diagnostics routes on the given router group.
+// Aligned with Java CPEDiagnosticsController: @RequestMapping("/api/v1/") + @PostMapping("methodName")
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	// CPE 诊断
-	rg.POST("/diagnostics/result", h.ListDiagnosticsResult)
-	rg.POST("/diagnostics/status", h.ListDiagnosticsStatus)
-	rg.POST("/diagnostics/ping", h.DiagnosticsPing)
-	rg.POST("/diagnostics/trace-route", h.DiagnosticsTraceRoute)
-	rg.POST("/diagnostics/download", h.DiagnosticsDownload)
-	rg.POST("/diagnostics/upload", h.DiagnosticsUpload)
-
-	// Diagnostics task history
-	rg.GET("/diagnostics/tasks", h.ListDiagnosticsTasks)
-	rg.GET("/diagnostics/tasks/:id", h.GetDiagnosticsTask)
+	rg.POST("/listDiagnosticsResult", h.ListDiagnosticsResult)
+	rg.POST("/listDiagnosticsStatus", h.ListDiagnosticsStatus)
+	rg.POST("/diagnosticsPing", h.DiagnosticsPing)
+	rg.POST("/diagnosticsTraceRoute", h.DiagnosticsTraceRoute)
+	rg.POST("/diagnosticsDownload", h.DiagnosticsDownload)
+	rg.POST("/diagnosticsUpload", h.DiagnosticsUpload)
+	rg.POST("/listDiagnosticsTasks", h.ListDiagnosticsTasks)
+	rg.POST("/getDiagnosticsTask", h.GetDiagnosticsTask)
 }

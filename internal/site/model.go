@@ -8,7 +8,7 @@ type SiteInfo struct {
 	SiteName     *string    `gorm:"column:site_name;type:varchar(255);uniqueIndex:idx_license_site" json:"site_name"`
 	Description  *string    `gorm:"column:description;type:varchar(255)" json:"description"`
 	AreaId       *int       `gorm:"column:area_id" json:"area_id"`
-	TenantId    *int       `gorm:"column:tenant_id;uniqueIndex:idx_license_site" json:"tenant_id"`
+	TenantId    *int       `gorm:"column:license_id;uniqueIndex:idx_license_site" json:"license_id"`
 	Latitude     *string    `gorm:"column:latitude;type:varchar(255)" json:"latitude"`
 	Longitude    *string    `gorm:"column:longitude;type:varchar(255)" json:"longitude"`
 	CreationTime *time.Time `gorm:"column:creation_time" json:"creation_time"`
@@ -37,7 +37,7 @@ type SysArea struct {
 	Level        *int    `gorm:"column:level" json:"level"`
 	Abbreviation *string `gorm:"column:abbreviation;type:varchar(255)" json:"abbreviation"`
 	Code         *string `gorm:"column:code;type:varchar(255)" json:"code"`
-	TenantId    *int    `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId    *int    `gorm:"column:license_id" json:"license_id"`
 }
 
 func (SysArea) TableName() string { return "sys_area" }

@@ -48,7 +48,7 @@ type CpeElement struct {
 	PsapId                  *string    `gorm:"column:psap_id;type:varchar(255)" json:"psap_id"`
 	FirmwareVersion         *string    `gorm:"column:firmware_version;type:varchar(255)" json:"firmware_version"`
 	RootNode                *string    `gorm:"column:root_node;type:varchar(255)" json:"root_node"`
-	TenantId               *int       `gorm:"column:tenant_id" json:"tenant_id"`
+	TenantId               *int       `gorm:"column:license_id" json:"license_id"`
 	DeviceType              *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	Deleted                 bool       `gorm:"column:deleted;default:false" json:"deleted"`
 	ModelName               *string    `gorm:"column:model_name;type:varchar(255)" json:"model_name"`
@@ -67,7 +67,7 @@ type DeviceGroup struct {
 	GroupName    *string      `gorm:"column:group_name;type:varchar(255);uniqueIndex:idx_license_group" json:"group_name"`
 	Description  *string      `gorm:"column:description;type:varchar(255)" json:"description"`
 	CreationTime *time.Time   `gorm:"column:creation_time" json:"creation_time"`
-	TenantId    *int         `gorm:"column:tenant_id;uniqueIndex:idx_license_group" json:"tenant_id"`
+	TenantId    *int         `gorm:"column:license_id;uniqueIndex:idx_license_group" json:"license_id"`
 	DefaultGroup bool         `gorm:"column:default_group;default:false" json:"default_group"`
 	Elements     []CpeElement `gorm:"many2many:group_has_element" json:"elements,omitempty"`
 }
@@ -97,7 +97,7 @@ func (ElementBasicInfoParameter) TableName() string { return "element_basic_info
 type ElementBlackList struct {
 	Id         int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	SN         *string    `gorm:"column:sn;type:varchar(255);uniqueIndex" json:"sn"`
-	TenantId  *int       `gorm:"column:tenant_id;uniqueIndex:idx_license_sn" json:"tenant_id"`
+	TenantId  *int       `gorm:"column:license_id;uniqueIndex:idx_license_sn" json:"license_id"`
 	DeviceType *string    `gorm:"column:device_type;type:varchar(255)" json:"device_type"`
 	AddTime    *time.Time `gorm:"column:add_time" json:"add_time"`
 	Username   *string    `gorm:"column:username;type:varchar(255)" json:"username"`
